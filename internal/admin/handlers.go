@@ -78,8 +78,7 @@ func HomeHandler(db *database.DB, engine *processor.ProcessingEngine) http.Handl
 
 func PendingVenuesHandler(db *database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Parse query parameters for filtering
-		status := r.URL.Query().Get("status") // pending, approved, rejected, manual_review
+		// Parse query parameters (only search and pagination; status is always pending)
 		search := r.URL.Query().Get("search")
 		page, _ := strconv.Atoi(r.URL.Query().Get("page"))
 		if page < 1 {
@@ -88,13 +87,8 @@ func PendingVenuesHandler(db *database.DB) http.HandlerFunc {
 		limit := 50
 		offset := (page - 1) * limit
 
-		// Default to pending status if none specified
-		if status == "" {
-			status = "pending"
-		}
-
-		// Get filtered venues
-		venues, total, err := db.GetVenuesFiltered(status, search, limit, offset)
+		// Always fetch pending venues only
+		venues, total, err := db.GetVenuesFiltered("pending", search, limit, offset)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Error fetching venues: %v", err), http.StatusInternalServerError)
 			return
@@ -105,14 +99,12 @@ func PendingVenuesHandler(db *database.DB) http.HandlerFunc {
 			Total      int
 			Page       int
 			TotalPages int
-			Status     string
 			Search     string
 		}{
 			Venues:     venues,
 			Total:      total,
 			Page:       page,
 			TotalPages: (total + limit - 1) / limit,
-			Status:     status,
 			Search:     search,
 		}
 

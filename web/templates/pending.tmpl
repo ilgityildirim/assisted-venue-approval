@@ -66,13 +66,6 @@
         <div class="filters">
             <form method="GET">
                 <input type="text" name="search" value="{{.Search}}" placeholder="Search venues...">
-                <select name="status">
-                    <option value="">All Status</option>
-                    <option value="pending" {{if eq .Status "pending"}}selected{{end}}>Pending</option>
-                    <option value="approved" {{if eq .Status "approved"}}selected{{end}}>Approved</option>
-                    <option value="rejected" {{if eq .Status "rejected"}}selected{{end}}>Rejected</option>
-                    <option value="manual_review" {{if eq .Status "manual_review"}}selected{{end}}>Manual Review</option>
-                </select>
                 <button type="submit" class="btn">Filter</button>
                 <a href="/venues/pending" class="btn">Clear</a>
             </form>
@@ -100,7 +93,6 @@
                         <th>Location</th>
                         <th>Submitter</th>
                         <th>Authority</th>
-                        <th>Status</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
@@ -117,15 +109,6 @@
                             {{if .IsVenueAdmin}}<span title="Venue Owner">👑</span>{{end}}
                             {{if .AmbassadorLevel}}<span title="Ambassador">🌟</span>{{end}}
                         </td>
-                        <td>
-                            {{if eq (intVal .Venue.Active 0) 1}}
-                                <span class="status-badge status-approved">Approved</span>
-                            {{else if eq (intVal .Venue.Active 0) -1}}
-                                <span class="status-badge status-rejected">Rejected</span>
-                            {{else}}
-                                <span class="status-badge status-pending">Pending</span>
-                            {{end}}
-                        </td>
                         <td class="actions-column">
                             <a href="/venues/{{.Venue.ID}}" class="btn btn-sm" onclick="event.stopPropagation()">View</a>
                             <button class="btn btn-success btn-sm" onclick="event.stopPropagation(); approveVenue({{.Venue.ID}})">✅</button>
@@ -133,7 +116,7 @@
                         </td>
                     </tr>
                     <tr class="venue-details" id="details-{{.Venue.ID}}">
-                        <td colspan="8">
+                        <td colspan="7">
                             <div style="padding: 15px;">
                                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
                                     <div><strong>Phone:</strong> {{if .Venue.Phone}}{{.Venue.Phone}}{{else}}N/A{{end}}</div>
@@ -155,19 +138,19 @@
         
         <div class="pagination">
             {{if gt .Page 1}}
-                <a href="?page={{add .Page -1}}&status={{.Status}}&search={{.Search}}">« Previous</a>
+                <a href="?page={{add .Page -1}}&search={{.Search}}">« Previous</a>
             {{end}}
             
             {{range $i := seq 1 .TotalPages}}
                 {{if eq $i $.Page}}
                     <a href="#" class="active">{{$i}}</a>
                 {{else if or (le $i 3) (ge $i (add $.TotalPages -2)) (and (ge $i (add $.Page -1)) (le $i (add $.Page 1)))}}
-                    <a href="?page={{$i}}&status={{$.Status}}&search={{$.Search}}">{{$i}}</a>
+                    <a href="?page={{$i}}&search={{$.Search}}">{{$i}}</a>
                 {{end}}
             {{end}}
             
             {{if lt .Page .TotalPages}}
-                <a href="?page={{add .Page 1}}&status={{.Status}}&search={{.Search}}">Next »</a>
+                <a href="?page={{add .Page 1}}&search={{.Search}}">Next »</a>
             {{end}}
         </div>
     </div>
