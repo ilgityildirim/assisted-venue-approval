@@ -56,9 +56,14 @@ func (s *GoogleMapsScraper) EnhanceVenue(ctx context.Context, venue models.Venue
 		PlaceID: placeID,
 		Fields: []maps.PlaceDetailsFieldMask{
 			maps.PlaceDetailsFieldMaskName,
+			maps.PlaceDetailsFieldMaskPlaceID,
+			maps.PlaceDetailsFieldMaskFormattedAddress,
+			maps.PlaceDetailsFieldMaskGeometry,
+			maps.PlaceDetailsFieldMaskAddressComponent,
+			maps.PlaceDetailsFieldMaskTypes,
 			maps.PlaceDetailsFieldMaskFormattedPhoneNumber,
 			maps.PlaceDetailsFieldMaskWebsite,
-			// maps.PlaceDetailsFieldMaskRating, // Note: Rating field not available in current maps API
+			// maps.PlaceDetailsFieldMaskRating, // Not available in current client; fallback to TextSearch rating
 			maps.PlaceDetailsFieldMaskUserRatingsTotal,
 			maps.PlaceDetailsFieldMaskBusinessStatus,
 			maps.PlaceDetailsFieldMaskOpeningHours,
@@ -77,6 +82,17 @@ func (s *GoogleMapsScraper) EnhanceVenue(ctx context.Context, venue models.Venue
 		HasPhone:     details.FormattedPhoneNumber != "",
 		Rating:       details.Rating,
 		ReviewCount:  details.UserRatingsTotal,
+	}
+
+	// Fallback: if rating not returned in details but present in TextSearch results
+	if (enhanced.Rating == 0 || math.IsNaN(float64(enhanced.Rating))) && enhanced.ReviewCount > 0 && len(searchResp.Results) > 0 {
+		if searchResp.Results[0].Rating > 0 {
+			enhanced.Rating = float32(searchResp.Results[0].Rating)
+		}
+	}
+
+	if enhanced.Rating == 0 && enhanced.ReviewCount > 0 {
+		fmt.Printf("[warn] EnhanceVenue: rating is 0 but user_ratings_total=%d for place_id=%s (may be missing field mask or permissions)\n", enhanced.ReviewCount, placeID)
 	}
 
 	if details.BusinessStatus == "OPERATIONAL" {
@@ -890,6 +906,10 @@ func (s *GoogleMapsScraper) EnhanceVenueWithValidation(ctx context.Context, venu
 
 	// Convert Google Places data to our model format
 	googleData := convertToGooglePlaceData(*enhanced.PlaceDetails)
+	// Fallback: patch rating from TextSearch if details rating is absent
+	if googleData.Rating == 0 && googleData.UserRatingsTotal > 0 && enhanced.Rating > 0 {
+		googleData.Rating = float64(enhanced.Rating)
+	}
 
 	// Perform detailed comparison
 	validationDetails := CompareVenueData(venue, googleData)
@@ -916,6 +936,7 @@ func convertToGooglePlaceData(details maps.PlaceDetailsResult) models.GooglePlac
 		Rating:           float64(details.Rating),
 		UserRatingsTotal: details.UserRatingsTotal,
 		Types:            details.Types,
+		FetchedAt:        time.Now(),
 	}
 
 	googleData.BusinessStatus = details.BusinessStatus
@@ -973,6 +994,15 @@ func convertToGooglePlaceData(details maps.PlaceDetailsResult) models.GooglePlac
 			ShortName: component.ShortName,
 			Types:     component.Types,
 		})
+	}
+
+	// Basic sanity logging for missing essential fields
+	if googleData.PlaceID == "" || googleData.FormattedAddress == "" || (googleData.Geometry.Location.Lat == 0 && googleData.Geometry.Location.Lng == 0) {
+		fmt.Printf("[warn] convertToGooglePlaceData: missing essential fields: place_id='%s' formatted_address='%s' lat=%f lng=%f\n", googleData.PlaceID, googleData.FormattedAddress, googleData.Geometry.Location.Lat, googleData.Geometry.Location.Lng)
+	}
+	// Warning if rating missing but reviews exist
+	if googleData.Rating == 0 && googleData.UserRatingsTotal > 0 {
+		fmt.Printf("[warn] convertToGooglePlaceData: rating is 0 but user_ratings_total=%d for place_id='%s'\n", googleData.UserRatingsTotal, googleData.PlaceID)
 	}
 
 	return googleData
