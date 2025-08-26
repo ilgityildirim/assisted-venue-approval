@@ -164,6 +164,9 @@ func (app *App) validateHandler(w http.ResponseWriter, r *http.Request) {
 	// Start processing engine if not already running
 	app.engine.Start()
 
+	// Ensure score-only mode for this run
+	app.engine.SetScoreOnly(true)
+
 	// Add venues to processing queue
 	if err := app.engine.ProcessVenuesWithUsers(venuesWithUser); err != nil {
 		http.Error(w, fmt.Sprintf("Failed to queue venues for processing: %v", err), http.StatusInternalServerError)

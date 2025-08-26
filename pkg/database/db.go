@@ -839,7 +839,7 @@ func (db *DB) GetVenueValidationHistory(venueID int64) ([]models.ValidationHisto
 	return history, nil
 }
 
-// SaveValidationResultWithGoogleData saves validation results with Google Places data
+// SaveValidationResultWithGoogleData saves validation history with Google Places data WITHOUT changing venue status
 func (db *DB) SaveValidationResultWithGoogleData(result *models.ValidationResult, googleData *models.GooglePlaceData) error {
 	tx, err := db.conn.Begin()
 	if err != nil {
@@ -847,21 +847,7 @@ func (db *DB) SaveValidationResultWithGoogleData(result *models.ValidationResult
 	}
 	defer tx.Rollback()
 
-	// Update venue status
-	updateQuery := `UPDATE venues SET active = ?, admin_note = ?, admin_last_update = NOW() WHERE id = ?`
-	active := 0 // Default to manual review
-	if result.Status == "approved" {
-		active = 1
-	} else if result.Status == "rejected" {
-		active = -1
-	}
-
-	_, err = tx.Exec(updateQuery, active, result.Notes, result.VenueID)
-	if err != nil {
-		return fmt.Errorf("failed to update venue in validation result: %w", err)
-	}
-
-	// Save validation history with Google Places data
+	// Save validation history with Google Places data only
 	var googlePlaceID *string
 	var googlePlaceFound bool
 	var googlePlaceDataJSON *string

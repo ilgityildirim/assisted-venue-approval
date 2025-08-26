@@ -29,6 +29,7 @@ type ProcessingResult struct {
 	VenueID          int64
 	Success          bool
 	ValidationResult *models.ValidationResult
+	GoogleData       *models.GooglePlaceData
 	Error            error
 	ProcessingTimeMs int64
 	Retries          int
@@ -141,6 +142,9 @@ type ProcessingEngine struct {
 	retryDelay  time.Duration
 	jobTimeout  time.Duration
 
+	// Mode flags
+	scoreOnly bool
+
 	// Rate limiters
 	googleRateLimit *RateLimiter
 	openAIRateLimit *RateLimiter
@@ -213,6 +217,7 @@ func NewProcessingEngine(db *database.DB, scraper *scraper.GoogleMapsScraper, sc
 		ctx:             ctx,
 		cancel:          cancel,
 		shutdown:        make(chan struct{}),
+		scoreOnly:       false,
 		stats: ProcessingStats{
 			StartTime:    time.Now(),
 			LastActivity: time.Now(),
@@ -340,6 +345,12 @@ func (e *ProcessingEngine) ProcessVenuesWithUsers(venuesWithUser []models.VenueW
 }
 
 // GetStats returns current processing statistics
+func (e *ProcessingEngine) SetScoreOnly(scoreOnly bool) {
+	e.statsMu.Lock()
+	e.scoreOnly = scoreOnly
+	e.statsMu.Unlock()
+}
+
 func (e *ProcessingEngine) GetStats() ProcessingStats {
 	e.statsMu.RLock()
 	defer e.statsMu.RUnlock()
@@ -444,6 +455,7 @@ func (e *ProcessingEngine) processJob(job ProcessingJob) ProcessingResult {
 	// Process venue with exponential backoff retry logic
 	var err error
 	var validationResult *models.ValidationResult
+	var googleData *models.GooglePlaceData
 
 	for attempt := 0; attempt <= e.maxRetries; attempt++ {
 		if attempt > 0 {
@@ -461,10 +473,11 @@ func (e *ProcessingEngine) processJob(job ProcessingJob) ProcessingResult {
 		}
 
 		// Process the venue
-		validationResult, err = e.processVenueWithRateLimit(jobCtx, venue, user)
+		validationResult, googleData, err = e.processVenueWithRateLimit(jobCtx, venue, user)
 		if err == nil {
 			result.Success = true
 			result.ValidationResult = validationResult
+			result.GoogleData = googleData
 			break
 		}
 
@@ -484,24 +497,24 @@ func (e *ProcessingEngine) processJob(job ProcessingJob) ProcessingResult {
 }
 
 // processVenueWithRateLimit processes a venue with proper rate limiting and user context
-func (e *ProcessingEngine) processVenueWithRateLimit(ctx context.Context, venue models.Venue, user models.User) (*models.ValidationResult, error) {
+func (e *ProcessingEngine) processVenueWithRateLimit(ctx context.Context, venue models.Venue, user models.User) (*models.ValidationResult, *models.GooglePlaceData, error) {
 	// Rate limit Google Maps API call
 	if err := e.googleRateLimit.Wait(ctx); err != nil {
-		return nil, fmt.Errorf("google rate limit wait cancelled: %w", err)
+		return nil, nil, fmt.Errorf("google rate limit wait cancelled: %w", err)
 	}
 
 	// Enhance venue with Google Maps data
 	enhancedVenue, err := e.scraper.EnhanceVenueWithValidation(ctx, venue)
 	if err != nil {
 		atomic.AddInt64(&e.stats.APICallsGoogle, 1)
-		return nil, fmt.Errorf("failed to enhance venue: %w", err)
+		return nil, nil, fmt.Errorf("failed to enhance venue: %w", err)
 	}
 	atomic.AddInt64(&e.stats.APICallsGoogle, 1)
 
 	// Rate limit OpenAI API call (only if needed for basic venues or vegan relevance)
 	if enhancedVenue.ValidationDetails == nil || !enhancedVenue.ValidationDetails.GooglePlaceFound {
 		if err := e.openAIRateLimit.Wait(ctx); err != nil {
-			return nil, fmt.Errorf("openai rate limit wait cancelled: %w", err)
+			return nil, nil, fmt.Errorf("openai rate limit wait cancelled: %w", err)
 		}
 	}
 
@@ -509,7 +522,7 @@ func (e *ProcessingEngine) processVenueWithRateLimit(ctx context.Context, venue 
 	validationResult, err := e.scorer.ScoreVenue(ctx, *enhancedVenue)
 	if err != nil {
 		atomic.AddInt64(&e.stats.APICallsOpenAI, 1)
-		return nil, fmt.Errorf("failed to score venue: %w", err)
+		return nil, nil, fmt.Errorf("failed to score venue: %w", err)
 	}
 	atomic.AddInt64(&e.stats.APICallsOpenAI, 1)
 
@@ -530,7 +543,11 @@ func (e *ProcessingEngine) processVenueWithRateLimit(ctx context.Context, venue 
 	}
 	validationResult.ScoreBreakdown["quality_flags"] = len(decisionResult.QualityFlags)
 
-	return validationResult, nil
+	var gData *models.GooglePlaceData
+	if enhancedVenue.GoogleData != nil {
+		gData = enhancedVenue.GoogleData
+	}
+	return validationResult, gData, nil
 }
 
 // isRetryableError determines if an error should trigger a retry
@@ -634,12 +651,19 @@ func (e *ProcessingEngine) handleSuccessfulResult(result ProcessingResult) {
 		log.Printf("Venue %d requires manual review (score: %d) (Decision engine)", result.VenueID, validationResult.Score)
 	}
 
-	// Update venue status in database
+	if e.scoreOnly {
+		// Score-only mode: do not update venue status, only record history with Google data
+		if err := e.db.SaveValidationResultWithGoogleData(validationResult, result.GoogleData); err != nil {
+			log.Printf("Failed to save validation history for venue %d: %v", result.VenueID, err)
+		}
+		return
+	}
+
+	// Normal mode: update venue and save validation result + history
 	if err := e.db.UpdateVenueStatus(result.VenueID, dbStatus, notes, nil); err != nil {
 		log.Printf("Failed to update venue %d status: %v", result.VenueID, err)
 	}
 
-	// Save validation result to database
 	if err := e.db.SaveValidationResult(validationResult); err != nil {
 		log.Printf("Failed to save validation result for venue %d: %v", result.VenueID, err)
 	}
