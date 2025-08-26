@@ -50,6 +50,11 @@ func main() {
 
 	processingEngine := processor.NewProcessingEngine(db, gmapsScraper, aiScorer, processingConfig)
 
+	// Load templates
+	if err := admin.LoadTemplates(); err != nil {
+		log.Fatal("Failed to load templates:", err)
+	}
+
 	app := &App{
 		db:      db,
 		scraper: gmapsScraper,

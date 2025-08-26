@@ -3,7 +3,6 @@ package admin
 import (
 	"encoding/json"
 	"fmt"
-	"html/template"
 	"log"
 	"net/http"
 	"strconv"
@@ -21,6 +20,7 @@ import (
 type DashboardData struct {
 	Stats         processor.ProcessingStats
 	PendingVenues []models.VenueWithUser
+	PendingTotal  int
 	RecentResults []models.ValidationResult
 	SystemHealth  SystemHealth
 }
@@ -59,16 +59,20 @@ func HomeHandler(db *database.DB, engine *processor.ProcessingEngine) http.Handl
 			LastProcessingTime: stats.LastActivity,
 		}
 
+		pendingTotal := len(venuesWithUser)
+
 		dashboardData := DashboardData{
 			Stats:         stats,
 			PendingVenues: venuesWithUser[:min(len(venuesWithUser), 100)],
+			PendingTotal:  pendingTotal,
 			RecentResults: recentResults,
 			SystemHealth:  health,
 		}
 
-		tmpl := getDashboardTemplate()
-		t := template.Must(template.New("dashboard").Parse(tmpl))
-		t.Execute(w, dashboardData)
+		if err := ExecuteTemplate(w, "dashboard.tmpl", dashboardData); err != nil {
+			http.Error(w, fmt.Sprintf("template error: %v", err), http.StatusInternalServerError)
+			return
+		}
 	}
 }
 
@@ -112,19 +116,10 @@ func PendingVenuesHandler(db *database.DB) http.HandlerFunc {
 			Search:     search,
 		}
 
-		tmpl := getPendingVenuesTemplate()
-		funcMap := template.FuncMap{
-			"add": func(a, b int) int { return a + b },
-			"seq": func(start, end int) []int {
-				var seq []int
-				for i := start; i <= end; i++ {
-					seq = append(seq, i)
-				}
-				return seq
-			},
+		if err := ExecuteTemplate(w, "pending.tmpl", data); err != nil {
+			http.Error(w, fmt.Sprintf("template error: %v", err), http.StatusInternalServerError)
+			return
 		}
-		t := template.Must(template.New("pending").Funcs(funcMap).Parse(tmpl))
-		t.Execute(w, data)
 	}
 }
 
@@ -261,9 +256,10 @@ func VenueDetailHandler(db *database.DB) http.HandlerFunc {
 			SimilarVenues: similarVenues,
 		}
 
-		tmpl := getVenueDetailTemplate()
-		t := template.Must(template.New("venue-detail").Parse(tmpl))
-		t.Execute(w, data)
+		if err := ExecuteTemplate(w, "venue_detail.tmpl", data); err != nil {
+			http.Error(w, fmt.Sprintf("template error: %v", err), http.StatusInternalServerError)
+			return
+		}
 	}
 }
 
@@ -387,19 +383,10 @@ func ValidationHistoryHandler(db *database.DB) http.HandlerFunc {
 			TotalPages: (total + limit - 1) / limit,
 		}
 
-		tmpl := getValidationHistoryTemplate()
-		funcMap := template.FuncMap{
-			"add": func(a, b int) int { return a + b },
-			"seq": func(start, end int) []int {
-				var seq []int
-				for i := start; i <= end; i++ {
-					seq = append(seq, i)
-				}
-				return seq
-			},
+		if err := ExecuteTemplate(w, "history.tmpl", data); err != nil {
+			http.Error(w, fmt.Sprintf("template error: %v", err), http.StatusInternalServerError)
+			return
 		}
-		t := template.Must(template.New("history").Funcs(funcMap).Parse(tmpl))
-		t.Execute(w, data)
 	}
 }
 
@@ -434,80 +421,10 @@ func AnalyticsHandler(db *database.DB, engine *processor.ProcessingEngine) http.
 			CostPerVenue:    stats.TotalCostUSD / float64(max(stats.TotalJobs, 1)),
 		}
 
-		tmpl := getAnalyticsTemplate()
-		funcMap := template.FuncMap{
-			"add": func(a, b interface{}) interface{} {
-				switch a := a.(type) {
-				case int:
-					switch b := b.(type) {
-					case int:
-						return a + b
-					case float64:
-						return float64(a) + b
-					}
-				case float64:
-					switch b := b.(type) {
-					case int:
-						return a + float64(b)
-					case float64:
-						return a + b
-					}
-				}
-				return 0
-			},
-			"mul": func(a, b interface{}) interface{} {
-				switch a := a.(type) {
-				case int:
-					switch b := b.(type) {
-					case int:
-						return a * b
-					case float64:
-						return float64(a) * b
-					}
-				case float64:
-					switch b := b.(type) {
-					case int:
-						return a * float64(b)
-					case float64:
-						return a * b
-					}
-				}
-				return 0
-			},
-			"div": func(a, b interface{}) interface{} {
-				switch a := a.(type) {
-				case int:
-					switch b := b.(type) {
-					case int:
-						if b == 0 {
-							return float64(0)
-						}
-						return float64(a) / float64(b)
-					case float64:
-						if b == 0 {
-							return float64(0)
-						}
-						return float64(a) / b
-					}
-				case float64:
-					switch b := b.(type) {
-					case int:
-						if b == 0 {
-							return float64(0)
-						}
-						return a / float64(b)
-					case float64:
-						if b == 0 {
-							return float64(0)
-						}
-						return a / b
-					}
-				}
-				return 0
-			},
+		if err := ExecuteTemplate(w, "analytics.tmpl", data); err != nil {
+			http.Error(w, fmt.Sprintf("template error: %v", err), http.StatusInternalServerError)
+			return
 		}
-		t := template.Must(template.New("analytics").Funcs(funcMap).Parse(tmpl))
-		t.Execute(w, data)
 	}
 }
 
@@ -533,187 +450,4 @@ func max(a, b int64) int64 {
 		return a
 	}
 	return b
-}
-
-// Template functions
-
-func getDashboardTemplate() string {
-	return `<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>HappyCow Validation Dashboard</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f7fa; }
-        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
-        .header { background: #2c3e50; color: white; padding: 20px 0; margin-bottom: 30px; }
-        .header h1 { text-align: center; font-size: 2.5em; }
-        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 30px; }
-        .stat-card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-        .stat-number { font-size: 2.5em; font-weight: bold; color: #3498db; }
-        .stat-label { color: #666; margin-top: 5px; }
-        .health-status { display: flex; align-items: center; gap: 10px; }
-        .health-indicator { width: 10px; height: 10px; border-radius: 50%; background: #27ae60; }
-        .section { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 30px; }
-        .section h2 { color: #2c3e50; margin-bottom: 20px; }
-        .btn { display: inline-block; padding: 12px 24px; background: #3498db; color: white; text-decoration: none; border-radius: 5px; border: none; cursor: pointer; font-size: 16px; }
-        .btn:hover { background: #2980b9; }
-        .btn-success { background: #27ae60; }
-        .btn-success:hover { background: #2ecc71; }
-        .btn-danger { background: #e74c3c; }
-        .btn-danger:hover { background: #c0392b; }
-        .table { width: 100%; border-collapse: collapse; }
-        .table th, .table td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
-        .table th { background: #f8f9fa; font-weight: 600; }
-        .status-badge { padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold; }
-        .status-approved { background: #d4edda; color: #155724; }
-        .status-rejected { background: #f8d7da; color: #721c24; }
-        .status-pending { background: #fff3cd; color: #856404; }
-        .nav { display: flex; gap: 20px; margin-bottom: 30px; }
-        .nav a { padding: 10px 20px; background: white; color: #2c3e50; text-decoration: none; border-radius: 5px; }
-        .nav a.active, .nav a:hover { background: #3498db; color: white; }
-        .processing-controls { display: flex; gap: 10px; margin-bottom: 20px; }
-        @media (max-width: 768px) {
-            .stats-grid { grid-template-columns: 1fr; }
-            .nav { flex-direction: column; }
-            .processing-controls { flex-direction: column; }
-        }
-    </style>
-</head>
-<body>
-    <div class="header">
-        <div class="container">
-            <h1>🌱 HappyCow Validation Dashboard</h1>
-        </div>
-    </div>
-    
-    <div class="container">
-        <nav class="nav">
-            <a href="/" class="active">Dashboard</a>
-            <a href="/venues/pending">Pending Venues</a>
-            <a href="/validation/history">History</a>
-            <a href="/analytics">Analytics</a>
-        </nav>
-        
-        <div class="stats-grid">
-            <div class="stat-card">
-                <div class="stat-number">{{.Stats.TotalJobs}}</div>
-                <div class="stat-label">Total Venues Processed</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-number">{{.Stats.AutoApproved}}</div>
-                <div class="stat-label">Auto-Approved</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-number">{{.Stats.AutoRejected}}</div>
-                <div class="stat-label">Auto-Rejected</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-number">{{.Stats.ManualReview}}</div>
-                <div class="stat-label">Manual Review</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-number">{{len .PendingVenues}}</div>
-                <div class="stat-label">Pending Venues</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-number">${{printf "%.2f" .Stats.TotalCostUSD}}</div>
-                <div class="stat-label">Total API Costs</div>
-            </div>
-        </div>
-        
-        <div class="section">
-            <h2>System Health</h2>
-            <div class="health-status">
-                <div class="health-indicator"></div>
-                <span>Database: {{.SystemHealth.DatabaseStatus}}</span>
-            </div>
-            <div class="health-status">
-                <div class="health-indicator"></div>
-                <span>Processing Engine: {{.SystemHealth.ProcessingEngine}}</span>
-            </div>
-            <div class="health-status">
-                <div class="health-indicator"></div>
-                <span>API Connections: {{.SystemHealth.APIConnections}}</span>
-            </div>
-            <div class="health-status">
-                <span>Last Processing: {{.SystemHealth.LastProcessingTime.Format "2006-01-02 15:04:05"}}</span>
-            </div>
-        </div>
-        
-        <div class="section">
-            <h2>Processing Controls</h2>
-            <div class="processing-controls">
-                <form action="/validate" method="POST" style="display: inline;">
-                    <button type="submit" class="btn btn-success">🚀 Start Auto-Validation</button>
-                </form>
-                <a href="/validate/stats" class="btn">📊 Real-time Stats</a>
-                <a href="/venues/pending" class="btn">📋 Review Queue</a>
-            </div>
-        </div>
-        
-        <div class="section">
-            <h2>Recent Venues ({{len .PendingVenues}})</h2>
-            <table class="table">
-                <thead>
-                    <tr>
-                        <th>ID</th>
-                        <th>Name</th>
-                        <th>Location</th>
-                        <th>Submitter</th>
-                        <th>Authority</th>
-                        <th>Status</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {{range .PendingVenues}}
-                    <tr>
-                        <td>{{.Venue.ID}}</td>
-                        <td><a href="/venues/{{.Venue.ID}}">{{.Venue.Name}}</a></td>
-                        <td>{{.Venue.Location}}</td>
-                        <td>{{.User.Username}}</td>
-                        <td>
-                            {{if .User.Trusted}}✅ Trusted{{end}}
-                            {{if .IsVenueAdmin}}👑 Owner{{end}}
-                            {{if .AmbassadorLevel}}🌟 Ambassador{{end}}
-                        </td>
-                        <td>
-                            {{if eq .Venue.Active 1}}
-                                <span class="status-badge status-approved">Approved</span>
-                            {{else if eq .Venue.Active -1}}
-                                <span class="status-badge status-rejected">Rejected</span>
-                            {{else}}
-                                <span class="status-badge status-pending">Pending</span>
-                            {{end}}
-                        </td>
-                        <td>
-                            <a href="/venues/{{.Venue.ID}}" class="btn" style="padding: 5px 10px; font-size: 12px;">View</a>
-                        </td>
-                    </tr>
-                    {{end}}
-                </tbody>
-            </table>
-            {{if gt (len .PendingVenues) 50}}
-                <p><a href="/venues/pending">View all pending venues...</a></p>
-            {{end}}
-        </div>
-    </div>
-    
-    <script>
-        // Auto-refresh stats every 30 seconds
-        setInterval(function() {
-            fetch('/api/stats')
-                .then(response => response.json())
-                .then(data => {
-                    // Update stats if needed
-                    console.log('Stats updated:', data);
-                })
-                .catch(error => console.error('Error fetching stats:', error));
-        }, 30000);
-    </script>
-</body>
-</html>`
 }

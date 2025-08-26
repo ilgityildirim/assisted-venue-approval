@@ -1,14 +1,8 @@
 package admin
 
-// Additional template functions for the admin interface
-
-func getPendingVenuesTemplate() string {
-	return `<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pending Venues - HappyCow Validation</title>
+// Legacy inline templates have been moved to files under internal/admin/templates/.
+// See render.go for template loading and helpers.
+/*
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f7fa; }
@@ -58,7 +52,7 @@ func getPendingVenuesTemplate() string {
             <h1>📋 Pending Venues</h1>
         </div>
     </div>
-    
+
     <div class="container">
         <nav class="nav">
             <a href="/">Dashboard</a>
@@ -66,7 +60,7 @@ func getPendingVenuesTemplate() string {
             <a href="/validation/history">History</a>
             <a href="/analytics">Analytics</a>
         </nav>
-        
+
         <div class="filters">
             <form method="GET">
                 <input type="text" name="search" value="{{.Search}}" placeholder="Search venues...">
@@ -81,7 +75,7 @@ func getPendingVenuesTemplate() string {
                 <a href="/venues/pending" class="btn">Clear</a>
             </form>
         </div>
-        
+
         <div class="batch-controls" id="batch-controls" style="display: none;">
             <div class="selected-count" id="selected-count">0 venues selected</div>
             <div style="margin-top: 10px;">
@@ -92,7 +86,7 @@ func getPendingVenuesTemplate() string {
                 <button class="btn" onclick="selectNone()">Select None</button>
             </div>
         </div>
-        
+
         <div class="section">
             <h2>Venues ({{.Total}} total, Page {{.Page}} of {{.TotalPages}})</h2>
             <table class="table">
@@ -156,12 +150,12 @@ func getPendingVenuesTemplate() string {
                 </tbody>
             </table>
         </div>
-        
+
         <div class="pagination">
             {{if gt .Page 1}}
                 <a href="?page={{add .Page -1}}&status={{.Status}}&search={{.Search}}">« Previous</a>
             {{end}}
-            
+
             {{range $i := seq 1 .TotalPages}}
                 {{if eq $i $.Page}}
                     <a href="#" class="active">{{$i}}</a>
@@ -169,25 +163,25 @@ func getPendingVenuesTemplate() string {
                     <a href="?page={{$i}}&status={{$.Status}}&search={{$.Search}}">{{$i}}</a>
                 {{end}}
             {{end}}
-            
+
             {{if lt .Page .TotalPages}}
                 <a href="?page={{add .Page 1}}&status={{.Status}}&search={{.Search}}">Next »</a>
             {{end}}
         </div>
     </div>
-    
+
     <script>
         function toggleVenueDetails(venueId) {
             const details = document.getElementById('details-' + venueId);
             details.classList.toggle('expanded');
         }
-        
+
         function updateBatchControls() {
             const checkboxes = document.querySelectorAll('.venue-checkbox:checked');
             const count = checkboxes.length;
             const controls = document.getElementById('batch-controls');
             const countElement = document.getElementById('selected-count');
-            
+
             if (count > 0) {
                 controls.style.display = 'block';
                 countElement.textContent = count + ' venue' + (count === 1 ? '' : 's') + ' selected';
@@ -195,66 +189,66 @@ func getPendingVenuesTemplate() string {
                 controls.style.display = 'none';
             }
         }
-        
+
         function toggleSelectAll() {
             const selectAll = document.getElementById('select-all');
             const checkboxes = document.querySelectorAll('.venue-checkbox');
-            
+
             checkboxes.forEach(checkbox => {
                 checkbox.checked = selectAll.checked;
             });
-            
+
             updateBatchControls();
         }
-        
+
         function selectAll() {
             document.querySelectorAll('.venue-checkbox').forEach(cb => cb.checked = true);
             updateBatchControls();
         }
-        
+
         function selectNone() {
             document.querySelectorAll('.venue-checkbox').forEach(cb => cb.checked = false);
             document.getElementById('select-all').checked = false;
             updateBatchControls();
         }
-        
+
         function getSelectedIds() {
             const checkboxes = document.querySelectorAll('.venue-checkbox:checked');
             return Array.from(checkboxes).map(cb => cb.value);
         }
-        
+
         function batchApprove() {
             const ids = getSelectedIds();
             if (ids.length === 0) return;
-            
+
             const reason = prompt('Reason for batch approval (optional):') || 'Batch approval';
             batchOperation('approve', ids, reason);
         }
-        
+
         function batchReject() {
             const ids = getSelectedIds();
             if (ids.length === 0) return;
-            
+
             const reason = prompt('Reason for batch rejection:');
             if (!reason) return;
-            
+
             batchOperation('reject', ids, reason);
         }
-        
+
         function batchManualReview() {
             const ids = getSelectedIds();
             if (ids.length === 0) return;
-            
+
             const reason = prompt('Reason for manual review (optional):') || 'Requires manual review';
             batchOperation('manual_review', ids, reason);
         }
-        
+
         function batchOperation(action, ids, reason) {
             const formData = new FormData();
             formData.append('action', action);
             formData.append('venue_ids', ids.join(','));
             formData.append('reason', reason);
-            
+
             fetch('/batch-operation', {
                 method: 'POST',
                 body: formData
@@ -269,27 +263,27 @@ func getPendingVenuesTemplate() string {
                 alert('Error performing batch operation');
             });
         }
-        
+
         function approveVenue(id) {
             if (confirm('Approve this venue?')) {
                 const reason = prompt('Reason (optional):') || 'Manual approval';
                 updateVenueStatus(id, 'approve', reason);
             }
         }
-        
+
         function rejectVenue(id) {
             const reason = prompt('Reason for rejection:');
             if (reason) {
                 updateVenueStatus(id, 'reject', reason);
             }
         }
-        
+
         function updateVenueStatus(id, action, reason) {
             const formData = new FormData();
             formData.append(action === 'approve' ? 'notes' : 'reason', reason);
-            
+
             const url = '/venues/' + id + '/' + action;
-            
+
             fetch(url, {
                 method: 'POST',
                 headers: {
@@ -362,7 +356,7 @@ func getVenueDetailTemplate() string {
             <p>Venue ID: {{.Venue.Venue.ID}}</p>
         </div>
     </div>
-    
+
     <div class="container">
         <nav class="nav">
             <a href="/">Dashboard</a>
@@ -370,7 +364,7 @@ func getVenueDetailTemplate() string {
             <a href="/validation/history">History</a>
             <a href="#" onclick="history.back()">← Back</a>
         </nav>
-        
+
         <div class="venue-grid">
             <div>
                 <div class="section">
@@ -407,7 +401,7 @@ func getVenueDetailTemplate() string {
                             <div class="field-value">{{.Venue.Venue.CreatedAt.Format "2006-01-02 15:04"}}</div>
                         </div>
                     </div>
-                    
+
                     {{if .Venue.Venue.AdditionalInfo}}
                         <div class="field">
                             <div class="field-label">Description</div>
@@ -417,7 +411,7 @@ func getVenueDetailTemplate() string {
                         </div>
                     {{end}}
                 </div>
-                
+
                 <div class="section">
                     <h2>Submitter Information</h2>
                     <div class="field-grid">
@@ -436,7 +430,7 @@ func getVenueDetailTemplate() string {
                         </div>
                     </div>
                 </div>
-                
+
                 {{if .History}}
                 <div class="section">
                     <h2>Validation History</h2>
@@ -473,7 +467,7 @@ func getVenueDetailTemplate() string {
                 </div>
                 {{end}}
             </div>
-            
+
             <div>
                 <div class="section">
                     <h2>Current Status</h2>
@@ -486,7 +480,7 @@ func getVenueDetailTemplate() string {
                             <span class="status-badge status-pending" style="font-size: 18px;">⏳ PENDING</span>
                         {{end}}
                     </div>
-                    
+
                     {{if eq .Venue.Venue.Active 0}}
                     <div class="action-form">
                         <h3>Manual Review</h3>
@@ -503,7 +497,7 @@ func getVenueDetailTemplate() string {
                     </div>
                     {{end}}
                 </div>
-                
+
                 {{if .SimilarVenues}}
                 <div class="section">
                     <h2>Similar Venues</h2>
@@ -516,7 +510,7 @@ func getVenueDetailTemplate() string {
                     {{end}}
                 </div>
                 {{end}}
-                
+
                 <div class="section">
                     <h2>Quick Actions</h2>
                     <a href="/venues/pending" class="btn">← Back to List</a>
@@ -526,7 +520,7 @@ func getVenueDetailTemplate() string {
             </div>
         </div>
     </div>
-    
+
     <script>
         function approveVenue() {
             const notes = document.getElementById('notes').value;
@@ -534,7 +528,7 @@ func getVenueDetailTemplate() string {
                 updateVenueStatus('approve', notes || 'Manual approval');
             }
         }
-        
+
         function rejectVenue() {
             const notes = document.getElementById('notes').value;
             if (!notes.trim()) {
@@ -545,11 +539,11 @@ func getVenueDetailTemplate() string {
                 updateVenueStatus('reject', notes);
             }
         }
-        
+
         function updateVenueStatus(action, notes) {
             const formData = new FormData();
             formData.append(action === 'approve' ? 'notes' : 'reason', notes);
-            
+
             fetch('/venues/{{.Venue.Venue.ID}}/' + action, {
                 method: 'POST',
                 body: formData
@@ -567,7 +561,7 @@ func getVenueDetailTemplate() string {
                 alert('Error updating venue status');
             });
         }
-        
+
         function flagForReview() {
             const reason = prompt('Reason for flagging this venue:');
             if (reason) {
@@ -620,7 +614,7 @@ func getValidationHistoryTemplate() string {
             <h1>📋 Validation History</h1>
         </div>
     </div>
-    
+
     <div class="container">
         <nav class="nav">
             <a href="/">Dashboard</a>
@@ -628,7 +622,7 @@ func getValidationHistoryTemplate() string {
             <a href="/validation/history" class="active">History</a>
             <a href="/analytics">Analytics</a>
         </nav>
-        
+
         <div class="section">
             <h2>Validation History ({{.Total}} total records, Page {{.Page}} of {{.TotalPages}})</h2>
             <table class="table">
@@ -680,12 +674,12 @@ func getValidationHistoryTemplate() string {
                 </tbody>
             </table>
         </div>
-        
+
         <div class="pagination">
             {{if gt .Page 1}}
                 <a href="?page={{add .Page -1}}">« Previous</a>
             {{end}}
-            
+
             {{range $i := seq 1 .TotalPages}}
                 {{if eq $i $.Page}}
                     <a href="#" class="active">{{$i}}</a>
@@ -693,13 +687,13 @@ func getValidationHistoryTemplate() string {
                     <a href="?page={{$i}}">{{$i}}</a>
                 {{end}}
             {{end}}
-            
+
             {{if lt .Page .TotalPages}}
                 <a href="?page={{add .Page 1}}">Next »</a>
             {{end}}
         </div>
     </div>
-    
+
     <script>
         function toggleNotes(element) {
             if (element.style.whiteSpace === 'normal') {
@@ -754,7 +748,7 @@ func getAnalyticsTemplate() string {
             <h1>📊 Analytics Dashboard</h1>
         </div>
     </div>
-    
+
     <div class="container">
         <nav class="nav">
             <a href="/">Dashboard</a>
@@ -762,7 +756,7 @@ func getAnalyticsTemplate() string {
             <a href="/validation/history">History</a>
             <a href="/analytics" class="active">Analytics</a>
         </nav>
-        
+
         <div class="metrics-grid">
             <div class="metric-card">
                 <div class="metric-title">🎯 Automation Rate</div>
@@ -772,26 +766,26 @@ func getAnalyticsTemplate() string {
                     <div class="progress-fill" style="width: {{.AutomationRate}}%;"></div>
                 </div>
             </div>
-            
+
             <div class="metric-card">
                 <div class="metric-title">💰 Cost Efficiency</div>
                 <div class="metric-value">${{printf "%.3f" .CostPerVenue}}</div>
                 <div class="metric-subtitle">Average cost per venue</div>
             </div>
-            
+
             <div class="metric-card">
                 <div class="metric-title">⚡ Processing Speed</div>
                 <div class="metric-value">{{.ProcessingStats.AverageTimeMs}}ms</div>
                 <div class="metric-subtitle">Average processing time</div>
             </div>
-            
+
             <div class="metric-card">
                 <div class="metric-title">📈 Success Rate</div>
                 <div class="metric-value">{{if gt .ProcessingStats.TotalJobs 0}}{{printf "%.1f%%" (mul (div (add .ProcessingStats.SuccessfulJobs 0.0) (add .ProcessingStats.TotalJobs 0.0)) 100)}}{{else}}0.0%{{end}}</div>
                 <div class="metric-subtitle">Processing success rate</div>
             </div>
         </div>
-        
+
         <div class="section">
             <h2>Processing Statistics</h2>
             <div class="stat-row">
@@ -823,7 +817,7 @@ func getAnalyticsTemplate() string {
                 <span style="color: #f39c12;">{{.ProcessingStats.ManualReview}} ({{if gt .ProcessingStats.TotalJobs 0}}{{printf "%.1f%%" (mul (div (add .ProcessingStats.ManualReview 0.0) (add .ProcessingStats.TotalJobs 0.0)) 100)}}{{else}}0%{{end}})</span>
             </div>
         </div>
-        
+
         <div class="section">
             <h2>API Usage & Costs</h2>
             <div class="cost-breakdown">
@@ -845,7 +839,7 @@ func getAnalyticsTemplate() string {
                 </div>
             </div>
         </div>
-        
+
         <div class="section">
             <h2>System Performance</h2>
             <div class="stat-row">
@@ -869,7 +863,7 @@ func getAnalyticsTemplate() string {
                 <span>{{.ProcessingStats.LastActivity.Sub .ProcessingStats.StartTime}}</span>
             </div>
         </div>
-        
+
         {{if .VenueStats}}
         <div class="section">
             <h2>Venue Database Statistics</h2>
@@ -892,7 +886,7 @@ func getAnalyticsTemplate() string {
         </div>
         {{end}}
     </div>
-    
+
     <script>
         // Auto-refresh every 60 seconds
         setInterval(function() {
@@ -902,3 +896,5 @@ func getAnalyticsTemplate() string {
 </body>
 </html>`
 }
+
+*/
