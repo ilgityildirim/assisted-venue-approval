@@ -123,6 +123,54 @@ func PendingVenuesHandler(db *database.DB) http.HandlerFunc {
 	}
 }
 
+// ManualReviewHandler lists venues pending manual review (those with validation history and still active=0)
+func ManualReviewHandler(db *database.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		search := r.URL.Query().Get("search")
+		page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+		if page < 1 {
+			page = 1
+		}
+		limit := 50
+		offset := (page - 1) * limit
+
+		venues, scores, total, err := db.GetManualReviewVenues(search, limit, offset)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Error fetching manual review venues: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		// Build a view model combining scores with venues for the template
+		type Item struct {
+			VenueWithUser models.VenueWithUser
+			Score         int
+		}
+		items := make([]Item, 0, len(venues))
+		for i := range venues {
+			items = append(items, Item{VenueWithUser: venues[i], Score: scores[i]})
+		}
+
+		data := struct {
+			Items      []Item
+			Total      int
+			Page       int
+			TotalPages int
+			Search     string
+		}{
+			Items:      items,
+			Total:      total,
+			Page:       page,
+			TotalPages: (total + limit - 1) / limit,
+			Search:     search,
+		}
+
+		if err := ExecuteTemplate(w, "manual_review.tmpl", data); err != nil {
+			http.Error(w, fmt.Sprintf("template error: %v", err), http.StatusInternalServerError)
+			return
+		}
+	}
+}
+
 func ApproveVenueHandler(db *database.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
@@ -246,14 +294,22 @@ func VenueDetailHandler(db *database.DB) http.HandlerFunc {
 			similarVenues = []models.Venue{}
 		}
 
+		// Get cached Google Places data if available
+		googleData, err := db.GetCachedGooglePlaceData(id)
+		if err != nil {
+			log.Printf("Error fetching cached Google data: %v", err)
+		}
+
 		data := struct {
 			Venue         models.VenueWithUser
 			History       []models.ValidationHistory
 			SimilarVenues []models.Venue
+			GoogleData    *models.GooglePlaceData
 		}{
 			Venue:         *venue,
 			History:       history,
 			SimilarVenues: similarVenues,
+			GoogleData:    googleData,
 		}
 
 		if err := ExecuteTemplate(w, "venue_detail.tmpl", data); err != nil {

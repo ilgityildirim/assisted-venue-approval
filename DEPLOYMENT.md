@@ -16,7 +16,7 @@ This guide covers the deployment of the Venue Validation System in production en
 
 ### Required Software
 
-- **Go**: Version 1.21+ (for building from source)
+- **Go**: Version 1.25+ (for building from source)
 - **PostgreSQL**: Client tools (`postgresql-client`)
 - **systemd**: For service management
 - **curl**: For health checks and API calls

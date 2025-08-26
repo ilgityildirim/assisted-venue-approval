@@ -922,3 +922,129 @@ func (db *DB) HasRecentValidationHistory(venueID int64, hours int) (bool, error)
 
 	return count > 0, nil
 }
+
+// GetManualReviewVenues returns pending venues (active=0) that have validation history
+// along with their latest validation score. Supports optional search and pagination.
+func (db *DB) GetManualReviewVenues(search string, limit, offset int) ([]models.VenueWithUser, []int, int, error) {
+	where := "WHERE v.active = 0 AND EXISTS (SELECT 1 FROM venue_validation_histories h WHERE h.venue_id = v.id)"
+	args := []interface{}{}
+	if search != "" {
+		where += " AND (v.name LIKE ? OR v.location LIKE ? OR m.username LIKE ?)"
+		sp := "%" + search + "%"
+		args = append(args, sp, sp, sp)
+	}
+
+	// total count
+	countQuery := fmt.Sprintf(`SELECT COUNT(*) FROM venues v 
+        LEFT JOIN members m ON v.user_id = m.id %s`, where)
+	var total int
+	if err := db.conn.QueryRow(countQuery, args...).Scan(&total); err != nil {
+		return nil, nil, 0, fmt.Errorf("failed to count manual review venues: %w", err)
+	}
+
+	// fetch rows with latest score
+	query := fmt.Sprintf(`SELECT 
+        v.id, v.path, v.entrytype, v.name, v.url, v.fburl, v.instagram_url,
+        v.location, v.zipcode, v.phone, v.other_food_type, v.price, v.additionalinfo,
+        v.vdetails, v.openhours, v.openhours_note, v.timezone, v.hash, v.email,
+        v.ownername, v.sentby, v.user_id, v.active, v.vegonly, v.vegan, v.sponsor_level,
+        v.crossstreet, v.lat, v.lng, v.created_at, v.date_added, v.date_updated,
+        v.admin_last_update, v.admin_note, v.admin_hold, v.admin_hold_email_note,
+        v.updated_by_id, v.made_active_by_id, v.made_active_at, v.show_premium,
+        v.category, v.pretty_url, v.edit_lock, v.request_vegan_decal_at,
+        v.request_excellent_decal_at, v.source,
+        m.id as member_id, m.username, m.trusted,
+        va.venue_id IS NOT NULL as is_venue_admin,
+        a.level as ambassador_level, a.points as ambassador_points, a.path as ambassador_path,
+        (
+          SELECT vvh.validation_score 
+          FROM venue_validation_histories vvh 
+          WHERE vvh.venue_id = v.id 
+          ORDER BY vvh.processed_at DESC 
+          LIMIT 1
+        ) as latest_score
+        FROM venues v
+        LEFT JOIN members m ON v.user_id = m.id
+        LEFT JOIN venue_admin va ON v.id = va.venue_id AND m.id = va.user_id
+        LEFT JOIN ambassadors a ON m.id = a.user_id
+        %s
+        ORDER BY v.admin_last_update DESC, v.created_at DESC
+        LIMIT ? OFFSET ?`, where)
+
+	argsRows := append([]interface{}{}, args...)
+	argsRows = append(argsRows, limit, offset)
+	rows, err := db.conn.Query(query, argsRows...)
+	if err != nil {
+		return nil, nil, 0, fmt.Errorf("failed to query manual review venues: %w", err)
+	}
+	defer rows.Close()
+
+	var venues []models.VenueWithUser
+	var scores []int
+	for rows.Next() {
+		var venueWithUser models.VenueWithUser
+		var venue models.Venue
+		var user models.User
+		var isVenueAdmin bool
+		var ambassadorLevel, ambassadorPoints sql.NullInt64
+		var ambassadorPath sql.NullString
+		var memberID sql.NullInt64
+		var username sql.NullString
+		var trusted sql.NullInt64
+		var latestScore sql.NullInt64
+
+		if err := rows.Scan(
+			&venue.ID, &venue.Path, &venue.EntryType, &venue.Name, &venue.URL,
+			&venue.FBUrl, &venue.InstagramUrl, &venue.Location, &venue.Zipcode,
+			&venue.Phone, &venue.OtherFoodType, &venue.Price, &venue.AdditionalInfo,
+			&venue.VDetails, &venue.OpenHours, &venue.OpenHoursNote, &venue.Timezone,
+			&venue.Hash, &venue.Email, &venue.OwnerName, &venue.SentBy, &venue.UserID,
+			&venue.Active, &venue.VegOnly, &venue.Vegan, &venue.SponsorLevel,
+			&venue.CrossStreet, &venue.Lat, &venue.Lng, &venue.CreatedAt,
+			&venue.DateAdded, &venue.DateUpdated, &venue.AdminLastUpdate,
+			&venue.AdminNote, &venue.AdminHold, &venue.AdminHoldEmailNote,
+			&venue.UpdatedByID, &venue.MadeActiveByID, &venue.MadeActiveAt,
+			&venue.ShowPremium, &venue.Category, &venue.PrettyUrl, &venue.EditLock,
+			&venue.RequestVeganDecalAt, &venue.RequestExcellentDecalAt, &venue.Source,
+			&memberID, &username, &trusted,
+			&isVenueAdmin, &ambassadorLevel, &ambassadorPoints, &ambassadorPath,
+			&latestScore,
+		); err != nil {
+			return nil, nil, 0, fmt.Errorf("failed to scan manual review venue row: %w", err)
+		}
+
+		if memberID.Valid {
+			user.ID = uint(memberID.Int64)
+		} else {
+			user.ID = venue.UserID
+		}
+		if username.Valid {
+			user.Username = username.String
+		}
+		if trusted.Valid {
+			user.Trusted = trusted.Int64 > 0
+		}
+
+		venueWithUser.Venue = venue
+		venueWithUser.User = user
+		venueWithUser.IsVenueAdmin = isVenueAdmin
+		if ambassadorLevel.Valid {
+			venueWithUser.AmbassadorLevel = &ambassadorLevel.Int64
+		}
+		if ambassadorPoints.Valid {
+			venueWithUser.AmbassadorPoints = &ambassadorPoints.Int64
+		}
+		if ambassadorPath.Valid {
+			venueWithUser.AmbassadorPath = &ambassadorPath.String
+		}
+
+		venues = append(venues, venueWithUser)
+		if latestScore.Valid {
+			scores = append(scores, int(latestScore.Int64))
+		} else {
+			scores = append(scores, 0)
+		}
+	}
+
+	return venues, scores, total, nil
+}

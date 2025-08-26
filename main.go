@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	_ "github.com/joho/godotenv/autoload"
 
 	"automatic-vendor-validation/internal/admin"
+	"automatic-vendor-validation/internal/models"
 	"automatic-vendor-validation/internal/processor"
 	"automatic-vendor-validation/internal/scorer"
 	"automatic-vendor-validation/internal/scraper"
@@ -97,9 +99,11 @@ func main() {
 
 	// Venue management
 	router.HandleFunc("/venues/pending", admin.PendingVenuesHandler(db)).Methods("GET")
+	router.HandleFunc("/venues/manual-review", admin.ManualReviewHandler(db)).Methods("GET")
 	router.HandleFunc("/venues/{id}", admin.VenueDetailHandler(db)).Methods("GET")
 	router.HandleFunc("/venues/{id}/approve", admin.ApproveVenueHandler(db)).Methods("POST")
 	router.HandleFunc("/venues/{id}/reject", admin.RejectVenueHandler(db)).Methods("POST")
+	router.HandleFunc("/venues/{id}/validate", app.validateSingleHandler).Methods("POST")
 
 	// Batch operations
 	router.HandleFunc("/batch-operation", admin.BatchOperationHandler(db)).Methods("POST")
@@ -175,6 +179,44 @@ func (app *App) validateHandler(w http.ResponseWriter, r *http.Request) {
 
 	fmt.Fprintf(w, "Successfully queued %d venues for processing\n", len(venuesWithUser))
 	fmt.Fprintf(w, "Check /validate/stats for real-time processing statistics\n")
+}
+
+// validateSingleHandler starts AI-assisted review for a single venue
+func (app *App) validateSingleHandler(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	idStr, ok := vars["id"]
+	if !ok {
+		http.Error(w, "missing venue id", http.StatusBadRequest)
+		return
+	}
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		http.Error(w, "invalid venue id", http.StatusBadRequest)
+		return
+	}
+
+	venueWithUser, err := app.db.GetVenueWithUserByID(id)
+	if err != nil || venueWithUser == nil {
+		http.Error(w, fmt.Sprintf("Venue not found: %v", err), http.StatusNotFound)
+		return
+	}
+
+	// Start processing engine if not already running
+	app.engine.Start()
+	// Ensure score-only mode for this run
+	app.engine.SetScoreOnly(true)
+
+	// Queue just this venue for processing
+	if err := app.engine.ProcessVenuesWithUsers([]models.VenueWithUser{*venueWithUser}); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to queue venue for processing: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":  "queued",
+		"venueId": id,
+	})
 }
 
 // statsHandler returns real-time processing statistics
