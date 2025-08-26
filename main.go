@@ -94,7 +94,7 @@ func main() {
 
 	// Processing controls
 	router.HandleFunc("/validate", app.validateHandler).Methods("POST")
-	router.HandleFunc("/validate/stats", app.statsHandler).Methods("GET")
+	// Removed /validate/stats endpoint
 	router.HandleFunc("/api/stats", admin.APIStatsHandler(db, processingEngine)).Methods("GET")
 
 	// Venue management
@@ -162,8 +162,26 @@ func (app *App) validateHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Printf("Starting processing of %d venues", len(venuesWithUser))
-	fmt.Fprintf(w, "Starting concurrent processing of %d venues...\n", len(venuesWithUser))
+	// Filter out venues that already have at least one validation history (batch should skip those)
+	filtered := make([]models.VenueWithUser, 0, len(venuesWithUser))
+	for _, vw := range venuesWithUser {
+		hasHist, err := app.db.HasAnyValidationHistory(vw.Venue.ID)
+		if err != nil {
+			log.Printf("Error checking validation history for venue %d: %v", vw.Venue.ID, err)
+			continue
+		}
+		if !hasHist {
+			filtered = append(filtered, vw)
+		}
+	}
+
+	if len(filtered) == 0 {
+		fmt.Fprintf(w, "All pending venues already have validation history; nothing to process\n")
+		return
+	}
+
+	log.Printf("Starting processing of %d venues (filtered from %d)", len(filtered), len(venuesWithUser))
+	fmt.Fprintf(w, "Starting concurrent processing of %d venues...\n", len(filtered))
 
 	// Start processing engine if not already running
 	app.engine.Start()
@@ -172,13 +190,12 @@ func (app *App) validateHandler(w http.ResponseWriter, r *http.Request) {
 	app.engine.SetScoreOnly(true)
 
 	// Add venues to processing queue
-	if err := app.engine.ProcessVenuesWithUsers(venuesWithUser); err != nil {
+	if err := app.engine.ProcessVenuesWithUsers(filtered); err != nil {
 		http.Error(w, fmt.Sprintf("Failed to queue venues for processing: %v", err), http.StatusInternalServerError)
 		return
 	}
 
-	fmt.Fprintf(w, "Successfully queued %d venues for processing\n", len(venuesWithUser))
-	fmt.Fprintf(w, "Check /validate/stats for real-time processing statistics\n")
+	fmt.Fprintf(w, "Successfully queued %d venues for processing\n", len(filtered))
 }
 
 // validateSingleHandler starts AI-assisted review for a single venue
@@ -217,16 +234,4 @@ func (app *App) validateSingleHandler(w http.ResponseWriter, r *http.Request) {
 		"status":  "queued",
 		"venueId": id,
 	})
-}
-
-// statsHandler returns real-time processing statistics
-func (app *App) statsHandler(w http.ResponseWriter, r *http.Request) {
-	stats := app.engine.GetStats()
-
-	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(stats); err != nil {
-		log.Printf("Failed to encode stats: %v", err)
-		http.Error(w, "Failed to encode statistics", http.StatusInternalServerError)
-		return
-	}
 }

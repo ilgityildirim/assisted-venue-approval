@@ -912,7 +912,7 @@ func (db *DB) GetCachedGooglePlaceData(venueID int64) (*models.GooglePlaceData, 
 // HasRecentValidationHistory checks if venue has been validated recently
 func (db *DB) HasRecentValidationHistory(venueID int64, hours int) (bool, error) {
 	query := `SELECT COUNT(*) FROM venue_validation_histories 
-              WHERE venue_id = ? AND processed_at > DATE_SUB(NOW(), INTERVAL ? HOUR)`
+             WHERE venue_id = ? AND processed_at > DATE_SUB(NOW(), INTERVAL ? HOUR)`
 
 	var count int
 	err := db.conn.QueryRow(query, venueID, hours).Scan(&count)
@@ -920,6 +920,17 @@ func (db *DB) HasRecentValidationHistory(venueID int64, hours int) (bool, error)
 		return false, fmt.Errorf("failed to check recent validation history: %w", err)
 	}
 
+	return count > 0, nil
+}
+
+// HasAnyValidationHistory checks if venue has at least one validation history record
+func (db *DB) HasAnyValidationHistory(venueID int64) (bool, error) {
+	query := `SELECT COUNT(*) FROM venue_validation_histories WHERE venue_id = ?`
+	var count int
+	err := db.conn.QueryRow(query, venueID).Scan(&count)
+	if err != nil {
+		return false, fmt.Errorf("failed to check any validation history: %w", err)
+	}
 	return count > 0, nil
 }
 

@@ -60,27 +60,19 @@
         
         <div class="stats-grid">
             <div class="stat-card">
-                <div class="stat-number">{{.Stats.TotalJobs}}</div>
-                <div class="stat-label">Total Venues Processed</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-number">{{.Stats.AutoApproved}}</div>
-                <div class="stat-label">Auto-Approved</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-number">{{.Stats.AutoRejected}}</div>
-                <div class="stat-label">Auto-Rejected</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-number">{{.Stats.ManualReview}}</div>
-                <div class="stat-label">Manual Review</div>
-            </div>
-            <div class="stat-card">
                 <div class="stat-number">{{.PendingTotal}}</div>
-                <div class="stat-label">Pending Venues</div>
+                <div class="stat-label">Total Pending Venues</div>
             </div>
             <div class="stat-card">
-                <div class="stat-number">${{printf "%.2f" .Stats.TotalCostUSD}}</div>
+                <div class="stat-number">{{.AssistedReady}}</div>
+                <div class="stat-label">AI-Assisted Reviews Ready</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">{{.PendingWithoutAI}}</div>
+                <div class="stat-label">Pending Venues Without AI-Reviews</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-number">$0.00</div>
                 <div class="stat-label">Total API Costs</div>
             </div>
         </div>
@@ -108,10 +100,8 @@
             <h2>Processing Controls</h2>
             <div class="processing-controls">
                 <form action="/validate" method="POST" style="display: inline;">
-                    <button type="submit" class="btn btn-success">🚀 Start AI-Assisted Review</button>
+                    <button type="submit" class="btn btn-success">🚀 Start AI-Assisted Reviews for {{.PendingTotal}} Venues</button>
                 </form>
-                <a href="/validate/stats" class="btn">📊 Real-time Stats</a>
-                <a href="/venues/pending" class="btn">📋 Review Queue</a>
             </div>
         </div>
         

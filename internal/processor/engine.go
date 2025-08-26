@@ -481,6 +481,11 @@ func (e *ProcessingEngine) processJob(job ProcessingJob) ProcessingResult {
 			break
 		}
 
+		// Preserve any Google data we obtained, even if AI failed or other errors occurred
+		if googleData != nil {
+			result.GoogleData = googleData
+		}
+
 		// Check if error is retryable
 		if !e.isRetryableError(err) {
 			log.Printf("Non-retryable error for venue %d: %v", venue.ID, err)
@@ -511,10 +516,16 @@ func (e *ProcessingEngine) processVenueWithRateLimit(ctx context.Context, venue 
 	}
 	atomic.AddInt64(&e.stats.APICallsGoogle, 1)
 
+	// Prepare Google data (if any) early so we can return it even on AI failure
+	var gData *models.GooglePlaceData
+	if enhancedVenue.GoogleData != nil {
+		gData = enhancedVenue.GoogleData
+	}
+
 	// Rate limit OpenAI API call (only if needed for basic venues or vegan relevance)
 	if enhancedVenue.ValidationDetails == nil || !enhancedVenue.ValidationDetails.GooglePlaceFound {
 		if err := e.openAIRateLimit.Wait(ctx); err != nil {
-			return nil, nil, fmt.Errorf("openai rate limit wait cancelled: %w", err)
+			return nil, gData, fmt.Errorf("openai rate limit wait cancelled: %w", err)
 		}
 	}
 
@@ -522,7 +533,7 @@ func (e *ProcessingEngine) processVenueWithRateLimit(ctx context.Context, venue 
 	validationResult, err := e.scorer.ScoreVenue(ctx, *enhancedVenue)
 	if err != nil {
 		atomic.AddInt64(&e.stats.APICallsOpenAI, 1)
-		return nil, nil, fmt.Errorf("failed to score venue: %w", err)
+		return nil, gData, fmt.Errorf("failed to score venue: %w", err)
 	}
 	atomic.AddInt64(&e.stats.APICallsOpenAI, 1)
 
@@ -543,10 +554,6 @@ func (e *ProcessingEngine) processVenueWithRateLimit(ctx context.Context, venue 
 	}
 	validationResult.ScoreBreakdown["quality_flags"] = len(decisionResult.QualityFlags)
 
-	var gData *models.GooglePlaceData
-	if enhancedVenue.GoogleData != nil {
-		gData = enhancedVenue.GoogleData
-	}
 	return validationResult, gData, nil
 }
 
@@ -679,6 +686,20 @@ func (e *ProcessingEngine) handleFailedResult(result ProcessingResult) {
 	// Update venue to require manual review
 	if err := e.db.UpdateVenueStatus(result.VenueID, 0, notes, nil); err != nil {
 		log.Printf("Failed to update failed venue %d status: %v", result.VenueID, err)
+	}
+
+	// If we have Google Places data, persist it to validation history even when AI scoring failed
+	if result.GoogleData != nil {
+		vr := &models.ValidationResult{
+			VenueID:        result.VenueID,
+			Score:          0,
+			Status:         "manual_review",
+			Notes:          "AI scoring failed; saved Google data for manual review",
+			ScoreBreakdown: map[string]int{"google_data_only": 1},
+		}
+		if err := e.db.SaveValidationResultWithGoogleData(vr, result.GoogleData); err != nil {
+			log.Printf("Failed to save Google data on failure for venue %d: %v", result.VenueID, err)
+		}
 	}
 
 	log.Printf("Failed to process venue %d after %d retries: %v", result.VenueID, result.Retries, result.Error)

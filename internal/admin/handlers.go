@@ -18,11 +18,13 @@ import (
 
 // DashboardData represents data for the validation dashboard
 type DashboardData struct {
-	Stats         processor.ProcessingStats
-	PendingVenues []models.VenueWithUser
-	PendingTotal  int
-	RecentResults []models.ValidationResult
-	SystemHealth  SystemHealth
+	Stats            processor.ProcessingStats
+	PendingVenues    []models.VenueWithUser
+	PendingTotal     int
+	AssistedReady    int
+	PendingWithoutAI int
+	RecentResults    []models.ValidationResult
+	SystemHealth     SystemHealth
 }
 
 type SystemHealth struct {
@@ -61,12 +63,25 @@ func HomeHandler(db *database.DB, engine *processor.ProcessingEngine) http.Handl
 
 		pendingTotal := len(venuesWithUser)
 
+		// Count pending venues that already have AI-assisted review results (validation history)
+		_, _, assistedTotal, err := db.GetManualReviewVenues("", 1, 0)
+		if err != nil {
+			log.Printf("Error fetching manual review count: %v", err)
+			assistedTotal = 0
+		}
+		pendingWithoutAI := pendingTotal - assistedTotal
+		if pendingWithoutAI < 0 {
+			pendingWithoutAI = 0
+		}
+
 		dashboardData := DashboardData{
-			Stats:         stats,
-			PendingVenues: venuesWithUser[:min(len(venuesWithUser), 100)],
-			PendingTotal:  pendingTotal,
-			RecentResults: recentResults,
-			SystemHealth:  health,
+			Stats:            stats,
+			PendingVenues:    venuesWithUser[:min(len(venuesWithUser), 100)],
+			PendingTotal:     pendingTotal,
+			AssistedReady:    assistedTotal,
+			PendingWithoutAI: pendingWithoutAI,
+			RecentResults:    recentResults,
+			SystemHealth:     health,
 		}
 
 		if err := ExecuteTemplate(w, "dashboard.tmpl", dashboardData); err != nil {

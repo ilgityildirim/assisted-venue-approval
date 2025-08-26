@@ -42,6 +42,7 @@
         <nav class="nav">
             <a href="/">Dashboard</a>
             <a href="/venues/pending">Pending Venues</a>
+            <a href="/venues/manual-review">Pending Manual Review</a>
             <a href="/validation/history" class="active">History</a>
             <a href="/analytics">Analytics</a>
         </nav>
@@ -64,34 +65,34 @@
                 <tbody>
                     {{range .History}}
                     <tr>
-                        <td>{{.CreatedAt.Format "2006-01-02 15:04"}}</td>
+                        <td>{{.ProcessedAt.Format "2006-01-02 15:04"}}</td>
                         <td><a href="/venues/{{.VenueID}}">{{.VenueID}}</a></td>
                         <td>{{.VenueName}}</td>
                         <td>
-                            {{if eq .Status "approved"}}
+                            {{if eq .ValidationStatus "approved"}}
                                 <span class="status-badge status-approved">Approved</span>
-                            {{else if eq .Status "rejected"}}
+                            {{else if eq .ValidationStatus "rejected"}}
                                 <span class="status-badge status-rejected">Rejected</span>
                             {{else}}
                                 <span class="status-badge status-pending">Review</span>
                             {{end}}
                         </td>
                         <td>
-                            {{if ge .Score 85}}
-                                <span class="score-badge score-high">{{.Score}}</span>
-                            {{else if ge .Score 50}}
-                                <span class="score-badge score-medium">{{.Score}}</span>
+                            {{if ge .ValidationScore 85}}
+                                <span class="score-badge score-high">{{.ValidationScore}}</span>
+                            {{else if ge .ValidationScore 50}}
+                                <span class="score-badge score-medium">{{.ValidationScore}}</span>
                             {{else}}
-                                <span class="score-badge score-low">{{.Score}}</span>
+                                <span class="score-badge score-low">{{.ValidationScore}}</span>
                             {{end}}
                         </td>
                         <td>
                             <div class="expandable-notes" onclick="toggleNotes(this)" title="Click to expand">
-                                {{.Notes}}
+                                {{.ValidationNotes}}
                             </div>
                         </td>
-                        <td>{{if .ReviewedBy}}{{.ReviewedBy}}{{else}}System{{end}}</td>
-                        <td>{{if .ProcessingTimeMs}}{{.ProcessingTimeMs}}ms{{else}}N/A{{end}}</td>
+                        <td>System</td>
+                        <td>N/A</td>
                     </tr>
                     {{end}}
                 </tbody>

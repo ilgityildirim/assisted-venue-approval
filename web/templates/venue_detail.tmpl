@@ -139,19 +139,19 @@
                         <tbody>
                             {{range .History}}
                             <tr>
-                                <td>{{.CreatedAt.Format "2006-01-02 15:04"}}</td>
+                                <td>{{.ProcessedAt.Format "2006-01-02 15:04"}}</td>
                                 <td>
-                                    {{if eq .Status "approved"}}
+                                    {{if eq .ValidationStatus "approved"}}
                                         <span class="status-badge status-approved">Approved</span>
-                                    {{else if eq .Status "rejected"}}
+                                    {{else if eq .ValidationStatus "rejected"}}
                                         <span class="status-badge status-rejected">Rejected</span>
                                     {{else}}
                                         <span class="status-badge status-pending">Review</span>
                                     {{end}}
                                 </td>
-                                <td>{{.Score}}</td>
-                                <td>{{.Notes}}</td>
-                                <td>{{if .ReviewedBy}}{{.ReviewedBy}}{{else}}System{{end}}</td>
+                                <td>{{.ValidationScore}}</td>
+                                <td>{{.ValidationNotes}}</td>
+                                <td>System</td>
                             </tr>
                             {{end}}
                         </tbody>
