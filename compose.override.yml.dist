@@ -1,0 +1,70 @@
+# Docker Compose Override Example
+# Copy this file to docker-compose.override.yml and customize for your environment
+version: '3.8'
+
+services:
+  app:
+    environment:
+      # Development overrides
+      LOG_LEVEL: debug
+      PROFILING_ENABLED: true
+      
+      # Custom API endpoints
+      # WEBHOOK_URL: https://your-webhook-endpoint.com/alerts
+      # SLACK_WEBHOOK_URL: https://hooks.slack.com/services/YOUR/SLACK/WEBHOOK
+      
+      # Email notifications
+      # EMAIL_SMTP_HOST: smtp.gmail.com
+      # EMAIL_SMTP_PORT: 587
+      # EMAIL_USER: your-email@gmail.com
+      # EMAIL_PASSWORD: your-app-password
+      # EMAIL_FROM: alerts@yourcompany.com
+      # EMAIL_TO: admin@yourcompany.com,ops@yourcompany.com
+      
+    # Development volumes for live reload (if using air or similar)
+    volumes:
+      - ./:/app:cached
+      - app_logs:/var/log/venue-validation
+    
+    # Override healthcheck for development
+    healthcheck:
+      interval: 10s
+      timeout: 5s
+
+  database:
+    environment:
+      # Development database settings
+      POSTGRES_PASSWORD: development_password_change_me
+    # Expose database for external tools
+    ports:
+      - "5433:5432"
+    
+    # Development database initialization
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init:/docker-entrypoint-initdb.d:ro
+      - ./database/dev-data:/docker-entrypoint-initdb.d/dev:ro
+
+  # Development tools
+  adminer:
+    image: adminer:4-standalone
+    container_name: venue-validation-adminer
+    ports:
+      - "8090:8080"
+    environment:
+      ADMINER_DEFAULT_SERVER: database
+      ADMINER_DESIGN: pepa-linha
+    depends_on:
+      - database
+    networks:
+      - venue-validation-network
+
+  # Remove production components for development
+  nginx:
+    profiles: ["production"]
+  
+  prometheus:
+    profiles: ["monitoring"]
+    
+  grafana:
+    profiles: ["monitoring"]

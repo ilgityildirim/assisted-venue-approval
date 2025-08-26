@@ -1,0 +1,61 @@
+version: '3'
+
+tasks:
+  build:
+    desc: Build all Docker containers
+    cmds:
+      - docker compose build
+
+  up:
+    desc: Start all services in detached mode
+    cmds:
+      - docker compose up -d
+
+  up-logs:
+    desc: Start all services and follow logs
+    cmds:
+      - docker compose up
+
+  down:
+    desc: Stop and remove all containers
+    cmds:
+      - docker compose down
+
+  stop:
+    desc: Stop all running containers
+    cmds:
+      - docker compose stop
+
+  restart:
+    desc: Restart all services
+    cmds:
+      - docker compose restart
+
+  clean:
+    desc: Stop containers and remove volumes
+    cmds:
+      - docker compose down -v
+
+  rebuild:
+    desc: Clean rebuild - stop, remove, build, and start
+    cmds:
+      - task: down
+      - task: build
+      - task: up
+
+  health:
+    desc: Check application health
+    cmds:
+      - curl -s http://localhost:8081/health | jq .
+
+  status:
+    desc: Show application status and stats
+    cmds:
+      - echo "=== Container Status ==="
+      - docker-compose -f {{.COMPOSE_FILE}} ps
+      - echo ""
+      - echo "=== Application Health ==="
+      - curl -s http://localhost:8081/health || echo "Health endpoint unavailable"
+      - echo ""
+      - echo "=== Processing Stats ==="
+      - curl -s http://localhost:8080/validate/stats || echo "Stats endpoint unavailable"

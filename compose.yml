@@ -1,0 +1,63 @@
+networks:
+  happycow-web_happycow:
+    external: true
+
+volumes:
+  go-cache:
+    driver: local
+  app_logs:
+    driver: local
+  nginx_logs:
+    driver: local
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: docker/go/Dockerfile
+    container_name: venue-validation-app
+    command: ["go", "run", "."]
+    environment:
+      # Database Configuration (MySQL)
+      DATABASE_URL: ${DATABASE_URL}
+      
+      # API Keys (must be provided via .env file or environment)
+      GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      
+      # Server Configuration
+      PORT: 8080
+      HEALTH_CHECK_PORT: 8081
+      
+      # Processing Configuration
+      APPROVAL_THRESHOLD: ${APPROVAL_THRESHOLD:-75}
+      WORKER_COUNT: ${WORKER_COUNT:-5}
+      
+      # Database Connection Pool
+      DB_MAX_OPEN_CONNS: ${DB_MAX_OPEN_CONNS:-25}
+      DB_MAX_IDLE_CONNS: ${DB_MAX_IDLE_CONNS:-10}
+      DB_CONN_MAX_LIFETIME_MINUTES: ${DB_CONN_MAX_LIFETIME_MINUTES:-15}
+      DB_CONN_MAX_IDLE_TIME_MINUTES: ${DB_CONN_MAX_IDLE_TIME_MINUTES:-5}
+      
+      # Logging Configuration
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      LOG_FORMAT: ${LOG_FORMAT:-json}
+      ENABLE_FILE_LOGGING: ${ENABLE_FILE_LOGGING:-false}
+
+    ports:
+      - "8080:8080"   # Main application
+      - "8081:8081"   # Health checks
+    
+    volumes:
+      # Mount the project directory for live development
+      - .:/app
+      # Mount Go modules cache
+      - go-cache:/go/pkg/mod
+      # Mount logs directory if file logging is enabled
+      - app_logs:/var/log/venue-validation
+    
+    depends_on: []
+    
+#    restart: unless-stopped
+    networks:
+      - happycow-web_happycow

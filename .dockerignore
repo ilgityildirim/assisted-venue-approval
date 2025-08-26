@@ -1,0 +1,75 @@
+# Git files
+.git
+.gitignore
+.gitattributes
+
+# Documentation
+README.md
+DEPLOYMENT.md
+DEVELOPMENT_PLAN.md
+PROJECT_SPEC.md
+*.md
+
+# Development files
+.env
+.env.local
+.env.dist
+
+# Build artifacts
+venue-validation
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Test files
+*_test.go
+testdata/
+test/
+tests/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Log files
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Coverage files
+*.out
+coverage.html
+
+# Backup files
+*.bak
+*.backup
+
+# Node.js (if any frontend build tools)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Scripts (deployment specific)
+scripts/
+
+# Local development
+.devcontainer/
+docker-compose.override.yml
