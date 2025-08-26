@@ -143,7 +143,7 @@ func getPendingVenuesTemplate() string {
                                     <div><strong>Phone:</strong> {{if .Venue.Phone}}{{.Venue.Phone}}{{else}}N/A{{end}}</div>
                                     <div><strong>Website:</strong> {{if .Venue.URL}}<a href="{{.Venue.URL}}" target="_blank">{{.Venue.URL}}</a>{{else}}N/A{{end}}</div>
                                     <div><strong>Vegan Level:</strong> {{.Venue.Vegan}}/{{.Venue.VegOnly}}</div>
-                                    <div><strong>Created:</strong> {{.Venue.DateEntered.Format "2006-01-02"}}</div>
+                                    <div><strong>Created:</strong> {{.Venue.CreatedAt.Format "2006-01-02"}}</div>
                                 </div>
                                 {{if .Venue.AdditionalInfo}}
                                     <div style="margin-top: 10px;"><strong>Description:</strong></div>
@@ -404,7 +404,7 @@ func getVenueDetailTemplate() string {
                         </div>
                         <div class="field">
                             <div class="field-label">Date Added</div>
-                            <div class="field-value">{{.Venue.Venue.DateEntered.Format "2006-01-02 15:04"}}</div>
+                            <div class="field-value">{{.Venue.Venue.CreatedAt.Format "2006-01-02 15:04"}}</div>
                         </div>
                     </div>
                     

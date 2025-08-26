@@ -84,6 +84,11 @@ func PendingVenuesHandler(db *database.DB) http.HandlerFunc {
 		limit := 50
 		offset := (page - 1) * limit
 
+		// Default to pending status if none specified
+		if status == "" {
+			status = "pending"
+		}
+
 		// Get filtered venues
 		venues, total, err := db.GetVenuesFiltered(status, search, limit, offset)
 		if err != nil {
@@ -108,7 +113,17 @@ func PendingVenuesHandler(db *database.DB) http.HandlerFunc {
 		}
 
 		tmpl := getPendingVenuesTemplate()
-		t := template.Must(template.New("pending").Parse(tmpl))
+		funcMap := template.FuncMap{
+			"add": func(a, b int) int { return a + b },
+			"seq": func(start, end int) []int {
+				var seq []int
+				for i := start; i <= end; i++ {
+					seq = append(seq, i)
+				}
+				return seq
+			},
+		}
+		t := template.Must(template.New("pending").Funcs(funcMap).Parse(tmpl))
 		t.Execute(w, data)
 	}
 }
@@ -373,7 +388,17 @@ func ValidationHistoryHandler(db *database.DB) http.HandlerFunc {
 		}
 
 		tmpl := getValidationHistoryTemplate()
-		t := template.Must(template.New("history").Parse(tmpl))
+		funcMap := template.FuncMap{
+			"add": func(a, b int) int { return a + b },
+			"seq": func(start, end int) []int {
+				var seq []int
+				for i := start; i <= end; i++ {
+					seq = append(seq, i)
+				}
+				return seq
+			},
+		}
+		t := template.Must(template.New("history").Funcs(funcMap).Parse(tmpl))
 		t.Execute(w, data)
 	}
 }
@@ -410,7 +435,78 @@ func AnalyticsHandler(db *database.DB, engine *processor.ProcessingEngine) http.
 		}
 
 		tmpl := getAnalyticsTemplate()
-		t := template.Must(template.New("analytics").Parse(tmpl))
+		funcMap := template.FuncMap{
+			"add": func(a, b interface{}) interface{} {
+				switch a := a.(type) {
+				case int:
+					switch b := b.(type) {
+					case int:
+						return a + b
+					case float64:
+						return float64(a) + b
+					}
+				case float64:
+					switch b := b.(type) {
+					case int:
+						return a + float64(b)
+					case float64:
+						return a + b
+					}
+				}
+				return 0
+			},
+			"mul": func(a, b interface{}) interface{} {
+				switch a := a.(type) {
+				case int:
+					switch b := b.(type) {
+					case int:
+						return a * b
+					case float64:
+						return float64(a) * b
+					}
+				case float64:
+					switch b := b.(type) {
+					case int:
+						return a * float64(b)
+					case float64:
+						return a * b
+					}
+				}
+				return 0
+			},
+			"div": func(a, b interface{}) interface{} {
+				switch a := a.(type) {
+				case int:
+					switch b := b.(type) {
+					case int:
+						if b == 0 {
+							return float64(0)
+						}
+						return float64(a) / float64(b)
+					case float64:
+						if b == 0 {
+							return float64(0)
+						}
+						return float64(a) / b
+					}
+				case float64:
+					switch b := b.(type) {
+					case int:
+						if b == 0 {
+							return float64(0)
+						}
+						return a / float64(b)
+					case float64:
+						if b == 0 {
+							return float64(0)
+						}
+						return a / b
+					}
+				}
+				return 0
+			},
+		}
+		t := template.Must(template.New("analytics").Funcs(funcMap).Parse(tmpl))
 		t.Execute(w, data)
 	}
 }

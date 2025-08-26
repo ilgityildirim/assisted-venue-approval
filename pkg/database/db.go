@@ -176,7 +176,7 @@ func (db *DB) GetPendingVenuesWithUser() ([]models.VenueWithUser, error) {
         CASE WHEN va.venue_id IS NOT NULL THEN 1 ELSE 0 END as is_venue_admin,
         a.level as ambassador_level, a.points as ambassador_points, a.path as ambassador_region
         FROM venues v
-        JOIN members m ON v.user_id = m.id
+        LEFT JOIN members m ON v.user_id = m.id
         LEFT JOIN venue_admin va ON v.id = va.venue_id AND v.user_id = va.user_id
         LEFT JOIN ambassadors a ON v.user_id = a.user_id
         WHERE v.active = 0
@@ -194,6 +194,13 @@ func (db *DB) GetPendingVenuesWithUser() ([]models.VenueWithUser, error) {
 		var venue models.Venue
 		var user models.User
 
+		// Use nullable types to handle LEFT JOIN
+		var username, email sql.NullString
+		var trusted, contributions sql.NullInt64
+		var isVenueAdmin sql.NullInt64
+		var ambassadorLevel, ambassadorPoints sql.NullInt64
+		var ambassadorRegion sql.NullString
+
 		err := rows.Scan(
 			// Venue fields
 			&venue.ID, &venue.Path, &venue.EntryType, &venue.Name, &venue.URL,
@@ -208,18 +215,49 @@ func (db *DB) GetPendingVenuesWithUser() ([]models.VenueWithUser, error) {
 			&venue.UpdatedByID, &venue.MadeActiveByID, &venue.MadeActiveAt,
 			&venue.ShowPremium, &venue.Category, &venue.PrettyUrl, &venue.EditLock,
 			&venue.RequestVeganDecalAt, &venue.RequestExcellentDecalAt, &venue.Source,
-			// User fields
-			&user.Username, &user.Email, &user.Trusted, &user.Contributions,
-			&user.IsVenueAdmin, &user.AmbassadorLevel, &user.AmbassadorPoints,
-			&user.AmbassadorRegion,
+			// User fields (nullable)
+			&username, &email, &trusted, &contributions,
+			&isVenueAdmin, &ambassadorLevel, &ambassadorPoints,
+			&ambassadorRegion,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan venue with user row: %w", err)
 		}
 
+		// Handle nullable user fields
+		if username.Valid {
+			user.Username = username.String
+		}
+		if email.Valid {
+			user.Email = email.String
+		}
+		if trusted.Valid {
+			user.Trusted = trusted.Int64 > 0
+		}
+		if contributions.Valid {
+			user.Contributions = int(contributions.Int64)
+		}
+
 		user.ID = venue.UserID
 		vu.Venue = venue
 		vu.User = user
+
+		// Handle venue admin and ambassador data
+		if isVenueAdmin.Valid {
+			vu.IsVenueAdmin = isVenueAdmin.Int64 > 0
+		}
+		if ambassadorLevel.Valid {
+			level := int(ambassadorLevel.Int64)
+			user.AmbassadorLevel = &level
+		}
+		if ambassadorPoints.Valid {
+			points := int(ambassadorPoints.Int64)
+			user.AmbassadorPoints = &points
+		}
+		if ambassadorRegion.Valid {
+			user.AmbassadorRegion = &ambassadorRegion.String
+		}
+
 		venues = append(venues, vu)
 	}
 
@@ -484,7 +522,7 @@ func (db *DB) GetVenuesFiltered(status, search string, limit, offset int) ([]mod
 
 	// Get total count for pagination
 	countQuery := fmt.Sprintf(`SELECT COUNT(*) FROM venues v 
-        JOIN members m ON v.user_id = m.id 
+        LEFT JOIN members m ON v.user_id = m.id 
         LEFT JOIN venue_admin va ON v.id = va.venue_id AND m.id = va.user_id
         LEFT JOIN ambassadors a ON m.id = a.user_id %s`, whereClause)
 
@@ -508,7 +546,7 @@ func (db *DB) GetVenuesFiltered(status, search string, limit, offset int) ([]mod
         va.venue_id IS NOT NULL as is_venue_admin,
         a.level as ambassador_level, a.points as ambassador_points, a.path as ambassador_path
         FROM venues v 
-        JOIN members m ON v.user_id = m.id 
+        LEFT JOIN members m ON v.user_id = m.id 
         LEFT JOIN venue_admin va ON v.id = va.venue_id AND m.id = va.user_id
         LEFT JOIN ambassadors a ON m.id = a.user_id
         %s
@@ -532,7 +570,11 @@ func (db *DB) GetVenuesFiltered(status, search string, limit, offset int) ([]mod
 		var ambassadorLevel, ambassadorPoints sql.NullInt64
 		var ambassadorPath sql.NullString
 
-		// Scan venue fields
+		// Use nullable types for user fields
+		var memberID sql.NullInt64
+		var username sql.NullString
+		var trusted sql.NullInt64
+
 		err := rows.Scan(
 			&venue.ID, &venue.Path, &venue.EntryType, &venue.Name, &venue.URL,
 			&venue.FBUrl, &venue.InstagramUrl, &venue.Location, &venue.Zipcode,
@@ -546,13 +588,26 @@ func (db *DB) GetVenuesFiltered(status, search string, limit, offset int) ([]mod
 			&venue.UpdatedByID, &venue.MadeActiveByID, &venue.MadeActiveAt,
 			&venue.ShowPremium, &venue.Category, &venue.PrettyUrl, &venue.EditLock,
 			&venue.RequestVeganDecalAt, &venue.RequestExcellentDecalAt, &venue.Source,
-			// User fields
-			&user.ID, &user.Username, &user.Trusted,
+			// User fields (nullable)
+			&memberID, &username, &trusted,
 			// Authority fields
 			&isVenueAdmin, &ambassadorLevel, &ambassadorPoints, &ambassadorPath,
 		)
 		if err != nil {
 			return nil, 0, fmt.Errorf("failed to scan venue with user row: %w", err)
+		}
+
+		// Handle nullable user fields
+		if memberID.Valid {
+			user.ID = uint(memberID.Int64)
+		} else {
+			user.ID = venue.UserID // Use venue's user_id as fallback
+		}
+		if username.Valid {
+			user.Username = username.String
+		}
+		if trusted.Valid {
+			user.Trusted = trusted.Int64 > 0
 		}
 
 		venueWithUser.Venue = venue
@@ -601,6 +656,7 @@ func (db *DB) GetVenueWithUserByID(venueID int64) (*models.VenueWithUser, error)
 	var isVenueAdmin bool
 	var ambassadorLevel, ambassadorPoints sql.NullInt64
 	var ambassadorPath sql.NullString
+	var trustedInt int
 
 	err := db.conn.QueryRow(query, venueID).Scan(
 		&venue.ID, &venue.Path, &venue.EntryType, &venue.Name, &venue.URL,
@@ -616,7 +672,7 @@ func (db *DB) GetVenueWithUserByID(venueID int64) (*models.VenueWithUser, error)
 		&venue.ShowPremium, &venue.Category, &venue.PrettyUrl, &venue.EditLock,
 		&venue.RequestVeganDecalAt, &venue.RequestExcellentDecalAt, &venue.Source,
 		// User fields
-		&user.ID, &user.Username, &user.Trusted,
+		&user.ID, &user.Username, &trustedInt,
 		// Authority fields
 		&isVenueAdmin, &ambassadorLevel, &ambassadorPoints, &ambassadorPath,
 	)
@@ -624,6 +680,7 @@ func (db *DB) GetVenueWithUserByID(venueID int64) (*models.VenueWithUser, error)
 		return nil, fmt.Errorf("failed to get venue with user by ID: %w", err)
 	}
 
+	user.Trusted = trustedInt > 0 // Convert int to bool
 	venueWithUser.Venue = venue
 	venueWithUser.User = user
 	venueWithUser.IsVenueAdmin = isVenueAdmin
