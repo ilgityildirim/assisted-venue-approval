@@ -111,8 +111,9 @@ var funcMap = template.FuncMap{
 
 // LoadTemplates parses all admin templates from disk. It should be called at application startup.
 func LoadTemplates() error {
+	// Load templates in web/templates
 	patterns := []string{
-		filepath.Join("internal", "admin", "templates", "*.tmpl"),
+		filepath.Join("web", "templates", "*.tmpl"),
 	}
 	t := template.New("").Funcs(funcMap)
 	var err error
