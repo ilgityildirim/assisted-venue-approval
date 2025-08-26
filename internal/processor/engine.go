@@ -675,7 +675,7 @@ func containsAny(s string, substrings []string) bool {
 
 // isVenueAdmin checks if a user is an admin for a specific venue
 func isVenueAdmin(user models.User, venue models.Venue) bool {
-	// This would typically check a venues_admins table
+	// This would typically check a venue_admin table
 	// For now, we'll use a simple heuristic based on trusted status
 	return user.Trusted
 }

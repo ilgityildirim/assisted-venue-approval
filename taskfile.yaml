@@ -29,7 +29,8 @@ tasks:
   restart:
     desc: Restart all services
     cmds:
-      - docker compose restart
+      - task: down
+      - task: up
 
   clean:
     desc: Stop containers and remove volumes

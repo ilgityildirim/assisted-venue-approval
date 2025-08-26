@@ -485,8 +485,8 @@ func (db *DB) GetVenuesFiltered(status, search string, limit, offset int) ([]mod
 	// Get total count for pagination
 	countQuery := fmt.Sprintf(`SELECT COUNT(*) FROM venues v 
         JOIN members m ON v.user_id = m.id 
-        LEFT JOIN venues_admins va ON v.id = va.venue_id AND m.id = va.member_id
-        LEFT JOIN ambassadors a ON m.id = a.member_id %s`, whereClause)
+        LEFT JOIN venue_admin va ON v.id = va.venue_id AND m.id = va.user_id
+        LEFT JOIN ambassadors a ON m.id = a.user_id %s`, whereClause)
 
 	var total int
 	err := db.conn.QueryRow(countQuery, args...).Scan(&total)
@@ -509,8 +509,8 @@ func (db *DB) GetVenuesFiltered(status, search string, limit, offset int) ([]mod
         a.level as ambassador_level, a.points as ambassador_points, a.path as ambassador_path
         FROM venues v 
         JOIN members m ON v.user_id = m.id 
-        LEFT JOIN venues_admins va ON v.id = va.venue_id AND m.id = va.member_id
-        LEFT JOIN ambassadors a ON m.id = a.member_id
+        LEFT JOIN venue_admin va ON v.id = va.venue_id AND m.id = va.user_id
+        LEFT JOIN ambassadors a ON m.id = a.user_id
         %s
         ORDER BY v.admin_last_update DESC, v.created_at DESC
         LIMIT ? OFFSET ?`, whereClause)
@@ -591,8 +591,8 @@ func (db *DB) GetVenueWithUserByID(venueID int64) (*models.VenueWithUser, error)
         a.level as ambassador_level, a.points as ambassador_points, a.path as ambassador_path
         FROM venues v 
         JOIN members m ON v.user_id = m.id 
-        LEFT JOIN venues_admins va ON v.id = va.venue_id AND m.id = va.member_id
-        LEFT JOIN ambassadors a ON m.id = a.member_id
+        LEFT JOIN venue_admin va ON v.id = va.venue_id AND m.id = va.user_id
+        LEFT JOIN ambassadors a ON m.id = a.user_id
         WHERE v.id = ?`
 
 	var venueWithUser models.VenueWithUser
