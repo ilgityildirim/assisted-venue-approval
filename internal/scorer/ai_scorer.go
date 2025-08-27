@@ -279,7 +279,7 @@ func (s *AIScorer) scoreEnhancedVenue(ctx context.Context, venue models.Venue) (
 	// For venues with Google data, we only need AI to evaluate vegan/vegetarian relevance
 	// This significantly reduces token usage and API costs
 
-	vegRelevanceScore, notes, err := s.evaluateVeganRelevance(ctx, venue)
+	vegRelevanceScore, notes, rawJSON, err := s.evaluateVeganRelevance(ctx, venue)
 	if err != nil {
 		return nil, err
 	}
@@ -300,10 +300,11 @@ func (s *AIScorer) scoreEnhancedVenue(ctx context.Context, venue models.Venue) (
 	}
 
 	return &models.ValidationResult{
-		VenueID: venue.ID,
-		Score:   enhancedTotal,
-		Status:  status,
-		Notes:   notes,
+		VenueID:      venue.ID,
+		Score:        enhancedTotal,
+		Status:       status,
+		Notes:        notes,
+		AIOutputData: rawJSON,
 		ScoreBreakdown: map[string]int{
 			"venue_name_match":     scoreBreakdown.VenueNameMatch,
 			"address_accuracy":     scoreBreakdown.AddressAccuracy,
@@ -356,7 +357,7 @@ func (s *AIScorer) scoreBasicVenue(ctx context.Context, venue models.Venue) (*mo
 }
 
 // evaluateVeganRelevance uses AI only for vegan/vegetarian relevance assessment (cost-optimized)
-func (s *AIScorer) evaluateVeganRelevance(ctx context.Context, venue models.Venue) (score int, notes string, err error) {
+func (s *AIScorer) evaluateVeganRelevance(ctx context.Context, venue models.Venue) (score int, notes string, rawJSON *string, err error) {
 	// Build minimal prompt focused only on vegan relevance
 	prompt := s.buildVeganRelevancePrompt(venue)
 
@@ -377,16 +378,17 @@ func (s *AIScorer) evaluateVeganRelevance(ctx context.Context, venue models.Venu
 	})
 
 	if err != nil {
-		return 0, "", fmt.Errorf("vegan relevance API call failed: %w", err)
+		return 0, "", nil, fmt.Errorf("vegan relevance API call failed: %w", err)
 	}
 
 	// Track API usage
 	s.costTracker.AddUsage(resp.Usage.PromptTokens, resp.Usage.CompletionTokens)
 
 	// Parse vegan relevance score from response
-	score, notes = s.parseVeganRelevanceResponse(resp.Choices[0].Message.Content)
+	content := resp.Choices[0].Message.Content
+	score, notes = s.parseVeganRelevanceResponse(content)
 
-	return score, notes, nil
+	return score, notes, &content, nil
 }
 
 // Optimized prompt functions for cost efficiency
@@ -534,7 +536,8 @@ Instructions:
 - Score range: 0-100. Keep notes concise.
 - If admin_note or admin_hold_email_note indicates this venue should not be approved for ANY reason, set score=0 and explain briefly in notes (manual review).
 - If Google business_status is provided and is not OPERATIONAL, set score=0 unless trust_level >= 0.80, and note why using notes.
-- Validate Google types vs. Venue Type indicators (vegonly/vegan/category suggest food venue). If mismatch and trust_level < 0.80, set score=0 with reason in notes.
+- For type validation: Check if Google types are LOGICALLY compatible with food venues. Food venues should have at least one food-related type (restaurant, food, meal_takeaway, meal_delivery, cafe, bakery, bar, establishment, point_of_interest). Types like ["premise", "street_address"] alone or ["lodging", "travel_agency"] suggest non-food business. Only set score=0 for clear mismatches when trust_level < 0.80.
+- Venue Type indicators (vegonly/vegan/category) suggest this should be a food-related venue.
 - Consider venue description (can be empty) in relevance.
 - Use Combined Information if present; otherwise rely on Venue Information Data.
 - Allocate points roughly: legitimacy 35, completeness 30, relevance 35.
@@ -569,7 +572,8 @@ Output JSON schema:
 Rules:
 - If admin notes indicate the venue should not be approved for any reason, set score=0 and explain briefly in notes of JSON output.
 - If Google Business Status exists and is not OPERATIONAL, set score=0 unless trust_level >= 0.80.
-- Validate Google types vs Venue Type; if mismatch and trust_level < 0.80, set score=0.
+- For Google types vs Venue Type validation: Check for LOGICAL compatibility, not exact match. A restaurant venue with Google types ["restaurant", "food", "establishment"] is valid. A restaurant venue with only ["premise", "street_address"] or ["lodging"] is suspicious and should set score=0 if trust_level < 0.80.
+- Restaurant/food venues should have at least one food-related Google type: restaurant, food, meal_takeaway, meal_delivery, cafe, bakery, bar, etc.
 - Consider the venue description (empty allowed). Do not invent facts beyond provided data.
 - Keep notes concise (<= 200 chars).`
 }
@@ -653,6 +657,7 @@ func (s *AIScorer) parseStructuredResponse(response string, venueID int64) (mode
 		Status:         status,
 		Notes:          parsed.Notes,
 		ScoreBreakdown: parsed.Breakdown,
+		AIOutputData:   &response,
 	}, nil
 }
 
@@ -677,10 +682,11 @@ func (s *AIScorer) parseResponseFallback(response string, venueID int64) models.
 	}
 
 	return models.ValidationResult{
-		VenueID: venueID,
-		Score:   score,
-		Status:  status,
-		Notes:   "Fallback parsing used - manual review recommended",
+		VenueID:      venueID,
+		Score:        score,
+		Status:       status,
+		Notes:        "Fallback parsing used - manual review recommended",
+		AIOutputData: &response,
 		ScoreBreakdown: map[string]int{
 			"total": score,
 		},

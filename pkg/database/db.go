@@ -83,8 +83,8 @@ func (db *DB) prepareStatements() error {
                              WHERE id = ?`,
 		"insertValidationHistory": `INSERT INTO venue_validation_histories 
                                    (venue_id, validation_score, validation_status, validation_notes, 
-                                    score_breakdown, google_place_id, google_place_found, google_place_data, processed_at) 
-                                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
+                                    score_breakdown, google_place_id, google_place_found, google_place_data, ai_output_data, processed_at) 
+                                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())`,
 	}
 
 	for name, query := range statements {
@@ -338,8 +338,8 @@ func (db *DB) SaveValidationResult(result *models.ValidationResult) error {
 	// Save validation history
 	historyQuery := `INSERT INTO venue_validation_histories 
 	                     (venue_id, validation_score, validation_status, validation_notes, 
-	                      score_breakdown, processed_at) 
-	                     VALUES (?, ?, ?, ?, ?, NOW())`
+	                      score_breakdown, ai_output_data, processed_at) 
+	                     VALUES (?, ?, ?, ?, ?, ?, NOW())`
 
 	scoreBreakdownJSON, err := json.Marshal(result.ScoreBreakdown)
 	if err != nil {
@@ -347,7 +347,7 @@ func (db *DB) SaveValidationResult(result *models.ValidationResult) error {
 	}
 
 	_, err = tx.Exec(historyQuery, result.VenueID, result.Score, result.Status,
-		result.Notes, string(scoreBreakdownJSON))
+		result.Notes, string(scoreBreakdownJSON), result.AIOutputData)
 	if err != nil {
 		return fmt.Errorf("failed to insert validation history: %w", err)
 	}
@@ -866,7 +866,7 @@ func (db *DB) SaveValidationResultWithGoogleData(result *models.ValidationResult
 	}
 
 	_, err = tx.Stmt(stmt).Exec(result.VenueID, result.Score, result.Status,
-		result.Notes, string(scoreBreakdownJSON), googlePlaceID, googlePlaceFound, googlePlaceDataJSON)
+		result.Notes, string(scoreBreakdownJSON), googlePlaceID, googlePlaceFound, googlePlaceDataJSON, result.AIOutputData)
 	if err != nil {
 		return fmt.Errorf("failed to insert validation history: %w", err)
 	}

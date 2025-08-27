@@ -94,6 +94,7 @@ func main() {
 
 	// Processing controls
 	router.HandleFunc("/validate", app.validateHandler).Methods("POST")
+	router.HandleFunc("/validate/batch", app.validateBatchHandler).Methods("POST")
 	// Removed /validate/stats endpoint
 	router.HandleFunc("/api/stats", admin.APIStatsHandler(db, processingEngine)).Methods("GET")
 
@@ -233,5 +234,61 @@ func (app *App) validateSingleHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"status":  "queued",
 		"venueId": id,
+	})
+}
+
+// validateBatchHandler starts AI-assisted review for selected venues
+func (app *App) validateBatchHandler(w http.ResponseWriter, r *http.Request) {
+	type reqBody struct {
+		VenueIDs []int64 `json:"venue_ids"`
+	}
+	var body reqBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		return
+	}
+	if len(body.VenueIDs) == 0 {
+		http.Error(w, "no venue_ids provided", http.StatusBadRequest)
+		return
+	}
+
+	// Fetch venues, optionally skip ones that already have history
+	var queue []models.VenueWithUser
+	for _, id := range body.VenueIDs {
+		venueWithUser, err := app.db.GetVenueWithUserByID(id)
+		if err != nil || venueWithUser == nil {
+			continue
+		}
+		// Skip if already has any validation history to avoid duplicates
+		hasHist, err := app.db.HasAnyValidationHistory(id)
+		if err != nil {
+			log.Printf("error checking validation history for %d: %v", id, err)
+		}
+		if hasHist {
+			continue
+		}
+		queue = append(queue, *venueWithUser)
+	}
+
+	if len(queue) == 0 {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status": "skipped",
+			"queued": 0,
+			"reason": "nothing to queue (already has history or invalid IDs)",
+		})
+		return
+	}
+
+	app.engine.Start()
+	app.engine.SetScoreOnly(true)
+	if err := app.engine.ProcessVenuesWithUsers(queue); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to queue venues: %v", err), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status": "queued",
+		"queued": len(queue),
 	})
 }

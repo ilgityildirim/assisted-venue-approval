@@ -68,6 +68,7 @@ type ValidationResult struct {
 	Status         string         `json:"status"` // "approved", "rejected", "manual_review"
 	Notes          string         `json:"notes"`
 	ScoreBreakdown map[string]int `json:"score_breakdown"`
+	AIOutputData   *string        `json:"ai_output_data,omitempty"`
 }
 
 type ValidationDetails struct {
