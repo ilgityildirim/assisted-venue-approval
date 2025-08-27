@@ -504,7 +504,8 @@
         function approveVenue() {
             const notes = document.getElementById('notes').value;
             if (confirm('Approve this venue?')) {
-                updateVenueStatus('approve', notes || 'Manual approval');
+              alert('venue approvals are temporarily disabled.');
+                //updateVenueStatus('approve', notes || 'Manual approval');
             }
         }
         
@@ -515,7 +516,8 @@
                 return;
             }
             if (confirm('Reject this venue?')) {
-                updateVenueStatus('reject', notes);
+              alert('venue rejections are temporarily disabled.');
+                //updateVenueStatus('reject', notes);
             }
         }
         

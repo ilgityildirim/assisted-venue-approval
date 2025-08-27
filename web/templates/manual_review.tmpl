@@ -167,23 +167,26 @@
             formData.append('action', action);
             formData.append('venue_ids', ids.join(','));
             formData.append('reason', reason);
-            fetch('/batch-operation', { method: 'POST', body: formData })
-                .then(r => r.json())
-                .then(data => { alert('Approved: ' + data.success_count + '/' + data.total_count); location.reload(); })
-                .catch(() => alert('Error performing batch approval'));
+            alert('Batch operations are temporarily disabled');
+            // fetch('/batch-operation', { method: 'POST', body: formData })
+            //     .then(r => r.json())
+            //     .then(data => { alert('Approved: ' + data.success_count + '/' + data.total_count); location.reload(); })
+            //     .catch(() => alert('Error performing batch approval'));
         }
         function approveVenue(id) {
             const notes = prompt('Notes (optional):') || 'Manual approval';
             const fd = new FormData(); fd.append('notes', notes);
-            fetch('/venues/' + id + '/approve', { method: 'POST', body: fd })
-                .then(r => r.ok ? location.reload() : alert('Error approving'));
+            alert('Venue approvals are temporarily disabled');
+            // fetch('/venues/' + id + '/approve', { method: 'POST', body: fd })
+            //     .then(r => r.ok ? location.reload() : alert('Error approving'));
         }
         function rejectVenue(id) {
             const reason = prompt('Reason for rejection:');
             if (!reason) return;
             const fd = new FormData(); fd.append('reason', reason);
-            fetch('/venues/' + id + '/reject', { method: 'POST', body: fd })
-                .then(r => r.ok ? location.reload() : alert('Error rejecting'));
+          alert('Venue rejections are temporarily disabled');
+            // fetch('/venues/' + id + '/reject', { method: 'POST', body: fd })
+            //     .then(r => r.ok ? location.reload() : alert('Error rejecting'));
         }
     </script>
 </body>

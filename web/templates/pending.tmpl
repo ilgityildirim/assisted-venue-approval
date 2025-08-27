@@ -74,9 +74,6 @@
         <div class="batch-controls" id="batch-controls" style="display: none;">
             <div class="selected-count" id="selected-count">0 venues selected</div>
             <div style="margin-top: 10px;">
-                <button class="btn btn-success" onclick="batchApprove()">✅ Approve Selected</button>
-                <button class="btn btn-danger" onclick="batchReject()">❌ Reject Selected</button>
-                <button class="btn btn-warning" onclick="batchManualReview()">👀 Manual Review</button>
                 <button class="btn" onclick="selectAll()">Select All</button>
                 <button class="btn" onclick="selectNone()">Select None</button>
             </div>
@@ -111,8 +108,6 @@
                         </td>
                         <td class="actions-column">
                             <a href="/venues/{{.Venue.ID}}" class="btn btn-sm" onclick="event.stopPropagation()">View</a>
-                            <button class="btn btn-success btn-sm" onclick="event.stopPropagation(); approveVenue({{.Venue.ID}})">✅</button>
-                            <button class="btn btn-danger btn-sm" onclick="event.stopPropagation(); rejectVenue({{.Venue.ID}})">❌</button>
                         </td>
                     </tr>
                     <tr class="venue-details" id="details-{{.Venue.ID}}">
@@ -199,91 +194,6 @@
         function getSelectedIds() {
             const checkboxes = document.querySelectorAll('.venue-checkbox:checked');
             return Array.from(checkboxes).map(cb => cb.value);
-        }
-        
-        function batchApprove() {
-            const ids = getSelectedIds();
-            if (ids.length === 0) return;
-            
-            const reason = prompt('Reason for batch approval (optional):') || 'Batch approval';
-            batchOperation('approve', ids, reason);
-        }
-        
-        function batchReject() {
-            const ids = getSelectedIds();
-            if (ids.length === 0) return;
-            
-            const reason = prompt('Reason for batch rejection:');
-            if (!reason) return;
-            
-            batchOperation('reject', ids, reason);
-        }
-        
-        function batchManualReview() {
-            const ids = getSelectedIds();
-            if (ids.length === 0) return;
-            
-            const reason = prompt('Reason for manual review (optional):') || 'Requires manual review';
-            batchOperation('manual_review', ids, reason);
-        }
-        
-        function batchOperation(action, ids, reason) {
-            const formData = new FormData();
-            formData.append('action', action);
-            formData.append('venue_ids', ids.join(','));
-            formData.append('reason', reason);
-            
-            fetch('/batch-operation', {
-                method: 'POST',
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                alert(data.action + ' completed: ' + data.success_count + '/' + data.total_count + ' venues processed');
-                location.reload();
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                alert('Error performing batch operation');
-            });
-        }
-        
-        function approveVenue(id) {
-            if (confirm('Approve this venue?')) {
-                const reason = prompt('Reason (optional):') || 'Manual approval';
-                updateVenueStatus(id, 'approve', reason);
-            }
-        }
-        
-        function rejectVenue(id) {
-            const reason = prompt('Reason for rejection:');
-            if (reason) {
-                updateVenueStatus(id, 'reject', reason);
-            }
-        }
-        
-        function updateVenueStatus(id, action, reason) {
-            const formData = new FormData();
-            formData.append(action === 'approve' ? 'notes' : 'reason', reason);
-            
-            const url = '/venues/' + id + '/' + action;
-            
-            fetch(url, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                // Update the row without full page reload
-                location.reload();
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                location.reload();
-            });
         }
     </script>
 </body>
