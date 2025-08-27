@@ -98,6 +98,18 @@
                             </div>
                         </div>
                         <div class="field">
+                            <div class="field-label">Type</div>
+                            <div class="field-value">{{hcType .Venue.Venue.EntryType}}</div>
+                        </div>
+                        <div class="field">
+                            <div class="field-label">Vegan</div>
+                            <div class="field-value">{{hcVeganLabel .Venue.Venue.EntryType .Venue.Venue.VegOnly .Venue.Venue.Vegan}}</div>
+                        </div>
+                        <div class="field">
+                            <div class="field-label">Category</div>
+                            <div class="field-value">{{if (hcCategory .Venue.Venue.EntryType .Venue.Venue.Category)}}{{hcCategory .Venue.Venue.EntryType .Venue.Venue.Category}}{{else}}N/A{{end}}</div>
+                        </div>
+                        <div class="field">
                             <div class="field-label">Location (Lat, Lng) <span style="color:#999; font-weight:normal">({{index .Combined.Sources "latlng"}})</span></div>
                             <div class="field-value">{{if and .Combined.Lat .Combined.Lng}}{{fmtFloat .Combined.Lat}} , {{fmtFloat .Combined.Lng}}{{else}}N/A{{end}}</div>
                         </div>
@@ -124,10 +136,6 @@
                         <div class="field" style="grid-column: 1 / -1;">
                             <div class="field-label">Admin Hold Email Notes</div>
                             <div class="field-value" style="background: #f8f9fa; padding: 12px; border-radius: 5px;">{{if .Venue.Venue.AdminHoldEmailNote}}{{.Venue.Venue.AdminHoldEmailNote}}{{else}}N/A{{end}}</div>
-                        </div>
-                        <div class="field">
-                            <div class="field-label">Vegan Level <span style="color:#999; font-weight:normal">({{index .Combined.Sources "vegan_level"}})</span></div>
-                            <div class="field-value">{{.Combined.VeganLevel}}</div>
                         </div>
                         <div class="field">
                             <div class="field-label">AI Score</div>
@@ -340,8 +348,16 @@
                             </div>
                         </div>
                         <div class="field">
-                            <div class="field-label">Vegan Level</div>
-                            <div class="field-value">{{.Venue.Venue.Vegan}}/{{.Venue.Venue.VegOnly}}</div>
+                            <div class="field-label">Type</div>
+                            <div class="field-value">{{hcType .Venue.Venue.EntryType}}</div>
+                        </div>
+                        <div class="field">
+                            <div class="field-label">Vegan</div>
+                            <div class="field-value">{{hcVeganLabel .Venue.Venue.EntryType .Venue.Venue.VegOnly .Venue.Venue.Vegan}}</div>
+                        </div>
+                        <div class="field">
+                            <div class="field-label">Category</div>
+                            <div class="field-value">{{if (hcCategory .Venue.Venue.EntryType .Venue.Venue.Category)}}{{hcCategory .Venue.Venue.EntryType .Venue.Venue.Category}}{{else}}N/A{{end}}</div>
                         </div>
                         <div class="field">
                             <div class="field-label">Date Added</div>
@@ -479,7 +495,11 @@
             }).catch(err => {
                 console.error('Error starting AI review:', err);
                 alert('Failed to start AI-Assisted Review');
-            });
+            }).finally(() => {
+              setTimeout(() => {
+                window.location.reload();
+              }, 1000);
+            })
         }
         function approveVenue() {
             const notes = document.getElementById('notes').value;

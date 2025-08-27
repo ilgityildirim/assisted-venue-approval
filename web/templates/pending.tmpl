@@ -121,7 +121,6 @@
                                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
                                     <div><strong>Phone:</strong> {{if .Venue.Phone}}{{.Venue.Phone}}{{else}}N/A{{end}}</div>
                                     <div><strong>Website:</strong> {{if .Venue.URL}}<a href="{{.Venue.URL}}" target="_blank">{{.Venue.URL}}</a>{{else}}N/A{{end}}</div>
-                                    <div><strong>Vegan Level:</strong> {{.Venue.Vegan}}/{{.Venue.VegOnly}}</div>
                                     <div><strong>Created:</strong> {{.Venue.CreatedAt.Format "2006-01-02"}}</div>
                                 </div>
                                 {{if .Venue.AdditionalInfo}}

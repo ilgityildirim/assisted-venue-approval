@@ -11,8 +11,6 @@ import (
 
 	"automatic-vendor-validation/internal/models"
 	"automatic-vendor-validation/internal/processor"
-	"automatic-vendor-validation/internal/scorer"
-	"automatic-vendor-validation/pkg/config"
 	"automatic-vendor-validation/pkg/database"
 
 	"github.com/gorilla/mux"
@@ -371,40 +369,9 @@ func VenueDetailHandler(db *database.DB) http.HandlerFunc {
 			hoursSource = "user"
 		}
 
-		// Prepare a combined venue for AI scoring
-		combinedVenue := venue.Venue
-		combinedVenue.Location = combinedAddress
-		if combinedPhone != "" {
-			p := combinedPhone
-			combinedVenue.Phone = &p
-		} else {
-			combinedVenue.Phone = nil
-		}
-		if combinedWebsite != "" {
-			u := combinedWebsite
-			combinedVenue.URL = &u
-		} else {
-			combinedVenue.URL = nil
-		}
-		if len(combinedHours) > 0 {
-			h := strings.Join(combinedHours, " | ")
-			combinedVenue.OpenHours = &h
-		} else {
-			combinedVenue.OpenHours = nil
-		}
-
-		// Score the combined information via AI
+		// Do NOT auto-score via AI on page load. Only compute when explicitly requested by user action.
 		combinedScore := 0
 		combinedStatus := ""
-		if apiCfg := config.Load(); apiCfg != nil && apiCfg.OpenAIAPIKey != "" {
-			ai := scorer.NewAIScorer(apiCfg.OpenAIAPIKey)
-			if res, err := ai.ScoreVenue(r.Context(), combinedVenue); err == nil && res != nil {
-				combinedScore = res.Score
-				combinedStatus = res.Status
-			} else if err != nil {
-				log.Printf("AI scoring (combined info) failed for venue %d: %v", id, err)
-			}
-		}
 
 		type CombinedInfo struct {
 			Name        string
@@ -416,7 +383,6 @@ func VenueDetailHandler(db *database.DB) http.HandlerFunc {
 			Lng         *float64
 			Types       []string
 			Description string
-			VeganLevel  string
 			Sources     map[string]string
 			Score       int
 			ScoreStatus string
@@ -462,10 +428,6 @@ func VenueDetailHandler(db *database.DB) http.HandlerFunc {
 			combinedDesc = *venue.Venue.AdditionalInfo
 			descSource = "user"
 		}
-		// Vegan Level (from venue fields Vegan/VegOnly)
-		veganLevel := fmt.Sprintf("%d/%d", venue.Venue.Vegan, venue.Venue.VegOnly)
-		veganSource := "user"
-
 		combined := CombinedInfo{
 			Name:        combinedName,
 			Address:     combinedAddress,
@@ -476,7 +438,6 @@ func VenueDetailHandler(db *database.DB) http.HandlerFunc {
 			Lng:         combinedLng,
 			Types:       combinedTypes,
 			Description: combinedDesc,
-			VeganLevel:  veganLevel,
 			Sources: map[string]string{
 				"name":        nameSource,
 				"address":     addrSource,
@@ -486,7 +447,6 @@ func VenueDetailHandler(db *database.DB) http.HandlerFunc {
 				"latlng":      latlngSource,
 				"types":       typesSource,
 				"description": descSource,
-				"vegan_level": veganSource,
 			},
 			Score:       combinedScore,
 			ScoreStatus: combinedStatus,

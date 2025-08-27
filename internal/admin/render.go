@@ -114,6 +114,73 @@ var funcMap = template.FuncMap{
 		}
 		return fmt.Sprintf("%.6f", *f)
 	},
+	// classify type based on entrytype
+	"hcType": func(entrytype int) string {
+		if entrytype == 2 {
+			return "Store"
+		}
+		return "Restaurant"
+	},
+	// vegan label according to entrytype, vegonly, vegan
+	"hcVeganLabel": func(entrytype, vegonly, vegan int) string {
+		if entrytype == 2 {
+			return "—" // stores: exclude vegan/non-veg labels
+		}
+		if vegonly == 1 && vegan == 1 {
+			return "Vegan"
+		}
+		if vegonly == 1 && vegan == 0 {
+			return "Vegetarian"
+		}
+		// vegonly 0 (or vegan 0/1 with vegonly 0) => veg-options
+		return "Vegan Options"
+	},
+	// category name mapping, depends on entrytype; 0 => false/empty
+	"hcCategory": func(entrytype, category int) string {
+		if category == 0 {
+			return ""
+		}
+		if entrytype == 1 {
+			// restaurants usually uncategorized; ignore
+			return ""
+		}
+		switch category {
+		case 1:
+			return "Health Store"
+		case 2:
+			return "Veg Store"
+		case 3:
+			return "Bakery"
+		case 4:
+			return "B&B"
+		case 5:
+			return "Delivery"
+		case 6:
+			return "Catering"
+		case 7:
+			return "Organization"
+		case 8:
+			return "Farmer's Market"
+		case 10:
+			return "Food Truck"
+		case 11:
+			return "Market Vendor"
+		case 12:
+			return "Ice Cream"
+		case 13:
+			return "Juice Bar"
+		case 14:
+			return "Professional"
+		case 15:
+			return "Coffee & Tea"
+		case 16:
+			return "Spa"
+		case 99:
+			return "Other"
+		default:
+			return ""
+		}
+	},
 }
 
 // LoadTemplates parses all admin templates from disk. It should be called at application startup.
