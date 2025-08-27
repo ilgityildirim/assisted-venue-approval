@@ -223,18 +223,8 @@ func (s *AIScorer) ScoreVenue(ctx context.Context, venue models.Venue) (*models.
 		return &cached, nil
 	}
 
-	// Use validation details from scraper if available, otherwise use simple mode
-	var result *models.ValidationResult
-	var err error
-
-	if venue.ValidationDetails != nil && venue.ValidationDetails.GooglePlaceFound {
-		// Enhanced mode: venue has Google data and validation details
-		result, err = s.scoreEnhancedVenue(ctx, venue)
-	} else {
-		// Basic mode: venue without Google data
-		result, err = s.scoreBasicVenue(ctx, venue)
-	}
-
+	// Unified scoring regardless of Google data presence
+	result, err := s.scoreUnifiedVenue(ctx, venue)
 	if err != nil {
 		return nil, fmt.Errorf("AI scoring failed: %w", err)
 	}
@@ -243,6 +233,45 @@ func (s *AIScorer) ScoreVenue(ctx context.Context, venue models.Venue) (*models.
 	s.cache.Set(cacheKey, *result)
 
 	return result, nil
+}
+
+// scoreUnifiedVenue uses a single prompt for all venues and enforces JSON response
+func (s *AIScorer) scoreUnifiedVenue(ctx context.Context, venue models.Venue) (*models.ValidationResult, error) {
+	prompt := s.buildUnifiedPrompt(venue)
+
+	resp, err := s.client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
+		Model: openai.GPT4oMini,
+		Messages: []openai.ChatCompletionMessage{
+			{
+				Role:    openai.ChatMessageRoleSystem,
+				Content: s.getSystemPrompt(),
+			},
+			{
+				Role:    openai.ChatMessageRoleUser,
+				Content: prompt,
+			},
+		},
+		Temperature: 0.1,
+		MaxTokens:   250,
+		ResponseFormat: &openai.ChatCompletionResponseFormat{
+			Type: openai.ChatCompletionResponseFormatTypeJSONObject,
+		},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("OpenAI API call failed: %w", err)
+	}
+
+	// Track API usage
+	s.costTracker.AddUsage(resp.Usage.PromptTokens, resp.Usage.CompletionTokens)
+
+	// Parse the structured response
+	result, perr := s.parseStructuredResponse(resp.Choices[0].Message.Content, venue.ID)
+	if perr != nil {
+		// Fallback parsing if structured parsing fails
+		fallback := s.parseResponseFallback(resp.Choices[0].Message.Content, venue.ID)
+		return &fallback, nil
+	}
+	return &result, nil
 }
 
 // scoreEnhancedVenue uses AI only for vegan relevance scoring, relying on Google data for other criteria
@@ -362,10 +391,187 @@ func (s *AIScorer) evaluateVeganRelevance(ctx context.Context, venue models.Venu
 
 // Optimized prompt functions for cost efficiency
 
+// buildUnifiedPrompt creates a single prompt with Combined Information (if available) or Venue Information as JSON strings
+func (s *AIScorer) buildUnifiedPrompt(venue models.Venue) string {
+	// Venue info
+	phone := ""
+	if venue.Phone != nil {
+		phone = *venue.Phone
+	}
+	url := ""
+	if venue.URL != nil {
+		url = *venue.URL
+	}
+	description := ""
+	if venue.AdditionalInfo != nil {
+		description = *venue.AdditionalInfo
+	}
+	zipcode := ""
+	if venue.Zipcode != nil {
+		zipcode = *venue.Zipcode
+	}
+	adminNote := ""
+	if venue.AdminNote != nil {
+		adminNote = *venue.AdminNote
+	}
+	adminHoldEmailNote := ""
+	if venue.AdminHoldEmailNote != nil {
+		adminHoldEmailNote = *venue.AdminHoldEmailNote
+	}
+
+	// Google-related
+	googleStatus := ""
+	googleTypes := []string{}
+	googleWebsite := ""
+	googlePhone := ""
+	googleAddress := ""
+	var latPtr, lngPtr *float64
+	if venue.GoogleData != nil {
+		googleStatus = venue.GoogleData.BusinessStatus
+		googleTypes = venue.GoogleData.Types
+		googleWebsite = venue.GoogleData.Website
+		googlePhone = venue.GoogleData.FormattedPhone
+		googleAddress = venue.GoogleData.FormattedAddress
+		lat := venue.GoogleData.Geometry.Location.Lat
+		lng := venue.GoogleData.Geometry.Location.Lng
+		latPtr = &lat
+		lngPtr = &lng
+	}
+
+	// Combined Info logic (lightweight adaptation of UI logic)
+	type CombinedInfo struct {
+		Name        string   `json:"name"`
+		Address     string   `json:"address"`
+		Phone       string   `json:"phone"`
+		Website     string   `json:"website"`
+		Hours       []string `json:"hours"`
+		Lat         *float64 `json:"lat"`
+		Lng         *float64 `json:"lng"`
+		Types       []string `json:"types"`
+		Description string   `json:"description"`
+	}
+
+	hours := []string{}
+	if venue.OpenHours != nil && *venue.OpenHours != "" {
+		hours = []string{*venue.OpenHours}
+	} else if venue.GoogleData != nil && venue.GoogleData.OpeningHours != nil && len(venue.GoogleData.OpeningHours.WeekdayText) > 0 {
+		hours = venue.GoogleData.OpeningHours.WeekdayText
+	}
+
+	combined := CombinedInfo{
+		Name: venue.Name,
+		Address: func() string {
+			if googleAddress != "" {
+				return googleAddress
+			}
+			return venue.Location
+		}(),
+		Phone: func() string {
+			if googlePhone != "" {
+				return googlePhone
+			}
+			return phone
+		}(),
+		Website: func() string {
+			if googleWebsite != "" {
+				return googleWebsite
+			}
+			return url
+		}(),
+		Hours:       hours,
+		Lat:         latPtr,
+		Lng:         lngPtr,
+		Types:       googleTypes,
+		Description: description,
+	}
+
+	combinedJSON, _ := json.Marshal(combined)
+
+	// Venue info JSON fallback
+	type VenueInfo struct {
+		Name        string   `json:"name"`
+		Address     string   `json:"address"`
+		Zipcode     string   `json:"zipcode"`
+		Phone       string   `json:"phone"`
+		Website     string   `json:"website"`
+		Description string   `json:"description"`
+		VegOnly     int      `json:"vegonly"`
+		Vegan       int      `json:"vegan"`
+		Category    int      `json:"category"`
+		Types       []string `json:"types_from_google"`
+	}
+	venueInfo := VenueInfo{
+		Name:        venue.Name,
+		Address:     venue.Location,
+		Zipcode:     zipcode,
+		Phone:       phone,
+		Website:     url,
+		Description: description,
+		VegOnly:     venue.VegOnly,
+		Vegan:       venue.Vegan,
+		Category:    venue.Category,
+		Types:       googleTypes,
+	}
+	venueJSON, _ := json.Marshal(venueInfo)
+
+	// Trust level unknown here; default to 0.0 (apply strict rules unless >= 0.8)
+	trustLevel := 0.0
+
+	return fmt.Sprintf(`You must score the venue and reply with JSON only.
+
+Data:
+- Combined Information (JSON): %s
+- Venue Information Data (JSON): %s
+- Admin Note: %s
+- Admin Hold Email Note: %s
+- Google Business Status: %s
+- Google Types: %v
+- Venue Type Indicators: {"vegonly": %d, "vegan": %d, "category": %d}
+- Trust Level (0.0-1.0): %.2f
+
+Instructions:
+- Always produce a single JSON object: {"score": X, "notes": "brief", "breakdown": {"legitimacy": X, "completeness": X, "relevance": X}}
+- Score range: 0-100. Keep notes concise.
+- If admin_note or admin_hold_email_note indicates this venue should not be approved for ANY reason, set score=0 and explain briefly in notes (manual review).
+- If Google business_status is provided and is not OPERATIONAL, set score=0 unless trust_level >= 0.80, and note why using notes.
+- Validate Google types vs. Venue Type indicators (vegonly/vegan/category suggest food venue). If mismatch and trust_level < 0.80, set score=0 with reason in notes.
+- Consider venue description (can be empty) in relevance.
+- Use Combined Information if present; otherwise rely on Venue Information Data.
+- Allocate points roughly: legitimacy 35, completeness 30, relevance 35.
+- Respond with JSON only, no extra text.`,
+		string(combinedJSON),
+		string(venueJSON),
+		escapeForPrompt(adminNote),
+		escapeForPrompt(adminHoldEmailNote),
+		googleStatus,
+		googleTypes,
+		venue.VegOnly,
+		venue.Vegan,
+		venue.Category,
+		trustLevel,
+	)
+}
+
+// escapeForPrompt ensures multi-line strings are safe in the prompt context
+func escapeForPrompt(s string) string {
+	return s
+}
+
+// Optimized prompt functions for cost efficiency
+
 func (s *AIScorer) getSystemPrompt() string {
-	return `You are a venue validation expert for HappyCow, a vegan/vegetarian restaurant directory. 
-Analyze venues for business legitimacy, data completeness, and vegan/vegetarian relevance.
-Always respond in the exact JSON format requested. Be concise to minimize tokens.`
+	return `System role: You are an expert venue data validator for HappyCow (vegan/vegetarian directory).
+Goals:
+- Score venues for (1) legitimacy (35), (2) completeness (30), (3) relevance (35).
+- Always output a single JSON object, no prose, no Markdown.
+Output JSON schema:
+{"score": X, "notes": "brief", "breakdown": {"legitimacy": X, "completeness": X, "relevance": X}}
+Rules:
+- If admin notes indicate the venue should not be approved for any reason, set score=0 and explain briefly in notes of JSON output.
+- If Google Business Status exists and is not OPERATIONAL, set score=0 unless trust_level >= 0.80.
+- Validate Google types vs Venue Type; if mismatch and trust_level < 0.80, set score=0.
+- Consider the venue description (empty allowed). Do not invent facts beyond provided data.
+- Keep notes concise (<= 200 chars).`
 }
 
 // buildVeganRelevancePrompt creates a minimal prompt for vegan relevance assessment only
