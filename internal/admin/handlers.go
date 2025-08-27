@@ -498,12 +498,19 @@ func VenueDetailHandler(db *database.DB) http.HandlerFunc {
 			SimilarVenues []models.Venue
 			GoogleData    *models.GooglePlaceData
 			Combined      CombinedInfo
+			TrustPercent  int
 		}{
 			Venue:         *venue,
 			History:       history,
 			SimilarVenues: similarVenues,
 			GoogleData:    googleData,
 			Combined:      combined,
+			TrustPercent: func() int {
+				if venue.User.Trusted {
+					return 80
+				}
+				return 30
+			}(),
 		}
 
 		if err := ExecuteTemplate(w, "venue_detail.tmpl", data); err != nil {

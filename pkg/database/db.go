@@ -302,8 +302,8 @@ func (db *DB) BatchUpdateVenueStatus(venueIDs []int64, active int, notes string,
 	}
 
 	query := fmt.Sprintf(`UPDATE venues SET active = ?, admin_note = ?, admin_last_update = NOW(), 
-                         made_active_by_id = ?, made_active_at = CASE WHEN ? = 1 THEN NOW() ELSE made_active_at END 
-                         WHERE id IN (%s)`, strings.Join(placeholders, ","))
+	                         made_active_by_id = ?, made_active_at = CASE WHEN ? = 1 THEN NOW() ELSE made_active_at END 
+	                         WHERE id IN (%s)`, strings.Join(placeholders, ","))
 
 	_, err = tx.Exec(query, args...)
 	if err != nil {
@@ -317,7 +317,17 @@ func (db *DB) BatchUpdateVenueStatus(venueIDs []int64, active int, notes string,
 	return nil
 }
 
-// SaveValidationResult saves validation results with history tracking
+// UpdateVenueActive updates only the active status and admin_last_update, keeping admin_note unchanged.
+func (db *DB) UpdateVenueActive(venueID int64, active int) error {
+	query := `UPDATE venues SET active = ?, admin_last_update = NOW() WHERE id = ?`
+	_, err := db.conn.Exec(query, active, venueID)
+	if err != nil {
+		return fmt.Errorf("failed to update venue active status: %w", err)
+	}
+	return nil
+}
+
+// SaveValidationResult saves validation results ONLY into venue_validation_histories (no changes to venues table)
 func (db *DB) SaveValidationResult(result *models.ValidationResult) error {
 	tx, err := db.conn.Begin()
 	if err != nil {
@@ -325,25 +335,11 @@ func (db *DB) SaveValidationResult(result *models.ValidationResult) error {
 	}
 	defer tx.Rollback()
 
-	// Update venue status
-	updateQuery := `UPDATE venues SET active = ?, admin_note = ?, admin_last_update = NOW() WHERE id = ?`
-	active := 0 // Default to manual review
-	if result.Status == "approved" {
-		active = 1
-	} else if result.Status == "rejected" {
-		active = -1
-	}
-
-	_, err = tx.Exec(updateQuery, active, result.Notes, result.VenueID)
-	if err != nil {
-		return fmt.Errorf("failed to update venue in validation result: %w", err)
-	}
-
 	// Save validation history
 	historyQuery := `INSERT INTO venue_validation_histories 
-                     (venue_id, validation_score, validation_status, validation_notes, 
-                      score_breakdown, processed_at) 
-                     VALUES (?, ?, ?, ?, ?, NOW())`
+	                     (venue_id, validation_score, validation_status, validation_notes, 
+	                      score_breakdown, processed_at) 
+	                     VALUES (?, ?, ?, ?, ?, NOW())`
 
 	scoreBreakdownJSON, err := json.Marshal(result.ScoreBreakdown)
 	if err != nil {

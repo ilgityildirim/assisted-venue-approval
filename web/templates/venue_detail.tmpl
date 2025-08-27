@@ -68,6 +68,16 @@
                             <div class="field-value"><strong>{{.Combined.Name}}</strong></div>
                         </div>
                         <div class="field">
+                            <div class="field-label">Submitted By</div>
+                            <div class="field-value">
+                                {{.Venue.User.Username}} <br>
+                                {{if .Venue.User.Trusted}}<span style="color: green;">✅ Trusted User ({{.TrustPercent}}%)</span><br>{{end}}
+                                {{if .Venue.IsVenueAdmin}}<span style="color: gold;">👑 Venue Owner </span><br>{{end}}
+                                {{if .Venue.AmbassadorLevel}}<span style="color: blue;">🌟 Ambassador (Level {{.Venue.AmbassadorLevel}})</span>{{end}}
+                                {{if not (or .Venue.User.Trusted .Venue.IsVenueAdmin .Venue.AmbassadorLevel)}}<span style="color: #666;">Regular User ({{.TrustPercent}}%)</span>{{end}}
+                            </div>
+                        </div>
+                        <div class="field">
                             <div class="field-label">Address <span style="color:#999; font-weight:normal">({{index .Combined.Sources "address"}})</span></div>
                             <div class="field-value">{{if .Combined.Address}}{{.Combined.Address}}{{else}}N/A{{end}}</div>
                         </div>
@@ -103,21 +113,21 @@
                             <div class="field-value" style="background: #f8f9fa; padding: 12px; border-radius: 5px;">{{.Combined.Description}}</div>
                         </div>
                         {{end}}
+                        <div class="field" style="grid-column: 1 / -1;">
+                            <div class="field-label">Admin Note</div>
+                            <div class="field-value" style="background: #f8f9fa; padding: 12px; border-radius: 5px;">{{if .Venue.Venue.AdminNote}}{{.Venue.Venue.AdminNote}}{{else}}N/A{{end}}</div>
+                        </div>
+                        <div class="field" style="grid-column: 1 / -1;">
+                            <div class="field-label">Admin Hold</div>
+                            <div class="field-value" style="background: #f8f9fa; padding: 12px; border-radius: 5px;">{{if .Venue.Venue.AdminHold}}{{.Venue.Venue.AdminHold.Format "2006-01-02 15:04"}}{{else}}—{{end}}</div>
+                        </div>
+                        <div class="field" style="grid-column: 1 / -1;">
+                            <div class="field-label">Admin Hold Email Notes</div>
+                            <div class="field-value" style="background: #f8f9fa; padding: 12px; border-radius: 5px;">{{if .Venue.Venue.AdminHoldEmailNote}}{{.Venue.Venue.AdminHoldEmailNote}}{{else}}N/A{{end}}</div>
+                        </div>
                         <div class="field">
                             <div class="field-label">Vegan Level <span style="color:#999; font-weight:normal">({{index .Combined.Sources "vegan_level"}})</span></div>
                             <div class="field-value">{{.Combined.VeganLevel}}</div>
-                        </div>
-                        <div class="field">
-                            <div class="field-label">Admin Note</div>
-                            <div class="field-value">{{if .Venue.Venue.AdminNote}}{{.Venue.Venue.AdminNote}}{{else}}N/A{{end}}</div>
-                        </div>
-                        <div class="field">
-                            <div class="field-label">Admin Hold</div>
-                            <div class="field-value">{{if .Venue.Venue.AdminHold}}{{.Venue.Venue.AdminHold.Format "2006-01-02 15:04"}}{{else}}—{{end}}</div>
-                        </div>
-                        <div class="field">
-                            <div class="field-label">Admin Hold Email Notes</div>
-                            <div class="field-value">{{if .Venue.Venue.AdminHoldEmailNote}}{{.Venue.Venue.AdminHoldEmailNote}}{{else}}N/A{{end}}</div>
                         </div>
                         <div class="field">
                             <div class="field-label">AI Score</div>
@@ -337,17 +347,17 @@
                             <div class="field-label">Date Added</div>
                             <div class="field-value">{{.Venue.Venue.CreatedAt.Format "2006-01-02 15:04"}}</div>
                         </div>
-                        <div class="field">
+                        <div class="field" style="grid-column: 1 / -1;">
                             <div class="field-label">Admin Note</div>
-                            <div class="field-value">{{if .Venue.Venue.AdminNote}}{{.Venue.Venue.AdminNote}}{{else}}N/A{{end}}</div>
+                            <div class="field-value" style="background: #f8f9fa; padding: 12px; border-radius: 5px;">{{if .Venue.Venue.AdminNote}}{{.Venue.Venue.AdminNote}}{{else}}N/A{{end}}</div>
                         </div>
-                        <div class="field">
+                        <div class="field" style="grid-column: 1 / -1;">
                             <div class="field-label">Admin Hold</div>
-                            <div class="field-value">{{if .Venue.Venue.AdminHold}}{{.Venue.Venue.AdminHold.Format "2006-01-02 15:04"}}{{else}}—{{end}}</div>
+                            <div class="field-value" style="background: #f8f9fa; padding: 12px; border-radius: 5px;">{{if .Venue.Venue.AdminHold}}{{.Venue.Venue.AdminHold.Format "2006-01-02 15:04"}}{{else}}—{{end}}</div>
                         </div>
-                        <div class="field">
+                        <div class="field" style="grid-column: 1 / -1;">
                             <div class="field-label">Admin Hold Email Notes</div>
-                            <div class="field-value">{{if .Venue.Venue.AdminHoldEmailNote}}{{.Venue.Venue.AdminHoldEmailNote}}{{else}}N/A{{end}}</div>
+                            <div class="field-value" style="background: #f8f9fa; padding: 12px; border-radius: 5px;">{{if .Venue.Venue.AdminHoldEmailNote}}{{.Venue.Venue.AdminHoldEmailNote}}{{else}}N/A{{end}}</div>
                         </div>
                     </div>
                     
@@ -371,10 +381,10 @@
                         <div class="field">
                             <div class="field-label">Authority Level</div>
                             <div class="field-value">
-                                {{if .Venue.User.Trusted}}<span style="color: green;">✅ Trusted User</span><br>{{end}}
+                                {{if .Venue.User.Trusted}}<span style="color: green;">✅ Trusted User ({{.TrustPercent}}%)</span><br>{{end}}
                                 {{if .Venue.IsVenueAdmin}}<span style="color: gold;">👑 Venue Owner</span><br>{{end}}
                                 {{if .Venue.AmbassadorLevel}}<span style="color: blue;">🌟 Ambassador (Level {{.Venue.AmbassadorLevel}})</span>{{end}}
-                                {{if not (or .Venue.User.Trusted .Venue.IsVenueAdmin .Venue.AmbassadorLevel)}}<span style="color: #666;">Regular User</span>{{end}}
+                                {{if not (or .Venue.User.Trusted .Venue.IsVenueAdmin .Venue.AmbassadorLevel)}}<span style="color: #666;">Regular User ({{.TrustPercent}}%)</span>{{end}}
                             </div>
                         </div>
                     </div>

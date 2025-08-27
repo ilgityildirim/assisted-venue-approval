@@ -635,25 +635,21 @@ func (e *ProcessingEngine) handleSuccessfulResult(result ProcessingResult) {
 
 	validationResult := result.ValidationResult
 	var dbStatus int
-	var notes string
 
 	// Status already set by decision engine
 	switch validationResult.Status {
 	case "approved":
 		dbStatus = 1
-		notes = fmt.Sprintf("Auto-approved: Score %d - %s", validationResult.Score, validationResult.Notes)
 		atomic.AddInt64(&e.stats.AutoApproved, 1)
 		log.Printf("Auto-approved venue %d with score %d (Decision engine)", result.VenueID, validationResult.Score)
 
 	case "rejected":
 		dbStatus = -1
-		notes = fmt.Sprintf("Auto-rejected: Score %d - %s", validationResult.Score, validationResult.Notes)
 		atomic.AddInt64(&e.stats.AutoRejected, 1)
 		log.Printf("Auto-rejected venue %d with score %d (Decision engine)", result.VenueID, validationResult.Score)
 
 	default: // manual_review
 		dbStatus = 0
-		notes = fmt.Sprintf("Manual review required: Score %d - %s", validationResult.Score, validationResult.Notes)
 		atomic.AddInt64(&e.stats.ManualReview, 1)
 		log.Printf("Venue %d requires manual review (score: %d) (Decision engine)", result.VenueID, validationResult.Score)
 	}
@@ -666,9 +662,9 @@ func (e *ProcessingEngine) handleSuccessfulResult(result ProcessingResult) {
 		return
 	}
 
-	// Normal mode: update venue and save validation result + history
-	if err := e.db.UpdateVenueStatus(result.VenueID, dbStatus, notes, nil); err != nil {
-		log.Printf("Failed to update venue %d status: %v", result.VenueID, err)
+	// Normal mode: update venue active only (do not write process notes into venues); save validation result + history separately
+	if err := e.db.UpdateVenueActive(result.VenueID, dbStatus); err != nil {
+		log.Printf("Failed to update venue %d active status: %v", result.VenueID, err)
 	}
 
 	if err := e.db.SaveValidationResult(validationResult); err != nil {
@@ -681,11 +677,9 @@ func (e *ProcessingEngine) handleFailedResult(result ProcessingResult) {
 	atomic.AddInt64(&e.stats.FailedJobs, 1)
 	atomic.AddInt64(&e.stats.ManualReview, 1)
 
-	notes := fmt.Sprintf("Processing failed after %d retries: %v", result.Retries, result.Error)
-
-	// Update venue to require manual review
-	if err := e.db.UpdateVenueStatus(result.VenueID, 0, notes, nil); err != nil {
-		log.Printf("Failed to update failed venue %d status: %v", result.VenueID, err)
+	// Do not write error details into venues.admin_note; set active to manual review only
+	if err := e.db.UpdateVenueActive(result.VenueID, 0); err != nil {
+		log.Printf("Failed to set venue %d to manual review: %v", result.VenueID, err)
 	}
 
 	// If we have Google Places data, persist it to validation history even when AI scoring failed
