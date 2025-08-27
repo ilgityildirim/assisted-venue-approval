@@ -59,6 +59,7 @@
         
         <div class="venue-grid">
             <div>
+                {{if .GoogleData}}
                 <div class="section">
                     <h2>Combined Information</h2>
                     <div class="field-grid">
@@ -107,12 +108,26 @@
                             <div class="field-value">{{.Combined.VeganLevel}}</div>
                         </div>
                         <div class="field">
+                            <div class="field-label">Admin Note</div>
+                            <div class="field-value">{{if .Venue.Venue.AdminNote}}{{.Venue.Venue.AdminNote}}{{else}}N/A{{end}}</div>
+                        </div>
+                        <div class="field">
+                            <div class="field-label">Admin Hold</div>
+                            <div class="field-value">{{if .Venue.Venue.AdminHold}}{{.Venue.Venue.AdminHold.Format "2006-01-02 15:04"}}{{else}}—{{end}}</div>
+                        </div>
+                        <div class="field">
+                            <div class="field-label">Admin Hold Email Notes</div>
+                            <div class="field-value">{{if .Venue.Venue.AdminHoldEmailNote}}{{.Venue.Venue.AdminHoldEmailNote}}{{else}}N/A{{end}}</div>
+                        </div>
+                        <div class="field">
                             <div class="field-label">AI Score</div>
                             <div class="field-value"><strong>{{.Combined.Score}}</strong> <span style="color:#999">({{.Combined.ScoreStatus}})</span></div>
                         </div>
                     </div>
                 </div>
+                {{end}}
 
+                {{if .GoogleData}}
                 <div class="section">
                     <h2>Current Status</h2>
                     <div style="text-align: center; margin-bottom: 20px;">
@@ -141,6 +156,7 @@
                     </div>
                     {{end}}
                 </div>
+                {{end}}
 
                 {{if .GoogleData}}
                 <div class="section">
@@ -321,6 +337,18 @@
                             <div class="field-label">Date Added</div>
                             <div class="field-value">{{.Venue.Venue.CreatedAt.Format "2006-01-02 15:04"}}</div>
                         </div>
+                        <div class="field">
+                            <div class="field-label">Admin Note</div>
+                            <div class="field-value">{{if .Venue.Venue.AdminNote}}{{.Venue.Venue.AdminNote}}{{else}}N/A{{end}}</div>
+                        </div>
+                        <div class="field">
+                            <div class="field-label">Admin Hold</div>
+                            <div class="field-value">{{if .Venue.Venue.AdminHold}}{{.Venue.Venue.AdminHold.Format "2006-01-02 15:04"}}{{else}}—{{end}}</div>
+                        </div>
+                        <div class="field">
+                            <div class="field-label">Admin Hold Email Notes</div>
+                            <div class="field-value">{{if .Venue.Venue.AdminHoldEmailNote}}{{.Venue.Venue.AdminHoldEmailNote}}{{else}}N/A{{end}}</div>
+                        </div>
                     </div>
                     
                     {{if .Venue.Venue.AdditionalInfo}}
@@ -352,6 +380,37 @@
                     </div>
                 </div>
                 
+                {{if not .GoogleData}}
+                <div class="section">
+                    <h2>Current Status</h2>
+                    <div style="text-align: center; margin-bottom: 20px;">
+                        {{if eq (intVal .Venue.Venue.Active 0) 1}}
+                            <span class="status-badge status-approved" style="font-size: 18px;">✅ APPROVED</span>
+                        {{else if eq (intVal .Venue.Venue.Active 0) -1}}
+                            <span class="status-badge status-rejected" style="font-size: 18px;">❌ REJECTED</span>
+                        {{else}}
+                            <span class="status-badge status-pending" style="font-size: 18px;">⏳ PENDING</span>
+                        {{end}}
+                    </div>
+                    {{if eq (intVal .Venue.Venue.Active 0) 0}}
+                    <div class="action-form">
+                        <h3>Manual Review</h3>
+                        <form id="approval-form">
+                            <div style="margin-bottom: 15px; display: flex; flex-wrap: wrap; gap: 10px;">
+                                <button type="button" class="btn" onclick="startAIReview()">🚀 Start AI-Assisted Review</button>
+                                <button type="button" class="btn btn-success" onclick="approveVenue()">✅ Approve</button>
+                                <button type="button" class="btn btn-danger" onclick="rejectVenue()">❌ Reject</button>
+                            </div>
+                            <div style="margin-bottom: 10px;">
+                                <label for="notes">Notes/Reason:</label>
+                            </div>
+                            <textarea id="notes" placeholder="Enter your reason or notes..." rows="3"></textarea>
+                        </form>
+                    </div>
+                    {{end}}
+                </div>
+                {{end}}
+
                 {{if .History}}
                 <div class="section">
                     <h2>Validation History</h2>
