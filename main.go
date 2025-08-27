@@ -58,8 +58,8 @@ func main() {
 	}
 	processingEngine := processor.NewProcessingEngine(db, gmapsScraper, aiScorer, processingConfig, decisionConfig)
 
-	// Load templates
-	if err := admin.LoadTemplates(); err != nil {
+	// Load templates from embedded FS
+	if err := admin.LoadTemplates(Templates()); err != nil {
 		log.Fatal("Failed to load templates:", err)
 	}
 
@@ -118,8 +118,8 @@ func main() {
 	// History and audit
 	router.HandleFunc("/validation/history", admin.ValidationHistoryHandler(db)).Methods("GET")
 
-	// Static files
-	router.PathPrefix("/static/").Handler(http.StripPrefix("/static/", http.FileServer(http.Dir("web/static/"))))
+	// Static files served from embedded filesystem
+	router.PathPrefix("/static/").Handler(http.StripPrefix("/static/", http.FileServer(http.FS(Static()))))
 
 	// Start HTTP server with graceful shutdown
 	server := &http.Server{

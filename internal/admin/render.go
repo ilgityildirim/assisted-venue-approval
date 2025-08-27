@@ -3,8 +3,8 @@ package admin
 import (
 	"fmt"
 	"html/template"
+	"io/fs"
 	"net/http"
-	"path/filepath"
 )
 
 // adminTemplates holds the parsed templates for the admin UI.
@@ -183,19 +183,11 @@ var funcMap = template.FuncMap{
 	},
 }
 
-// LoadTemplates parses all admin templates from disk. It should be called at application startup.
-func LoadTemplates() error {
-	// Load templates in web/templates
-	patterns := []string{
-		filepath.Join("web", "templates", "*.tmpl"),
-	}
-	t := template.New("").Funcs(funcMap)
-	var err error
-	for _, pattern := range patterns {
-		t, err = t.ParseGlob(pattern)
-		if err != nil {
-			return err
-		}
+// LoadTemplates parses all admin templates from the provided filesystem. It should be called at application startup.
+func LoadTemplates(fsys fs.FS) error {
+	t, err := template.New("").Funcs(funcMap).ParseFS(fsys, "*.tmpl")
+	if err != nil {
+		return err
 	}
 	adminTemplates = t
 	return nil
@@ -204,10 +196,7 @@ func LoadTemplates() error {
 // ExecuteTemplate renders a named template to the ResponseWriter.
 func ExecuteTemplate(w http.ResponseWriter, name string, data interface{}) error {
 	if adminTemplates == nil {
-		// Attempt lazy load in case LoadTemplates wasn't called explicitly
-		if err := LoadTemplates(); err != nil {
-			return err
-		}
+		return fmt.Errorf("templates not loaded: call admin.LoadTemplates at startup")
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	return adminTemplates.ExecuteTemplate(w, name, data)
