@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"fmt"
 	"html/template"
 	"net/http"
 	"path/filepath"
@@ -106,6 +107,12 @@ var funcMap = template.FuncMap{
 		default:
 			return def
 		}
+	},
+	"fmtFloat": func(f *float64) string {
+		if f == nil {
+			return ""
+		}
+		return fmt.Sprintf("%.6f", *f)
 	},
 }
 

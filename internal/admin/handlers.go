@@ -11,6 +11,8 @@ import (
 
 	"automatic-vendor-validation/internal/models"
 	"automatic-vendor-validation/internal/processor"
+	"automatic-vendor-validation/internal/scorer"
+	"automatic-vendor-validation/pkg/config"
 	"automatic-vendor-validation/pkg/database"
 
 	"github.com/gorilla/mux"
@@ -294,7 +296,7 @@ func VenueDetailHandler(db *database.DB) http.HandlerFunc {
 			history = []models.ValidationHistory{}
 		}
 
-		// Get similar venues for comparison
+		// Get similar venues for comparison (will be removed from UI, still fetched safely)
 		similarVenues, err := db.GetSimilarVenues(venue.Venue, 5)
 		if err != nil {
 			log.Printf("Error fetching similar venues: %v", err)
@@ -307,16 +309,201 @@ func VenueDetailHandler(db *database.DB) http.HandlerFunc {
 			log.Printf("Error fetching cached Google data: %v", err)
 		}
 
+		// Build Combined Information per rules
+		// Treat Trusted==true as trust >= 0.8
+		isTrusted := venue.User.Trusted
+		// Recency: within last 3 months
+		lastUpdate := time.Now().AddDate(0, -3, 0)
+		var userUpdatedAt *time.Time
+		if venue.Venue.DateUpdated != nil {
+			userUpdatedAt = venue.Venue.DateUpdated
+		} else if venue.Venue.CreatedAt != nil {
+			userUpdatedAt = venue.Venue.CreatedAt
+		}
+		useUserData := false
+		if isTrusted && userUpdatedAt != nil && userUpdatedAt.After(lastUpdate) {
+			useUserData = true
+		}
+
+		pick := func(userVal *string, googleVal string) (val string, source string) {
+			if useUserData && userVal != nil && strings.TrimSpace(*userVal) != "" {
+				return *userVal, "user"
+			}
+			if strings.TrimSpace(googleVal) != "" {
+				return googleVal, "google"
+			}
+			if userVal != nil {
+				return *userVal, "user"
+			}
+			return "", ""
+		}
+
+		combinedAddress, addrSource := pick(&venue.Venue.Location, func() string {
+			if googleData != nil {
+				return googleData.FormattedAddress
+			}
+			return ""
+		}())
+		combinedPhone, phoneSource := pick(venue.Venue.Phone, func() string {
+			if googleData != nil {
+				return googleData.FormattedPhone
+			}
+			return ""
+		}())
+		combinedWebsite, siteSource := pick(venue.Venue.URL, func() string {
+			if googleData != nil {
+				return googleData.Website
+			}
+			return ""
+		}())
+
+		// Opening hours representation
+		var combinedHours []string
+		hoursSource := ""
+		if useUserData && venue.Venue.OpenHours != nil && strings.TrimSpace(*venue.Venue.OpenHours) != "" {
+			combinedHours = []string{*venue.Venue.OpenHours}
+			hoursSource = "user"
+		} else if googleData != nil && googleData.OpeningHours != nil && len(googleData.OpeningHours.WeekdayText) > 0 {
+			combinedHours = googleData.OpeningHours.WeekdayText
+			hoursSource = "google"
+		} else if venue.Venue.OpenHours != nil {
+			combinedHours = []string{*venue.Venue.OpenHours}
+			hoursSource = "user"
+		}
+
+		// Prepare a combined venue for AI scoring
+		combinedVenue := venue.Venue
+		combinedVenue.Location = combinedAddress
+		if combinedPhone != "" {
+			p := combinedPhone
+			combinedVenue.Phone = &p
+		} else {
+			combinedVenue.Phone = nil
+		}
+		if combinedWebsite != "" {
+			u := combinedWebsite
+			combinedVenue.URL = &u
+		} else {
+			combinedVenue.URL = nil
+		}
+		if len(combinedHours) > 0 {
+			h := strings.Join(combinedHours, " | ")
+			combinedVenue.OpenHours = &h
+		} else {
+			combinedVenue.OpenHours = nil
+		}
+
+		// Score the combined information via AI
+		combinedScore := 0
+		combinedStatus := ""
+		if apiCfg := config.Load(); apiCfg != nil && apiCfg.OpenAIAPIKey != "" {
+			ai := scorer.NewAIScorer(apiCfg.OpenAIAPIKey)
+			if res, err := ai.ScoreVenue(r.Context(), combinedVenue); err == nil && res != nil {
+				combinedScore = res.Score
+				combinedStatus = res.Status
+			} else if err != nil {
+				log.Printf("AI scoring (combined info) failed for venue %d: %v", id, err)
+			}
+		}
+
+		type CombinedInfo struct {
+			Name        string
+			Address     string
+			Phone       string
+			Website     string
+			Hours       []string
+			Lat         *float64
+			Lng         *float64
+			Types       []string
+			Description string
+			VeganLevel  string
+			Sources     map[string]string
+			Score       int
+			ScoreStatus string
+		}
+
+		// Additional combined fields per new requirements
+		// Name
+		combinedName := venue.Venue.Name
+		nameSource := "user"
+		if !useUserData && googleData != nil && strings.TrimSpace(googleData.Name) != "" {
+			combinedName = googleData.Name
+			nameSource = "google"
+		}
+		// Lat/Lng
+		var combinedLat, combinedLng *float64
+		latlngSource := ""
+		if useUserData && venue.Venue.Lat != nil && venue.Venue.Lng != nil {
+			combinedLat = venue.Venue.Lat
+			combinedLng = venue.Venue.Lng
+			latlngSource = "user"
+		} else if googleData != nil {
+			l := googleData.Geometry.Location.Lat
+			g := googleData.Geometry.Location.Lng
+			combinedLat = &l
+			combinedLng = &g
+			latlngSource = "google"
+		} else if venue.Venue.Lat != nil && venue.Venue.Lng != nil {
+			combinedLat = venue.Venue.Lat
+			combinedLng = venue.Venue.Lng
+			latlngSource = "user"
+		}
+		// Types (Google only)
+		var combinedTypes []string
+		typesSource := ""
+		if googleData != nil && len(googleData.Types) > 0 {
+			combinedTypes = googleData.Types
+			typesSource = "google"
+		}
+		// Description (user submitted AdditionalInfo)
+		descSource := ""
+		combinedDesc := ""
+		if venue.Venue.AdditionalInfo != nil && strings.TrimSpace(*venue.Venue.AdditionalInfo) != "" {
+			combinedDesc = *venue.Venue.AdditionalInfo
+			descSource = "user"
+		}
+		// Vegan Level (from venue fields Vegan/VegOnly)
+		veganLevel := fmt.Sprintf("%d/%d", venue.Venue.Vegan, venue.Venue.VegOnly)
+		veganSource := "user"
+
+		combined := CombinedInfo{
+			Name:        combinedName,
+			Address:     combinedAddress,
+			Phone:       combinedPhone,
+			Website:     combinedWebsite,
+			Hours:       combinedHours,
+			Lat:         combinedLat,
+			Lng:         combinedLng,
+			Types:       combinedTypes,
+			Description: combinedDesc,
+			VeganLevel:  veganLevel,
+			Sources: map[string]string{
+				"name":        nameSource,
+				"address":     addrSource,
+				"phone":       phoneSource,
+				"website":     siteSource,
+				"hours":       hoursSource,
+				"latlng":      latlngSource,
+				"types":       typesSource,
+				"description": descSource,
+				"vegan_level": veganSource,
+			},
+			Score:       combinedScore,
+			ScoreStatus: combinedStatus,
+		}
+
 		data := struct {
 			Venue         models.VenueWithUser
 			History       []models.ValidationHistory
 			SimilarVenues []models.Venue
 			GoogleData    *models.GooglePlaceData
+			Combined      CombinedInfo
 		}{
 			Venue:         *venue,
 			History:       history,
 			SimilarVenues: similarVenues,
 			GoogleData:    googleData,
+			Combined:      combined,
 		}
 
 		if err := ExecuteTemplate(w, "venue_detail.tmpl", data); err != nil {
