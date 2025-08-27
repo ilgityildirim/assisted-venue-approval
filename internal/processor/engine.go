@@ -530,7 +530,7 @@ func (e *ProcessingEngine) processVenueWithRateLimit(ctx context.Context, venue 
 	}
 
 	// Score venue with AI
-	validationResult, err := e.scorer.ScoreVenue(ctx, *enhancedVenue)
+	validationResult, err := e.scorer.ScoreVenue(ctx, *enhancedVenue, user)
 	if err != nil {
 		atomic.AddInt64(&e.stats.APICallsOpenAI, 1)
 		return nil, gData, fmt.Errorf("failed to score venue: %w", err)

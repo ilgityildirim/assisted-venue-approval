@@ -139,11 +139,37 @@
                         </div>
                         <div class="field">
                             <div class="field-label">AI Score</div>
-                            <div class="field-value"><strong>{{.Combined.Score}}</strong> <span style="color:#999">({{.Combined.ScoreStatus}})</span></div>
+                            <div class="field-value"><strong>{{if .LatestHist}}{{.AIScoreFormatted}}{{else}}—{{end}}</strong></div>
                         </div>
                     </div>
                 </div>
                 {{end}}
+
+                <div class="section">
+                    <h2>AI Review</h2>
+                    <div class="field-grid">
+                        <div class="field" style="grid-column: 1 / -1;">
+                            <div class="field-label">AI Validation Note</div>
+                            <div class="field-value" style="white-space: pre-wrap; background:#f8f9fa; padding:12px; border-radius:6px;">{{if .LatestHist}}{{.AIReviewNote}}{{else}}No AI review available yet.{{end}}</div>
+                        </div>
+                        <div class="field">
+                            <div class="field-label">AI Score</div>
+                            <div class="field-value"><strong>{{if .LatestHist}}{{.AIScore}}{{else}}—{{end}}</strong></div>
+                        </div>
+                        <div class="field" style="grid-column: 1 / -1;">
+                            <div class="field-label">AI Review Note</div>
+                            <div class="field-value" style="white-space: pre-wrap; background:#f8f9fa; padding:12px; border-radius:6px;">{{if .LatestHist}}{{if .AIOutputNotes}}{{.AIOutputNotes}}{{else}}—{{end}}{{else}}—{{end}}</div>
+                        </div>
+                        <div class="field" style="grid-column: 1 / -1;">
+                            <div class="field-label">AI Output (JSON)</div>
+                            <pre style="background:#f8f9fa; padding:12px; border-radius:6px; overflow:auto; max-height:300px;">{{if .LatestHist}}{{if .AIOutputRestPretty}}{{.AIOutputRestPretty}}{{else if .AIOutputFullPretty}}{{.AIOutputFullPretty}}{{else}}{}{{end}}{{else}}{}{{end}}</pre>
+                        </div>
+                        <div class="field" style="grid-column: 1 / -1;">
+                            <div class="field-label">AI Score Breakdown (JSON)</div>
+                            <pre style="background:#f8f9fa; padding:12px; border-radius:6px; overflow:auto; max-height:300px;">{{if .LatestHist}}{{if .PrettyBreakdown}}{{.PrettyBreakdown}}{{else}}{}{{end}}{{else}}{}{{end}}</pre>
+                        </div>
+                    </div>
+                </div>
 
                 {{if .GoogleData}}
                 <div class="section">

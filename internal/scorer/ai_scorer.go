@@ -200,6 +200,44 @@ type AIScorer struct {
 	cache       *VenueCache
 }
 
+// calcTrustLevelFromUser derives a trust level (0.0-1.0) from submitter info, mirroring venue detail logic
+func (s *AIScorer) calcTrustLevelFromUser(user models.User) float64 {
+	// Base trust
+	trust := 0.3
+
+	// Venue admin: highest trust
+	if user.IsVenueAdmin {
+		return 1.0
+	}
+
+	// Ambassador heuristic (if fields present)
+	if user.AmbassadorLevel != nil && user.AmbassadorPoints != nil {
+		// High ranking ambassadors
+		if *user.AmbassadorLevel >= 3 || *user.AmbassadorPoints >= 1000 {
+			trust = 0.8
+		} else {
+			trust = 0.6
+		}
+	}
+
+	// Trusted member elevates baseline
+	if user.Trusted && trust < 0.7 {
+		trust = 0.7
+	}
+
+	// Contribution-based minor boosts
+	if user.Contributions > 100 {
+		trust += 0.1
+	}
+	if user.Contributions > 500 {
+		trust += 0.1
+	}
+	if trust > 1.0 {
+		trust = 1.0
+	}
+	return trust
+}
+
 func NewAIScorer(apiKey string) *AIScorer {
 	return &AIScorer{
 		client: openai.NewClient(apiKey),
@@ -216,15 +254,18 @@ func (s *AIScorer) GetCostStats() (totalTokens, totalRequests int, estimatedCost
 }
 
 // ScoreVenue performs AI-based venue validation with caching and cost optimization
-func (s *AIScorer) ScoreVenue(ctx context.Context, venue models.Venue) (*models.ValidationResult, error) {
+func (s *AIScorer) ScoreVenue(ctx context.Context, venue models.Venue, user models.User) (*models.ValidationResult, error) {
 	// Check cache first to avoid duplicate API calls
 	cacheKey := s.cache.generateKey(venue)
+	// Include submitter trust/user in cache key to avoid cross-user cache collisions
+	trust := s.calcTrustLevelFromUser(user)
+	cacheKey = fmt.Sprintf("%s|trust=%.2f|uid=%d", cacheKey, trust, user.ID)
 	if cached, found := s.cache.Get(cacheKey); found {
 		return &cached, nil
 	}
 
 	// Unified scoring regardless of Google data presence
-	result, err := s.scoreUnifiedVenue(ctx, venue)
+	result, err := s.scoreUnifiedVenue(ctx, venue, trust)
 	if err != nil {
 		return nil, fmt.Errorf("AI scoring failed: %w", err)
 	}
@@ -236,8 +277,8 @@ func (s *AIScorer) ScoreVenue(ctx context.Context, venue models.Venue) (*models.
 }
 
 // scoreUnifiedVenue uses a single prompt for all venues and enforces JSON response
-func (s *AIScorer) scoreUnifiedVenue(ctx context.Context, venue models.Venue) (*models.ValidationResult, error) {
-	prompt := s.buildUnifiedPrompt(venue)
+func (s *AIScorer) scoreUnifiedVenue(ctx context.Context, venue models.Venue, trustLevel float64) (*models.ValidationResult, error) {
+	prompt := s.buildUnifiedPrompt(venue, trustLevel)
 
 	resp, err := s.client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
 		Model: openai.GPT4oMini,
@@ -274,127 +315,8 @@ func (s *AIScorer) scoreUnifiedVenue(ctx context.Context, venue models.Venue) (*
 	return &result, nil
 }
 
-// scoreEnhancedVenue uses AI only for vegan relevance scoring, relying on Google data for other criteria
-func (s *AIScorer) scoreEnhancedVenue(ctx context.Context, venue models.Venue) (*models.ValidationResult, error) {
-	// For venues with Google data, we only need AI to evaluate vegan/vegetarian relevance
-	// This significantly reduces token usage and API costs
-
-	vegRelevanceScore, notes, rawJSON, err := s.evaluateVeganRelevance(ctx, venue)
-	if err != nil {
-		return nil, err
-	}
-
-	// Combine Google-based validation scores with AI vegan relevance score
-	validationDetails := venue.ValidationDetails
-	scoreBreakdown := validationDetails.ScoreBreakdown
-
-	// Replace the basic vegan relevance score (0-5 points) with AI-enhanced score (0-25 points)
-	enhancedTotal := scoreBreakdown.Total - scoreBreakdown.VeganRelevance + vegRelevanceScore
-
-	// Determine status
-	status := "manual_review"
-	if enhancedTotal >= 85 {
-		status = "approved"
-	} else if enhancedTotal < 50 {
-		status = "rejected"
-	}
-
-	return &models.ValidationResult{
-		VenueID:      venue.ID,
-		Score:        enhancedTotal,
-		Status:       status,
-		Notes:        notes,
-		AIOutputData: rawJSON,
-		ScoreBreakdown: map[string]int{
-			"venue_name_match":     scoreBreakdown.VenueNameMatch,
-			"address_accuracy":     scoreBreakdown.AddressAccuracy,
-			"geolocation_accuracy": scoreBreakdown.GeolocationAccuracy,
-			"phone_verification":   scoreBreakdown.PhoneVerification,
-			"business_hours":       scoreBreakdown.BusinessHours,
-			"website_verification": scoreBreakdown.WebsiteVerification,
-			"business_status":      scoreBreakdown.BusinessStatus,
-			"postal_code":          scoreBreakdown.PostalCode,
-			"vegan_relevance":      vegRelevanceScore,
-		},
-	}, nil
-}
-
-// scoreBasicVenue uses AI for full venue evaluation when Google data is unavailable
-func (s *AIScorer) scoreBasicVenue(ctx context.Context, venue models.Venue) (*models.ValidationResult, error) {
-	prompt := s.buildBasicPrompt(venue)
-
-	resp, err := s.client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-		Model: openai.GPT3Dot5Turbo,
-		Messages: []openai.ChatCompletionMessage{
-			{
-				Role:    openai.ChatMessageRoleSystem,
-				Content: s.getSystemPrompt(),
-			},
-			{
-				Role:    openai.ChatMessageRoleUser,
-				Content: prompt,
-			},
-		},
-		Temperature: 0.1,
-		MaxTokens:   200, // Limit response size to reduce costs
-	})
-
-	if err != nil {
-		return nil, fmt.Errorf("OpenAI API call failed: %w", err)
-	}
-
-	// Track API usage
-	s.costTracker.AddUsage(resp.Usage.PromptTokens, resp.Usage.CompletionTokens)
-
-	// Parse the structured response
-	result, err := s.parseStructuredResponse(resp.Choices[0].Message.Content, venue.ID)
-	if err != nil {
-		// Fallback parsing if structured parsing fails
-		result = s.parseResponseFallback(resp.Choices[0].Message.Content, venue.ID)
-	}
-
-	return &result, nil
-}
-
-// evaluateVeganRelevance uses AI only for vegan/vegetarian relevance assessment (cost-optimized)
-func (s *AIScorer) evaluateVeganRelevance(ctx context.Context, venue models.Venue) (score int, notes string, rawJSON *string, err error) {
-	// Build minimal prompt focused only on vegan relevance
-	prompt := s.buildVeganRelevancePrompt(venue)
-
-	resp, err := s.client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-		Model: openai.GPT3Dot5Turbo,
-		Messages: []openai.ChatCompletionMessage{
-			{
-				Role:    openai.ChatMessageRoleSystem,
-				Content: "You are a vegan/vegetarian restaurant expert. Evaluate ONLY the vegan/vegetarian relevance of venues for HappyCow directory.",
-			},
-			{
-				Role:    openai.ChatMessageRoleUser,
-				Content: prompt,
-			},
-		},
-		Temperature: 0.1,
-		MaxTokens:   100, // Very limited response to minimize costs
-	})
-
-	if err != nil {
-		return 0, "", nil, fmt.Errorf("vegan relevance API call failed: %w", err)
-	}
-
-	// Track API usage
-	s.costTracker.AddUsage(resp.Usage.PromptTokens, resp.Usage.CompletionTokens)
-
-	// Parse vegan relevance score from response
-	content := resp.Choices[0].Message.Content
-	score, notes = s.parseVeganRelevanceResponse(content)
-
-	return score, notes, &content, nil
-}
-
-// Optimized prompt functions for cost efficiency
-
 // buildUnifiedPrompt creates a single prompt with Combined Information (if available) or Venue Information as JSON strings
-func (s *AIScorer) buildUnifiedPrompt(venue models.Venue) string {
+func (s *AIScorer) buildUnifiedPrompt(venue models.Venue, trustLevel float64) string {
 	// Venue info
 	phone := ""
 	if venue.Phone != nil {
@@ -516,9 +438,6 @@ func (s *AIScorer) buildUnifiedPrompt(venue models.Venue) string {
 	}
 	venueJSON, _ := json.Marshal(venueInfo)
 
-	// Trust level unknown here; default to 0.0 (apply strict rules unless >= 0.8)
-	trustLevel := 0.0
-
 	return fmt.Sprintf(`You must score the venue and reply with JSON only.
 
 Data:
@@ -538,8 +457,12 @@ Instructions:
 - If Google business_status is provided and is not OPERATIONAL, set score=0 unless trust_level >= 0.80, and note why using notes.
 - For type validation: Check if Google types are LOGICALLY compatible with food venues. Food venues should have at least one food-related type (restaurant, food, meal_takeaway, meal_delivery, cafe, bakery, bar, establishment, point_of_interest). Types like ["premise", "street_address"] alone or ["lodging", "travel_agency"] suggest non-food business. Only set score=0 for clear mismatches when trust_level < 0.80.
 - Venue Type indicators (vegonly/vegan/category) suggest this should be a food-related venue.
-- Consider venue description (can be empty) in relevance.
+- LEGITIMACY (35 points): Score based on data verification and completeness. If venue has Google-verified data (formatted address, coordinates, phone, business status), award 25-35 points regardless of trust_level. Trust level is for validation rules only, not legitimacy assessment. Missing or unverified data reduces legitimacy points.
+- COMPLETENESS (30 points): Award points for available fields (name, address, phone, website, hours, coordinates).
+- RELEVANCE (35 points): Assess how well this fits HappyCow directory (vegan/vegetarian focus).
 - Use Combined Information if present; otherwise rely on Venue Information Data.
+- TRUST LEVEL usage: Trust level should only affect strict validation rules (business status, type mismatches) but not prevent scoring legitimate venues with good Google verification.
+- Consider venue description (can be empty) in relevance.
 - Allocate points roughly: legitimacy 35, completeness 30, relevance 35.
 - Respond with JSON only, no extra text.`,
 		string(combinedJSON),
@@ -574,54 +497,10 @@ Rules:
 - If Google Business Status exists and is not OPERATIONAL, set score=0 unless trust_level >= 0.80.
 - For Google types vs Venue Type validation: Check for LOGICAL compatibility, not exact match. A restaurant venue with Google types ["restaurant", "food", "establishment"] is valid. A restaurant venue with only ["premise", "street_address"] or ["lodging"] is suspicious and should set score=0 if trust_level < 0.80.
 - Restaurant/food venues should have at least one food-related Google type: restaurant, food, meal_takeaway, meal_delivery, cafe, bakery, bar, etc.
+- LEGITIMACY scoring: Base legitimacy on data quality and verification, NOT just trust level. If Combined Information contains verified Google data (address, phone, coordinates), legitimacy should be high (25-35) regardless of trust level. Only reduce legitimacy for data conflicts or missing critical information.
+- TRUST LEVEL usage: Trust level should only affect strict validation rules (business status, type mismatches) but not prevent scoring legitimate venues with good Google verification.
 - Consider the venue description (empty allowed). Do not invent facts beyond provided data.
 - Keep notes concise (<= 200 chars).`
-}
-
-// buildVeganRelevancePrompt creates a minimal prompt for vegan relevance assessment only
-func (s *AIScorer) buildVeganRelevancePrompt(venue models.Venue) string {
-	additionalInfo := ""
-	if venue.AdditionalInfo != nil {
-		additionalInfo = *venue.AdditionalInfo
-	}
-
-	// Minimal prompt to reduce token usage
-	return fmt.Sprintf(`Venue: "%s"
-Description: "%s"
-Vegan types: %d,%d
-
-Rate vegan/vegetarian relevance (0-25): {"score": X, "note": "brief reason"}`,
-		venue.Name, additionalInfo, venue.Vegan, venue.VegOnly)
-}
-
-// buildBasicPrompt for venues without Google data (full AI evaluation)
-func (s *AIScorer) buildBasicPrompt(venue models.Venue) string {
-	phone := "N/A"
-	if venue.Phone != nil {
-		phone = *venue.Phone
-	}
-	url := "N/A"
-	if venue.URL != nil {
-		url = *venue.URL
-	}
-	additionalInfo := "N/A"
-	if venue.AdditionalInfo != nil {
-		additionalInfo = *venue.AdditionalInfo
-	}
-
-	return fmt.Sprintf(`Venue: %s
-Address: %s  
-Phone: %s
-Website: %s
-Info: %s
-
-Score 0-100 for HappyCow directory:
-1. Business legitimacy (35pts)
-2. Info completeness (30pts) 
-3. Vegan relevance (35pts)
-
-JSON: {"score": X, "notes": "brief", "breakdown": {"legitimacy": X, "completeness": X, "relevance": X}}`,
-		venue.Name, venue.Location, phone, url, additionalInfo)
 }
 
 // Enhanced parsing functions with validation
@@ -751,7 +630,7 @@ func (s *AIScorer) BatchScoreVenues(ctx context.Context, venues []models.Venue, 
 				sem <- struct{}{}        // Acquire semaphore
 				defer func() { <-sem }() // Release semaphore
 
-				result, err := s.ScoreVenue(ctx, v)
+				result, err := s.ScoreVenue(ctx, v, models.User{})
 
 				mu.Lock()
 				if err != nil {

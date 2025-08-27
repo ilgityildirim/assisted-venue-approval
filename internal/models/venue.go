@@ -184,6 +184,7 @@ type ValidationHistory struct {
 	ValidationStatus string         `json:"validation_status"`
 	ValidationNotes  string         `json:"validation_notes"`
 	ScoreBreakdown   map[string]int `json:"score_breakdown"`
+	AIOutputData     *string        `json:"ai_output_data,omitempty"`
 
 	// Google Places API data
 	GooglePlaceID    *string          `json:"google_place_id,omitempty"`

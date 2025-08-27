@@ -453,12 +453,20 @@ func VenueDetailHandler(db *database.DB) http.HandlerFunc {
 		}
 
 		data := struct {
-			Venue         models.VenueWithUser
-			History       []models.ValidationHistory
-			SimilarVenues []models.Venue
-			GoogleData    *models.GooglePlaceData
-			Combined      CombinedInfo
-			TrustPercent  int
+			Venue              models.VenueWithUser
+			History            []models.ValidationHistory
+			SimilarVenues      []models.Venue
+			GoogleData         *models.GooglePlaceData
+			Combined           CombinedInfo
+			TrustPercent       int
+			LatestHist         *models.ValidationHistory
+			PrettyBreakdown    string
+			AIReviewNote       string
+			AIScore            int
+			AIScoreFormatted   string
+			AIOutputNotes      string
+			AIOutputRestPretty string
+			AIOutputFullPretty string
 		}{
 			Venue:         *venue,
 			History:       history,
@@ -471,6 +479,47 @@ func VenueDetailHandler(db *database.DB) http.HandlerFunc {
 				}
 				return 30
 			}(),
+		}
+
+		// Prepare latest history and AI review fields
+		if len(history) > 0 {
+			latest := history[0]
+			// find most recent by ProcessedAt
+			for _, h := range history {
+				if h.ProcessedAt.After(latest.ProcessedAt) {
+					latest = h
+				}
+			}
+			data.LatestHist = &latest
+			data.AIReviewNote = latest.ValidationNotes
+			data.AIScore = latest.ValidationScore
+			// Display the latest AI score in Combined Information area, formatted with two decimals
+			data.AIScoreFormatted = fmt.Sprintf("%.2f", float64(latest.ValidationScore))
+			// Pretty print breakdown JSON
+			if latest.ScoreBreakdown != nil {
+				if b, err := json.MarshalIndent(latest.ScoreBreakdown, "", "  "); err == nil {
+					data.PrettyBreakdown = string(b)
+				}
+			}
+			// Parse AI Output Data JSON if present
+			if latest.AIOutputData != nil && *latest.AIOutputData != "" {
+				var raw map[string]interface{}
+				if err := json.Unmarshal([]byte(*latest.AIOutputData), &raw); err == nil {
+					// Extract notes if available
+					if n, ok := raw["notes"].(string); ok {
+						data.AIOutputNotes = n
+					}
+					// Prepare the rest of JSON without notes
+					delete(raw, "notes")
+					if rb, err := json.MarshalIndent(raw, "", "  "); err == nil {
+						data.AIOutputRestPretty = string(rb)
+					}
+					// Also keep full pretty JSON
+					if fb, err := json.MarshalIndent(json.RawMessage(*latest.AIOutputData), "", "  "); err == nil {
+						data.AIOutputFullPretty = string(fb)
+					}
+				}
+			}
 		}
 
 		if err := ExecuteTemplate(w, "venue_detail.tmpl", data); err != nil {

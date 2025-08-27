@@ -362,10 +362,10 @@ func (db *DB) SaveValidationResult(result *models.ValidationResult) error {
 // GetValidationHistory retrieves validation history for a venue
 func (db *DB) GetValidationHistory(venueID int64) ([]models.ValidationHistory, error) {
 	query := `SELECT id, venue_id, validation_score, validation_status, validation_notes,
-              score_breakdown, processed_at 
-              FROM venue_validation_histories 
-              WHERE venue_id = ? 
-              ORDER BY processed_at DESC`
+             score_breakdown, ai_output_data, processed_at 
+             FROM venue_validation_histories 
+             WHERE venue_id = ? 
+             ORDER BY processed_at DESC`
 
 	rows, err := db.conn.Query(query, venueID)
 	if err != nil {
@@ -377,15 +377,20 @@ func (db *DB) GetValidationHistory(venueID int64) ([]models.ValidationHistory, e
 	for rows.Next() {
 		var h models.ValidationHistory
 		var scoreBreakdownJSON string
+		var aiOutput sql.NullString
 
 		err := rows.Scan(&h.ID, &h.VenueID, &h.ValidationScore, &h.ValidationStatus,
-			&h.ValidationNotes, &scoreBreakdownJSON, &h.ProcessedAt)
+			&h.ValidationNotes, &scoreBreakdownJSON, &aiOutput, &h.ProcessedAt)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan validation history row: %w", err)
 		}
 
 		if err = json.Unmarshal([]byte(scoreBreakdownJSON), &h.ScoreBreakdown); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal score breakdown: %w", err)
+		}
+		if aiOutput.Valid {
+			val := aiOutput.String
+			h.AIOutputData = &val
 		}
 
 		history = append(history, h)
@@ -803,7 +808,7 @@ func (db *DB) GetValidationHistoryPaginated(limit, offset int) ([]models.Validat
 func (db *DB) GetVenueValidationHistory(venueID int64) ([]models.ValidationHistory, error) {
 	query := `SELECT 
         id, venue_id, validation_score, validation_status, validation_notes,
-        score_breakdown, processed_at
+        score_breakdown, ai_output_data, processed_at
         FROM venue_validation_histories 
         WHERE venue_id = ? 
         ORDER BY processed_at DESC`
@@ -818,15 +823,20 @@ func (db *DB) GetVenueValidationHistory(venueID int64) ([]models.ValidationHisto
 	for rows.Next() {
 		var h models.ValidationHistory
 		var scoreBreakdownJSON string
+		var aiOutput sql.NullString
 
 		err := rows.Scan(&h.ID, &h.VenueID, &h.ValidationScore, &h.ValidationStatus,
-			&h.ValidationNotes, &scoreBreakdownJSON, &h.ProcessedAt)
+			&h.ValidationNotes, &scoreBreakdownJSON, &aiOutput, &h.ProcessedAt)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan validation history row: %w", err)
 		}
 
 		if err = json.Unmarshal([]byte(scoreBreakdownJSON), &h.ScoreBreakdown); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal score breakdown: %w", err)
+		}
+		if aiOutput.Valid {
+			val := aiOutput.String
+			h.AIOutputData = &val
 		}
 
 		history = append(history, h)
