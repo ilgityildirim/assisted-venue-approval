@@ -65,7 +65,8 @@
 
         <div class="batch-controls" id="batch-controls" style="display: none;">
             <div class="selected-count" id="selected-count">0 venues selected</div>
-            <div style="margin-top: 10px;">
+            <div style="margin-top: 10px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+                <button id="start-ai-btn" class="btn btn-success" onclick="startAIForSelected()" disabled>🚀 Start AI-Assisted Review for Selected (0) Venues</button>
                 <button class="btn btn-success" onclick="batchApprove()">✅ Approve Selected</button>
                 <button class="btn" onclick="selectAll()">Select All</button>
                 <button class="btn" onclick="selectNone()">Select None</button>
@@ -142,8 +143,14 @@
             const count = document.querySelectorAll('.venue-checkbox:checked').length;
             const controls = document.getElementById('batch-controls');
             const countEl = document.getElementById('selected-count');
+            const startBtn = document.getElementById('start-ai-btn');
+            const plural = count === 1 ? '' : 's';
             controls.style.display = count > 0 ? 'block' : 'none';
-            countEl.textContent = count + ' venue' + (count === 1 ? '' : 's') + ' selected';
+            countEl.textContent = count + ' venue' + plural + ' selected';
+            if (startBtn) {
+                startBtn.disabled = count === 0;
+                startBtn.textContent = '🚀 Start AI-Assisted Review for Selected (' + count + ') Venue' + plural;
+            }
         }
         function toggleSelectAll() {
             const checked = document.getElementById('select-all').checked;
@@ -155,6 +162,38 @@
 
         function getSelectedIds() {
             return Array.from(document.querySelectorAll('.venue-checkbox:checked')).map(cb => cb.value);
+        }
+        async function startAIForSelected() {
+            const ids = getSelectedIds();
+            if (ids.length === 0) return;
+            if (!confirm('Start AI-Assisted Review for ' + ids.length + ' selected venue' + (ids.length === 1 ? '' : 's') + '?')) {
+                return;
+            }
+            const btn = document.getElementById('start-ai-btn');
+            btn.disabled = true;
+            btn.textContent = '⏳ Queuing ' + ids.length + '...';
+            try {
+                const resp = await fetch('/validate/batch', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ venue_ids: ids.map(id => parseInt(id, 10)), force: true })
+                });
+                if (!resp.ok) {
+                    throw new Error('Request failed with status ' + resp.status);
+                }
+                const data = await resp.json().catch(() => ({}));
+                const queued = typeof data.queued === 'number' ? data.queued : 0;
+                if (data.status === 'skipped' || queued === 0) {
+                    alert('Nothing queued: ' + (data.reason || 'already processed or invalid IDs'));
+                } else {
+                    alert('Queued ' + queued + ' venue' + (queued === 1 ? '' : 's') + ' for AI-Assisted Review.');
+                }
+            } catch (e) {
+                console.error(e);
+                alert('Failed to start AI-Assisted Reviews.');
+            } finally {
+                setTimeout(() => { window.location.reload(); }, 800);
+            }
         }
         function batchApprove() {
             const ids = getSelectedIds();

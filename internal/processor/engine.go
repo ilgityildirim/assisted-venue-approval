@@ -194,11 +194,10 @@ func DefaultProcessingConfig() ProcessingConfig {
 }
 
 // NewProcessingEngine creates a new concurrent processing engine
-func NewProcessingEngine(db *database.DB, scraper *scraper.GoogleMapsScraper, scorer *scorer.AIScorer, config ProcessingConfig) *ProcessingEngine {
+func NewProcessingEngine(db *database.DB, scraper *scraper.GoogleMapsScraper, scorer *scorer.AIScorer, config ProcessingConfig, decisionConfig decision.DecisionConfig) *ProcessingEngine {
 	ctx, cancel := context.WithCancel(context.Background())
 
-	// Initialize decision engine with default configuration
-	decisionConfig := decision.DefaultDecisionConfig()
+	// Initialize decision engine with provided configuration (env-driven)
 	decisionEngine := decision.NewDecisionEngine(decisionConfig)
 
 	engine := &ProcessingEngine{

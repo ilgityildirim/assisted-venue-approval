@@ -16,6 +16,7 @@ import (
 	_ "github.com/joho/godotenv/autoload"
 
 	"automatic-vendor-validation/internal/admin"
+	"automatic-vendor-validation/internal/decision"
 	"automatic-vendor-validation/internal/models"
 	"automatic-vendor-validation/internal/processor"
 	"automatic-vendor-validation/internal/scorer"
@@ -50,7 +51,12 @@ func main() {
 		processingConfig.WorkerCount = cfg.WorkerCount
 	}
 
-	processingEngine := processor.NewProcessingEngine(db, gmapsScraper, aiScorer, processingConfig)
+	// Build decision engine config using env-driven approval threshold
+	decisionConfig := decision.DefaultDecisionConfig()
+	if cfg.ApprovalThreshold > 0 {
+		decisionConfig.ApprovalThreshold = cfg.ApprovalThreshold
+	}
+	processingEngine := processor.NewProcessingEngine(db, gmapsScraper, aiScorer, processingConfig, decisionConfig)
 
 	// Load templates
 	if err := admin.LoadTemplates(); err != nil {
@@ -241,6 +247,7 @@ func (app *App) validateSingleHandler(w http.ResponseWriter, r *http.Request) {
 func (app *App) validateBatchHandler(w http.ResponseWriter, r *http.Request) {
 	type reqBody struct {
 		VenueIDs []int64 `json:"venue_ids"`
+		Force    bool    `json:"force"`
 	}
 	var body reqBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -259,13 +266,15 @@ func (app *App) validateBatchHandler(w http.ResponseWriter, r *http.Request) {
 		if err != nil || venueWithUser == nil {
 			continue
 		}
-		// Skip if already has any validation history to avoid duplicates
-		hasHist, err := app.db.HasAnyValidationHistory(id)
-		if err != nil {
-			log.Printf("error checking validation history for %d: %v", id, err)
-		}
-		if hasHist {
-			continue
+		// Skip if already has any validation history to avoid duplicates, unless Force is true
+		if !body.Force {
+			hasHist, err := app.db.HasAnyValidationHistory(id)
+			if err != nil {
+				log.Printf("error checking validation history for %d: %v", id, err)
+			}
+			if hasHist {
+				continue
+			}
 		}
 		queue = append(queue, *venueWithUser)
 	}

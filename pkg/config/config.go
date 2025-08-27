@@ -30,7 +30,7 @@ type Config struct {
 }
 
 func Load() *Config {
-	threshold, _ := strconv.Atoi(getEnv("APPROVAL_THRESHOLD", "85"))
+	threshold, _ := strconv.Atoi(getEnv("APPROVAL_THRESHOLD", "75"))
 	workerCount, _ := strconv.Atoi(getEnv("WORKER_COUNT", "0")) // 0 = use default
 
 	// Database performance settings with defaults
