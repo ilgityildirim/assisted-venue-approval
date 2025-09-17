@@ -39,6 +39,17 @@ type EnhancedVenueData struct {
 }
 
 func (s *GoogleMapsScraper) EnhanceVenue(ctx context.Context, venue models.Venue) (*EnhancedVenueData, error) {
+	// Add per-request timeout; TODO: make configurable
+	ctx, cancel := context.WithTimeout(ctx, 12*time.Second)
+	defer cancel()
+
+	// Respect cancellation early
+	select {
+	case <-ctx.Done():
+		return &EnhancedVenueData{Venue: venue}, ctx.Err()
+	default:
+	}
+
 	// Search for the place using name and location
 	searchReq := &maps.TextSearchRequest{
 		Query: venue.Name + " " + venue.Location,

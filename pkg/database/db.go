@@ -1,6 +1,7 @@
 package database
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -18,6 +19,12 @@ type DB struct {
 	conn  *sql.DB
 	stmts map[string]*sql.Stmt
 }
+
+// default operation timeouts; TODO: make configurable via config.Config
+const (
+	readTimeout  = 8 * time.Second
+	writeTimeout = 6 * time.Second
+)
 
 func New(databaseURL string) (*DB, error) {
 	conn, err := sql.Open("mysql", databaseURL)
@@ -105,6 +112,22 @@ func (db *DB) Close() error {
 		stmt.Close()
 	}
 	return db.conn.Close()
+}
+
+// withReadTimeout creates a context with standard read timeout.
+func (db *DB) withReadTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithTimeout(ctx, readTimeout)
+}
+
+// withWriteTimeout creates a context with standard write timeout.
+func (db *DB) withWriteTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return context.WithTimeout(ctx, writeTimeout)
 }
 
 // GetPendingVenues retrieves all pending venues with complete field data
@@ -280,6 +303,21 @@ func (db *DB) UpdateVenueStatus(venueID int64, active int, notes string, reviewe
 	return nil
 }
 
+// UpdateVenueStatusCtx updates venue status with context.
+func (db *DB) UpdateVenueStatusCtx(ctx context.Context, venueID int64, active int, notes string, reviewer *string) error {
+	ctx, cancel := db.withWriteTimeout(ctx)
+	defer cancel()
+	query := `UPDATE venues SET 
+        active = ?, 
+        admin_note = ?, 
+        admin_last_update = NOW()
+        WHERE id = ?`
+	if _, err := db.conn.ExecContext(ctx, query, active, notes, venueID); err != nil {
+		return fmt.Errorf("failed to update venue status: %w", err)
+	}
+	return nil
+}
+
 // BatchUpdateVenueStatus updates multiple venues in a single transaction
 func (db *DB) BatchUpdateVenueStatus(venueIDs []int64, active int, notes string, updatedByID *int) error {
 	if len(venueIDs) == 0 {
@@ -357,6 +395,38 @@ func (db *DB) SaveValidationResult(result *models.ValidationResult) error {
 		return fmt.Errorf("failed to commit validation result transaction: %w", err)
 	}
 
+	return nil
+}
+
+// SaveValidationResultCtx is a context-aware variant with timeout for DB writes
+func (db *DB) SaveValidationResultCtx(ctx context.Context, result *models.ValidationResult) error {
+	ctx, cancel := db.withWriteTimeout(ctx)
+	defer cancel()
+
+	tx, err := db.conn.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin validation result transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	historyQuery := `INSERT INTO venue_validation_histories 
+	                     (venue_id, validation_score, validation_status, validation_notes, 
+	                      score_breakdown, ai_output_data, processed_at) 
+	                     VALUES (?, ?, ?, ?, ?, ?, NOW())`
+
+	scoreBreakdownJSON, err := json.Marshal(result.ScoreBreakdown)
+	if err != nil {
+		return fmt.Errorf("failed to marshal score breakdown: %w", err)
+	}
+
+	if _, err = tx.ExecContext(ctx, historyQuery, result.VenueID, result.Score, result.Status,
+		result.Notes, string(scoreBreakdownJSON), result.AIOutputData); err != nil {
+		return fmt.Errorf("failed to insert validation history: %w", err)
+	}
+
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit validation result transaction: %w", err)
+	}
 	return nil
 }
 
@@ -758,6 +828,55 @@ func (db *DB) GetSimilarVenues(venue models.Venue, limit int) ([]models.Venue, e
 	return venues, nil
 }
 
+// GetSimilarVenuesCtx returns venues similar to the given venue with context
+func (db *DB) GetSimilarVenuesCtx(ctx context.Context, venue models.Venue, limit int) ([]models.Venue, error) {
+	ctx, cancel := db.withReadTimeout(ctx)
+	defer cancel()
+	locationWords := strings.Fields(strings.ToLower(venue.Location))
+	if len(locationWords) == 0 {
+		return []models.Venue{}, nil
+	}
+	var likeClauses []string
+	var args []interface{}
+	for _, word := range locationWords {
+		if len(word) > 2 {
+			likeClauses = append(likeClauses, "LOWER(location) LIKE ?")
+			args = append(args, "%"+word+"%")
+		}
+	}
+	if len(likeClauses) == 0 {
+		return []models.Venue{}, nil
+	}
+	query := fmt.Sprintf(`SELECT 
+        id, path, entrytype, name, url, fburl, instagram_url, location, zipcode, phone,
+        other_food_type, price, additionalinfo, vdetails, openhours, openhours_note,
+        timezone, hash, email, ownername, sentby, user_id, active, vegonly, vegan,
+        sponsor_level, crossstreet, lat, lng, created_at, date_added, date_updated,
+        admin_last_update, admin_note, admin_hold, admin_hold_email_note,
+        updated_by_id, made_active_by_id, made_active_at, show_premium, category,
+        pretty_url, edit_lock, request_vegan_decal_at, request_excellent_decal_at, source
+        FROM venues 
+        WHERE id != ? AND (%s)
+        ORDER BY active DESC
+        LIMIT ?`, strings.Join(likeClauses, " OR "))
+	allArgs := append([]interface{}{venue.ID}, args...)
+	allArgs = append(allArgs, limit)
+	rows, err := db.conn.QueryContext(ctx, query, allArgs...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query similar venues: %w", err)
+	}
+	defer rows.Close()
+	var venues []models.Venue
+	for rows.Next() {
+		v, err := db.scanVenueRow(rows)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan similar venue row: %w", err)
+		}
+		venues = append(venues, *v)
+	}
+	return venues, nil
+}
+
 // GetValidationHistoryPaginated returns validation history with pagination
 func (db *DB) GetValidationHistoryPaginated(limit, offset int) ([]models.ValidationHistory, int, error) {
 	// Get total count
@@ -1065,4 +1184,560 @@ func (db *DB) GetManualReviewVenues(search string, limit, offset int) ([]models.
 	}
 
 	return venues, scores, total, nil
+}
+
+// Context-aware DB methods appended for cancellation and timeouts
+// NOTE: Prefer these in new code; legacy methods call non-ctx variants for compatibility.
+
+// UpdateVenueActiveCtx updates only the active status with context.
+func (db *DB) UpdateVenueActiveCtx(ctx context.Context, venueID int64, active int) error {
+	ctx, cancel := db.withWriteTimeout(ctx)
+	defer cancel()
+	query := `UPDATE venues SET active = ?, admin_last_update = NOW() WHERE id = ?`
+	if _, err := db.conn.ExecContext(ctx, query, active, venueID); err != nil {
+		return fmt.Errorf("failed to update venue active status: %w", err)
+	}
+	return nil
+}
+
+// SaveValidationResultWithGoogleDataCtx saves validation history with Google data using context.
+func (db *DB) SaveValidationResultWithGoogleDataCtx(ctx context.Context, result *models.ValidationResult, googleData *models.GooglePlaceData) error {
+	ctx, cancel := db.withWriteTimeout(ctx)
+	defer cancel()
+
+	tx, err := db.conn.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin validation result transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	var googlePlaceID *string
+	var googlePlaceFound bool
+	var googlePlaceDataJSON *string
+	if googleData != nil {
+		googlePlaceID = &googleData.PlaceID
+		googlePlaceFound = true
+		data, err := json.Marshal(googleData)
+		if err != nil {
+			return fmt.Errorf("failed to marshal Google Places data: %w", err)
+		}
+		jsonStr := string(data)
+		googlePlaceDataJSON = &jsonStr
+	}
+
+	scoreBreakdownJSON, err := json.Marshal(result.ScoreBreakdown)
+	if err != nil {
+		return fmt.Errorf("failed to marshal score breakdown: %w", err)
+	}
+
+	stmt := db.stmts["insertValidationHistory"]
+	if stmt == nil {
+		return fmt.Errorf("prepared statement insertValidationHistory not initialized")
+	}
+	if _, err = tx.StmtContext(ctx, stmt).ExecContext(ctx, result.VenueID, result.Score, result.Status,
+		result.Notes, string(scoreBreakdownJSON), googlePlaceID, googlePlaceFound, googlePlaceDataJSON, result.AIOutputData); err != nil {
+		return fmt.Errorf("failed to insert validation history: %w", err)
+	}
+
+	if err = tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit validation result transaction: %w", err)
+	}
+	return nil
+}
+
+// GetRecentValidationResultsCtx returns recent validation results with context.
+func (db *DB) GetRecentValidationResultsCtx(ctx context.Context, limit int) ([]models.ValidationResult, error) {
+	ctx, cancel := db.withReadTimeout(ctx)
+	defer cancel()
+	query := `SELECT venue_id, validation_score, validation_status, validation_notes, score_breakdown, processed_at FROM venue_validation_histories ORDER BY processed_at DESC LIMIT ?`
+	rows, err := db.conn.QueryContext(ctx, query, limit)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query recent validation results: %w", err)
+	}
+	defer rows.Close()
+	var results []models.ValidationResult
+	for rows.Next() {
+		var result models.ValidationResult
+		var scoreBreakdownJSON string
+		var processedAt time.Time
+		if err := rows.Scan(&result.VenueID, &result.Score, &result.Status, &result.Notes, &scoreBreakdownJSON, &processedAt); err != nil {
+			return nil, fmt.Errorf("failed to scan validation result row: %w", err)
+		}
+		if err := json.Unmarshal([]byte(scoreBreakdownJSON), &result.ScoreBreakdown); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal score breakdown: %w", err)
+		}
+		results = append(results, result)
+	}
+	return results, nil
+}
+
+// GetPendingVenuesWithUserCtx returns pending venues with user info using context.
+func (db *DB) GetPendingVenuesWithUserCtx(ctx context.Context) ([]models.VenueWithUser, error) {
+	ctx, cancel := db.withReadTimeout(ctx)
+	defer cancel()
+	query := `SELECT 
+        v.id, v.path, v.entrytype, v.name, v.url, v.fburl, v.instagram_url, 
+        v.location, v.zipcode, v.phone, v.other_food_type, v.price, v.additionalinfo,
+        v.vdetails, v.openhours, v.openhours_note, v.timezone, v.hash, v.email,
+        v.ownername, v.sentby, v.user_id, v.active, v.vegonly, v.vegan,
+        v.sponsor_level, v.crossstreet, v.lat, v.lng, v.created_at, v.date_added,
+        v.date_updated, v.admin_last_update, v.admin_note, v.admin_hold,
+        v.admin_hold_email_note, v.updated_by_id, v.made_active_by_id,
+        v.made_active_at, v.show_premium, v.category, v.pretty_url, v.edit_lock,
+        v.request_vegan_decal_at, v.request_excellent_decal_at, v.source,
+        m.username, m.email as user_email, m.trusted, m.contributions,
+        CASE WHEN va.venue_id IS NOT NULL THEN 1 ELSE 0 END as is_venue_admin,
+        a.level as ambassador_level, a.points as ambassador_points, a.path as ambassador_region
+        FROM venues v
+        LEFT JOIN members m ON v.user_id = m.id
+        LEFT JOIN venue_admin va ON v.id = va.venue_id AND v.user_id = va.user_id
+        LEFT JOIN ambassadors a ON v.user_id = a.user_id
+        WHERE v.active = 0
+        ORDER BY v.created_at ASC`
+	rows, err := db.conn.QueryContext(ctx, query)
+	if err != nil {
+		return nil, errs.NewDB("database.GetPendingVenuesWithUser", "failed to query pending venues with user info", err)
+	}
+	defer rows.Close()
+	var venues []models.VenueWithUser
+	for rows.Next() {
+		var vu models.VenueWithUser
+		var venue models.Venue
+		var user models.User
+		var username, email sql.NullString
+		var trusted, contributions sql.NullInt64
+		var isVenueAdmin sql.NullInt64
+		var ambassadorLevel, ambassadorPoints sql.NullInt64
+		var ambassadorRegion sql.NullString
+		if err := rows.Scan(
+			&venue.ID, &venue.Path, &venue.EntryType, &venue.Name, &venue.URL,
+			&venue.FBUrl, &venue.InstagramUrl, &venue.Location, &venue.Zipcode,
+			&venue.Phone, &venue.OtherFoodType, &venue.Price, &venue.AdditionalInfo,
+			&venue.VDetails, &venue.OpenHours, &venue.OpenHoursNote, &venue.Timezone,
+			&venue.Hash, &venue.Email, &venue.OwnerName, &venue.SentBy, &venue.UserID,
+			&venue.Active, &venue.VegOnly, &venue.Vegan, &venue.SponsorLevel,
+			&venue.CrossStreet, &venue.Lat, &venue.Lng, &venue.CreatedAt,
+			&venue.DateAdded, &venue.DateUpdated, &venue.AdminLastUpdate,
+			&venue.AdminNote, &venue.AdminHold, &venue.AdminHoldEmailNote,
+			&venue.UpdatedByID, &venue.MadeActiveByID, &venue.MadeActiveAt,
+			&venue.ShowPremium, &venue.Category, &venue.PrettyUrl, &venue.EditLock,
+			&venue.RequestVeganDecalAt, &venue.RequestExcellentDecalAt, &venue.Source,
+			&username, &email, &trusted, &contributions,
+			&isVenueAdmin, &ambassadorLevel, &ambassadorPoints,
+			&ambassadorRegion,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan venue with user row: %w", err)
+		}
+		if username.Valid {
+			user.Username = username.String
+		}
+		if email.Valid {
+			user.Email = email.String
+		}
+		if trusted.Valid {
+			user.Trusted = trusted.Int64 > 0
+		}
+		if contributions.Valid {
+			user.Contributions = int(contributions.Int64)
+		}
+		user.ID = venue.UserID
+		vu.Venue = venue
+		vu.User = user
+		if isVenueAdmin.Valid {
+			vu.IsVenueAdmin = isVenueAdmin.Int64 > 0
+		}
+		if ambassadorLevel.Valid {
+			level := int(ambassadorLevel.Int64)
+			user.AmbassadorLevel = &level
+		}
+		if ambassadorPoints.Valid {
+			points := int(ambassadorPoints.Int64)
+			user.AmbassadorPoints = &points
+		}
+		if ambassadorRegion.Valid {
+			user.AmbassadorRegion = &ambassadorRegion.String
+		}
+		venues = append(venues, vu)
+	}
+	return venues, nil
+}
+
+// GetVenuesFilteredCtx returns filtered venues with pagination and context.
+func (db *DB) GetVenuesFilteredCtx(ctx context.Context, status, search string, limit, offset int) ([]models.VenueWithUser, int, error) {
+	ctx, cancel := db.withReadTimeout(ctx)
+	defer cancel()
+	whereClause := "WHERE 1=1"
+	args := []interface{}{}
+	if status != "" {
+		switch status {
+		case "pending":
+			whereClause += " AND v.active = ?"
+			args = append(args, 0)
+		case "approved":
+			whereClause += " AND v.active = ?"
+			args = append(args, 1)
+		case "rejected":
+			whereClause += " AND v.active = ?"
+			args = append(args, -1)
+		}
+	}
+	if search != "" {
+		whereClause += " AND (v.name LIKE ? OR v.location LIKE ? OR m.username LIKE ?)"
+		searchPattern := "%" + search + "%"
+		args = append(args, searchPattern, searchPattern, searchPattern)
+	}
+	countQuery := fmt.Sprintf(`SELECT COUNT(*) FROM venues v 
+        LEFT JOIN members m ON v.user_id = m.id 
+        LEFT JOIN venue_admin va ON v.id = va.venue_id AND m.id = va.user_id
+        LEFT JOIN ambassadors a ON m.id = a.user_id %s`, whereClause)
+	var total int
+	if err := db.conn.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("failed to get filtered venues count: %w", err)
+	}
+	query := fmt.Sprintf(`SELECT v.id, v.path, v.entrytype, v.name, v.url, v.fburl, v.instagram_url, 
+        v.location, v.zipcode, v.phone, v.other_food_type, v.price, v.additionalinfo, 
+        v.vdetails, v.openhours, v.openhours_note, v.timezone, v.hash, v.email, 
+        v.ownername, v.sentby, v.user_id, v.active, v.vegonly, v.vegan, v.sponsor_level, 
+        v.crossstreet, v.lat, v.lng, v.created_at, v.date_added, v.date_updated, 
+        v.admin_last_update, v.admin_note, v.admin_hold, v.admin_hold_email_note, 
+        v.updated_by_id, v.made_active_by_id, v.made_active_at, v.show_premium, 
+        v.category, v.pretty_url, v.edit_lock, v.request_vegan_decal_at, 
+        v.request_excellent_decal_at, v.source,
+        m.id as member_id, m.username, m.trusted,
+        va.venue_id IS NOT NULL as is_venue_admin,
+        a.level as ambassador_level, a.points as ambassador_points, a.path as ambassador_path
+        FROM venues v 
+        LEFT JOIN members m ON v.user_id = m.id 
+        LEFT JOIN venue_admin va ON v.id = va.venue_id AND m.id = va.user_id
+        LEFT JOIN ambassadors a ON m.id = a.user_id
+        %s
+        ORDER BY v.admin_last_update DESC, v.created_at DESC
+        LIMIT ? OFFSET ?`, whereClause)
+	args = append(args, limit, offset)
+	rows, err := db.conn.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to query filtered venues: %w", err)
+	}
+	defer rows.Close()
+	var venues []models.VenueWithUser
+	for rows.Next() {
+		var venueWithUser models.VenueWithUser
+		var venue models.Venue
+		var user models.User
+		var isVenueAdmin bool
+		var ambassadorLevel, ambassadorPoints sql.NullInt64
+		var ambassadorPath sql.NullString
+		var memberID sql.NullInt64
+		var username sql.NullString
+		var trusted sql.NullInt64
+		if err := rows.Scan(
+			&venue.ID, &venue.Path, &venue.EntryType, &venue.Name, &venue.URL,
+			&venue.FBUrl, &venue.InstagramUrl, &venue.Location, &venue.Zipcode,
+			&venue.Phone, &venue.OtherFoodType, &venue.Price, &venue.AdditionalInfo,
+			&venue.VDetails, &venue.OpenHours, &venue.OpenHoursNote, &venue.Timezone,
+			&venue.Hash, &venue.Email, &venue.OwnerName, &venue.SentBy, &venue.UserID,
+			&venue.Active, &venue.VegOnly, &venue.Vegan, &venue.SponsorLevel,
+			&venue.CrossStreet, &venue.Lat, &venue.Lng, &venue.CreatedAt,
+			&venue.DateAdded, &venue.DateUpdated, &venue.AdminLastUpdate,
+			&venue.AdminNote, &venue.AdminHold, &venue.AdminHoldEmailNote,
+			&venue.UpdatedByID, &venue.MadeActiveByID, &venue.MadeActiveAt,
+			&venue.ShowPremium, &venue.Category, &venue.PrettyUrl, &venue.EditLock,
+			&venue.RequestVeganDecalAt, &venue.RequestExcellentDecalAt, &venue.Source,
+			&memberID, &username, &trusted,
+			&isVenueAdmin, &ambassadorLevel, &ambassadorPoints, &ambassadorPath,
+		); err != nil {
+			return nil, 0, fmt.Errorf("failed to scan venue with user row: %w", err)
+		}
+		if memberID.Valid {
+			user.ID = uint(memberID.Int64)
+		} else {
+			user.ID = venue.UserID
+		}
+		if username.Valid {
+			user.Username = username.String
+		}
+		if trusted.Valid {
+			user.Trusted = trusted.Int64 > 0
+		}
+		venueWithUser.Venue = venue
+		venueWithUser.User = user
+		venueWithUser.IsVenueAdmin = isVenueAdmin
+		if ambassadorLevel.Valid {
+			venueWithUser.AmbassadorLevel = &ambassadorLevel.Int64
+		}
+		if ambassadorPoints.Valid {
+			venueWithUser.AmbassadorPoints = &ambassadorPoints.Int64
+		}
+		if ambassadorPath.Valid {
+			venueWithUser.AmbassadorPath = &ambassadorPath.String
+		}
+		venues = append(venues, venueWithUser)
+	}
+	return venues, total, nil
+}
+
+// GetVenueWithUserByIDCtx fetches a single venue with user info by ID.
+func (db *DB) GetVenueWithUserByIDCtx(ctx context.Context, venueID int64) (*models.VenueWithUser, error) {
+	ctx, cancel := db.withReadTimeout(ctx)
+	defer cancel()
+	query := `SELECT 
+        v.id, v.path, v.entrytype, v.name, v.url, v.fburl, v.instagram_url, 
+        v.location, v.zipcode, v.phone, v.other_food_type, v.price, v.additionalinfo,
+        v.vdetails, v.openhours, v.openhours_note, v.timezone, v.hash, v.email,
+        v.ownername, v.sentby, v.user_id, v.active, v.vegonly, v.vegan,
+        v.sponsor_level, v.crossstreet, v.lat, v.lng, v.created_at, v.date_added,
+        v.date_updated, v.admin_last_update, v.admin_note, v.admin_hold,
+        v.admin_hold_email_note, v.updated_by_id, v.made_active_by_id,
+        v.made_active_at, v.show_premium, v.category, v.pretty_url, v.edit_lock,
+        v.request_vegan_decal_at, v.request_excellent_decal_at, v.source,
+        m.id as member_id, m.username, m.email as user_email, m.trusted, m.contributions
+        FROM venues v
+        LEFT JOIN members m ON v.user_id = m.id
+        WHERE v.id = ?`
+	row := db.conn.QueryRowContext(ctx, query, venueID)
+	var vu models.VenueWithUser
+	var venue models.Venue
+	var user models.User
+	var memberID sql.NullInt64
+	var username, email sql.NullString
+	var trusted, contributions sql.NullInt64
+	if err := row.Scan(
+		&venue.ID, &venue.Path, &venue.EntryType, &venue.Name, &venue.URL,
+		&venue.FBUrl, &venue.InstagramUrl, &venue.Location, &venue.Zipcode,
+		&venue.Phone, &venue.OtherFoodType, &venue.Price, &venue.AdditionalInfo,
+		&venue.VDetails, &venue.OpenHours, &venue.OpenHoursNote, &venue.Timezone,
+		&venue.Hash, &venue.Email, &venue.OwnerName, &venue.SentBy, &venue.UserID,
+		&venue.Active, &venue.VegOnly, &venue.Vegan, &venue.SponsorLevel,
+		&venue.CrossStreet, &venue.Lat, &venue.Lng, &venue.CreatedAt,
+		&venue.DateAdded, &venue.DateUpdated, &venue.AdminLastUpdate,
+		&venue.AdminNote, &venue.AdminHold, &venue.AdminHoldEmailNote,
+		&venue.UpdatedByID, &venue.MadeActiveByID, &venue.MadeActiveAt,
+		&venue.ShowPremium, &venue.Category, &venue.PrettyUrl, &venue.EditLock,
+		&venue.RequestVeganDecalAt, &venue.RequestExcellentDecalAt, &venue.Source,
+		&memberID, &username, &email, &trusted, &contributions,
+	); err != nil {
+		return nil, fmt.Errorf("failed to scan venue with user row: %w", err)
+	}
+	if memberID.Valid {
+		user.ID = uint(memberID.Int64)
+	}
+	if username.Valid {
+		user.Username = username.String
+	}
+	if email.Valid {
+		user.Email = email.String
+	}
+	if trusted.Valid {
+		user.Trusted = trusted.Int64 > 0
+	}
+	if contributions.Valid {
+		user.Contributions = int(contributions.Int64)
+	}
+	vu.Venue = venue
+	vu.User = user
+	return &vu, nil
+}
+
+// GetVenueValidationHistoryCtx retrieves validation history for a venue with context.
+func (db *DB) GetVenueValidationHistoryCtx(ctx context.Context, venueID int64) ([]models.ValidationHistory, error) {
+	ctx, cancel := db.withReadTimeout(ctx)
+	defer cancel()
+	query := `SELECT 
+        id, venue_id, validation_score, validation_status, validation_notes,
+        score_breakdown, ai_output_data, processed_at
+        FROM venue_validation_histories 
+        WHERE venue_id = ? 
+        ORDER BY processed_at DESC`
+	rows, err := db.conn.QueryContext(ctx, query, venueID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query venue validation history: %w", err)
+	}
+	defer rows.Close()
+	var history []models.ValidationHistory
+	for rows.Next() {
+		var h models.ValidationHistory
+		var scoreBreakdownJSON string
+		var aiOutput sql.NullString
+		if err := rows.Scan(&h.ID, &h.VenueID, &h.ValidationScore, &h.ValidationStatus,
+			&h.ValidationNotes, &scoreBreakdownJSON, &aiOutput, &h.ProcessedAt); err != nil {
+			return nil, fmt.Errorf("failed to scan validation history row: %w", err)
+		}
+		if err := json.Unmarshal([]byte(scoreBreakdownJSON), &h.ScoreBreakdown); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal score breakdown: %w", err)
+		}
+		if aiOutput.Valid {
+			val := aiOutput.String
+			h.AIOutputData = &val
+		}
+		history = append(history, h)
+	}
+	return history, nil
+}
+
+// GetCachedGooglePlaceDataCtx retrieves cached Google Places data for a venue with context.
+func (db *DB) GetCachedGooglePlaceDataCtx(ctx context.Context, venueID int64) (*models.GooglePlaceData, error) {
+	ctx, cancel := db.withReadTimeout(ctx)
+	defer cancel()
+	query := `SELECT google_place_data FROM venue_validation_histories 
+              WHERE venue_id = ? AND google_place_found = 1 AND google_place_data IS NOT NULL 
+              ORDER BY processed_at DESC LIMIT 1`
+	var googlePlaceDataJSON sql.NullString
+	if err := db.conn.QueryRowContext(ctx, query, venueID).Scan(&googlePlaceDataJSON); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to query cached Google Places data: %w", err)
+	}
+	if !googlePlaceDataJSON.Valid {
+		return nil, nil
+	}
+	var googleData models.GooglePlaceData
+	if err := json.Unmarshal([]byte(googlePlaceDataJSON.String), &googleData); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal Google Places data: %w", err)
+	}
+	return &googleData, nil
+}
+
+// GetValidationHistoryPaginatedCtx returns paginated validation history with context.
+func (db *DB) GetValidationHistoryPaginatedCtx(ctx context.Context, limit, offset int) ([]models.ValidationHistory, int, error) {
+	ctx, cancel := db.withReadTimeout(ctx)
+	defer cancel()
+	countQuery := `SELECT COUNT(*) FROM venue_validation_histories`
+	var total int
+	if err := db.conn.QueryRowContext(ctx, countQuery).Scan(&total); err != nil {
+		return nil, 0, fmt.Errorf("failed to count validation histories: %w", err)
+	}
+	query := `SELECT id, venue_id, validation_score, validation_status, validation_notes,
+             score_breakdown, ai_output_data, processed_at 
+             FROM venue_validation_histories 
+             ORDER BY processed_at DESC
+             LIMIT ? OFFSET ?`
+	rows, err := db.conn.QueryContext(ctx, query, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to query validation histories: %w", err)
+	}
+	defer rows.Close()
+	var history []models.ValidationHistory
+	for rows.Next() {
+		var h models.ValidationHistory
+		var scoreBreakdownJSON string
+		var aiOutput sql.NullString
+		if err := rows.Scan(&h.ID, &h.VenueID, &h.ValidationScore, &h.ValidationStatus,
+			&h.ValidationNotes, &scoreBreakdownJSON, &aiOutput, &h.ProcessedAt); err != nil {
+			return nil, 0, fmt.Errorf("failed to scan validation history row: %w", err)
+		}
+		if err := json.Unmarshal([]byte(scoreBreakdownJSON), &h.ScoreBreakdown); err != nil {
+			return nil, 0, fmt.Errorf("failed to unmarshal score breakdown: %w", err)
+		}
+		if aiOutput.Valid {
+			val := aiOutput.String
+			h.AIOutputData = &val
+		}
+		history = append(history, h)
+	}
+	return history, total, nil
+}
+
+// GetManualReviewVenuesCtx returns pending venues with validation history (search/pagination) with context.
+func (db *DB) GetManualReviewVenuesCtx(ctx context.Context, search string, limit, offset int) ([]models.VenueWithUser, []int, int, error) {
+	ctx, cancel := db.withReadTimeout(ctx)
+	defer cancel()
+	where := "WHERE v.active = 0 AND EXISTS (SELECT 1 FROM venue_validation_histories h WHERE h.venue_id = v.id)"
+	args := []interface{}{}
+	if search != "" {
+		where += " AND (v.name LIKE ? OR v.location LIKE ? OR m.username LIKE ?)"
+		pat := "%" + search + "%"
+		args = append(args, pat, pat, pat)
+	}
+	countQuery := fmt.Sprintf(`SELECT COUNT(*) FROM venues v
+        LEFT JOIN members m ON v.user_id = m.id
+        %s`, where)
+	var total int
+	if err := db.conn.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
+		return nil, nil, 0, fmt.Errorf("failed to count manual review venues: %w", err)
+	}
+	query := fmt.Sprintf(`SELECT 
+        v.id, v.path, v.entrytype, v.name, v.url, v.fburl, v.instagram_url, v.location, v.zipcode, v.phone,
+        v.other_food_type, v.price, v.additionalinfo, v.vdetails, v.openhours, v.openhours_note,
+        v.timezone, v.hash, v.email, v.ownername, v.sentby, v.user_id, v.active, v.vegonly, v.vegan,
+        v.sponsor_level, v.crossstreet, v.lat, v.lng, v.created_at, v.date_added, v.date_updated,
+        v.admin_last_update, v.admin_note, v.admin_hold, v.admin_hold_email_note,
+        v.updated_by_id, v.made_active_by_id, v.made_active_at, v.show_premium, v.category,
+        v.pretty_url, v.edit_lock, v.request_vegan_decal_at, v.request_excellent_decal_at, v.source,
+        m.id as member_id, m.username, m.trusted
+        FROM venues v
+        LEFT JOIN members m ON v.user_id = m.id
+        %s
+        ORDER BY v.created_at ASC
+        LIMIT ? OFFSET ?`, where)
+	args = append(args, limit, offset)
+	rows, err := db.conn.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, nil, 0, fmt.Errorf("failed to query manual review venues: %w", err)
+	}
+	defer rows.Close()
+	var venues []models.VenueWithUser
+	var scores []int
+	for rows.Next() {
+		var venue models.Venue
+		var user models.User
+		var memberID sql.NullInt64
+		var username sql.NullString
+		var trusted sql.NullInt64
+		if err := rows.Scan(
+			&venue.ID, &venue.Path, &venue.EntryType, &venue.Name, &venue.URL, &venue.FBUrl, &venue.InstagramUrl,
+			&venue.Location, &venue.Zipcode, &venue.Phone, &venue.OtherFoodType, &venue.Price, &venue.AdditionalInfo,
+			&venue.VDetails, &venue.OpenHours, &venue.OpenHoursNote, &venue.Timezone, &venue.Hash, &venue.Email,
+			&venue.OwnerName, &venue.SentBy, &venue.UserID, &venue.Active, &venue.VegOnly, &venue.Vegan,
+			&venue.SponsorLevel, &venue.CrossStreet, &venue.Lat, &venue.Lng, &venue.CreatedAt, &venue.DateAdded,
+			&venue.DateUpdated, &venue.AdminLastUpdate, &venue.AdminNote, &venue.AdminHold, &venue.AdminHoldEmailNote,
+			&venue.UpdatedByID, &venue.MadeActiveByID, &venue.MadeActiveAt, &venue.ShowPremium, &venue.Category,
+			&venue.PrettyUrl, &venue.EditLock, &venue.RequestVeganDecalAt, &venue.RequestExcellentDecalAt, &venue.Source,
+			&memberID, &username, &trusted,
+		); err != nil {
+			return nil, nil, 0, fmt.Errorf("failed to scan manual review venue row: %w", err)
+		}
+		if memberID.Valid {
+			user.ID = uint(memberID.Int64)
+		}
+		if username.Valid {
+			user.Username = username.String
+		}
+		if trusted.Valid {
+			user.Trusted = trusted.Int64 > 0
+		}
+		venues = append(venues, models.VenueWithUser{Venue: venue, User: user})
+
+		// Fetch latest score for this venue
+		scoreQuery := `SELECT validation_score FROM venue_validation_histories WHERE venue_id = ? ORDER BY processed_at DESC LIMIT 1`
+		var score int
+		if err := db.conn.QueryRowContext(ctx, scoreQuery, venue.ID).Scan(&score); err != nil {
+			// If no score found, default to 0
+			score = 0
+		}
+		scores = append(scores, score)
+	}
+	return venues, scores, total, nil
+}
+
+// GetVenueStatsCtx returns venue stats using context.
+func (db *DB) GetVenueStatsCtx(ctx context.Context) (*models.VenueStats, error) {
+	ctx, cancel := db.withReadTimeout(ctx)
+	defer cancel()
+	query := `SELECT 
+        COUNT(CASE WHEN active = 0 THEN 1 END) as pending,
+        COUNT(CASE WHEN active = 1 THEN 1 END) as approved,
+        COUNT(CASE WHEN active = -1 THEN 1 END) as rejected,
+        COUNT(*) as total
+        FROM venues`
+	var stats models.VenueStats
+	if err := db.conn.QueryRowContext(ctx, query).Scan(&stats.Pending, &stats.Approved, &stats.Rejected, &stats.Total); err != nil {
+		return nil, fmt.Errorf("failed to get venue stats: %w", err)
+	}
+	return &stats, nil
+}
+
+// GetVenueStatisticsCtx wraps GetVenueStatsCtx for symmetry.
+func (db *DB) GetVenueStatisticsCtx(ctx context.Context) (*models.VenueStats, error) {
+	return db.GetVenueStatsCtx(ctx)
 }

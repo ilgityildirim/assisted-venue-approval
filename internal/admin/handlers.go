@@ -40,14 +40,14 @@ func HomeHandler(db *database.DB, engine *processor.ProcessingEngine) http.Handl
 		stats := engine.GetStats()
 
 		// Get pending venues with user data
-		venuesWithUser, err := db.GetPendingVenuesWithUser()
+		venuesWithUser, err := db.GetPendingVenuesWithUserCtx(r.Context())
 		if err != nil {
 			log.Printf("Error fetching pending venues: %v", err)
 			venuesWithUser = []models.VenueWithUser{}
 		}
 
 		// Get recent validation results
-		recentResults, err := db.GetRecentValidationResults(50)
+		recentResults, err := db.GetRecentValidationResultsCtx(r.Context(), 50)
 		if err != nil {
 			log.Printf("Error fetching recent results: %v", err)
 			recentResults = []models.ValidationResult{}
@@ -64,7 +64,7 @@ func HomeHandler(db *database.DB, engine *processor.ProcessingEngine) http.Handl
 		pendingTotal := len(venuesWithUser)
 
 		// Count pending venues that already have AI-assisted review results (validation history)
-		_, _, assistedTotal, err := db.GetManualReviewVenues("", 1, 0)
+		_, _, assistedTotal, err := db.GetManualReviewVenuesCtx(r.Context(), "", 1, 0)
 		if err != nil {
 			log.Printf("Error fetching manual review count: %v", err)
 			assistedTotal = 0
@@ -103,7 +103,7 @@ func PendingVenuesHandler(db *database.DB) http.HandlerFunc {
 		offset := (page - 1) * limit
 
 		// Always fetch pending venues only
-		venues, total, err := db.GetVenuesFiltered("pending", search, limit, offset)
+		venues, total, err := db.GetVenuesFilteredCtx(r.Context(), "pending", search, limit, offset)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Error fetching venues: %v", err), http.StatusInternalServerError)
 			return
@@ -141,7 +141,7 @@ func ManualReviewHandler(db *database.DB) http.HandlerFunc {
 		limit := 50
 		offset := (page - 1) * limit
 
-		venues, scores, total, err := db.GetManualReviewVenues(search, limit, offset)
+		venues, scores, total, err := db.GetManualReviewVenuesCtx(r.Context(), search, limit, offset)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Error fetching manual review venues: %v", err), http.StatusInternalServerError)
 			return
@@ -202,14 +202,14 @@ func ApproveVenueHandler(db *database.DB) http.HandlerFunc {
 		}
 
 		// Update venue status
-		err := db.UpdateVenueStatus(id, 1, notes, &reviewer)
+		err := db.UpdateVenueStatusCtx(r.Context(), id, 1, notes, &reviewer)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Error updating venue: %v", err), http.StatusInternalServerError)
 			return
 		}
 
 		// Save validation result
-		if err := db.SaveValidationResult(validationResult); err != nil {
+		if err := db.SaveValidationResultCtx(r.Context(), validationResult); err != nil {
 			log.Printf("Failed to save validation result for manual approval: %v", err)
 		}
 
@@ -248,14 +248,14 @@ func RejectVenueHandler(db *database.DB) http.HandlerFunc {
 		}
 
 		// Update venue status
-		err := db.UpdateVenueStatus(id, -1, reason, &reviewer)
+		err := db.UpdateVenueStatusCtx(r.Context(), id, -1, reason, &reviewer)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Error updating venue: %v", err), http.StatusInternalServerError)
 			return
 		}
 
 		// Save validation result
-		if err := db.SaveValidationResult(validationResult); err != nil {
+		if err := db.SaveValidationResultCtx(r.Context(), validationResult); err != nil {
 			log.Printf("Failed to save validation result for manual rejection: %v", err)
 		}
 
@@ -281,28 +281,28 @@ func VenueDetailHandler(db *database.DB) http.HandlerFunc {
 		}
 
 		// Get venue with user data
-		venue, err := db.GetVenueWithUserByID(id)
+		venue, err := db.GetVenueWithUserByIDCtx(r.Context(), id)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Venue not found: %v", err), http.StatusNotFound)
 			return
 		}
 
 		// Get validation history
-		history, err := db.GetVenueValidationHistory(id)
+		history, err := db.GetVenueValidationHistoryCtx(r.Context(), id)
 		if err != nil {
 			log.Printf("Error fetching validation history: %v", err)
 			history = []models.ValidationHistory{}
 		}
 
 		// Get similar venues for comparison (will be removed from UI, still fetched safely)
-		similarVenues, err := db.GetSimilarVenues(venue.Venue, 5)
+		similarVenues, err := db.GetSimilarVenuesCtx(r.Context(), venue.Venue, 5)
 		if err != nil {
 			log.Printf("Error fetching similar venues: %v", err)
 			similarVenues = []models.Venue{}
 		}
 
 		// Get cached Google Places data if available
-		googleData, err := db.GetCachedGooglePlaceData(id)
+		googleData, err := db.GetCachedGooglePlaceDataCtx(r.Context(), id)
 		if err != nil {
 			log.Printf("Error fetching cached Google data: %v", err)
 		}
@@ -590,7 +590,7 @@ func BatchOperationHandler(db *database.DB) http.HandlerFunc {
 			notes := fmt.Sprintf("Batch %s by %s: %s", action, reviewer, reason)
 
 			// Update venue status
-			if err := db.UpdateVenueStatus(id, dbStatus, notes, &reviewer); err != nil {
+			if err := db.UpdateVenueStatusCtx(r.Context(), id, dbStatus, notes, &reviewer); err != nil {
 				log.Printf("Failed to update venue %d: %v", id, err)
 				continue
 			}
@@ -604,7 +604,7 @@ func BatchOperationHandler(db *database.DB) http.HandlerFunc {
 				ScoreBreakdown: map[string]int{"batch_operation": score},
 			}
 
-			if err := db.SaveValidationResult(validationResult); err != nil {
+			if err := db.SaveValidationResultCtx(r.Context(), validationResult); err != nil {
 				log.Printf("Failed to save validation result for venue %d: %v", id, err)
 			}
 
@@ -631,7 +631,7 @@ func ValidationHistoryHandler(db *database.DB) http.HandlerFunc {
 		offset := (page - 1) * limit
 
 		// Get validation history with pagination
-		history, total, err := db.GetValidationHistoryPaginated(limit, offset)
+		history, total, err := db.GetValidationHistoryPaginatedCtx(r.Context(), limit, offset)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Error fetching history: %v", err), http.StatusInternalServerError)
 			return
@@ -663,7 +663,7 @@ func AnalyticsHandler(db *database.DB, engine *processor.ProcessingEngine) http.
 		stats := engine.GetStats()
 
 		// Get venue statistics from database
-		venueStats, err := db.GetVenueStatistics()
+		venueStats, err := db.GetVenueStatisticsCtx(r.Context())
 		if err != nil {
 			log.Printf("Error fetching venue statistics: %v", err)
 			venueStats = &models.VenueStats{}

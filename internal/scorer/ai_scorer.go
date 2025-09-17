@@ -281,6 +281,16 @@ func (s *AIScorer) ScoreVenue(ctx context.Context, venue models.Venue, user mode
 func (s *AIScorer) scoreUnifiedVenue(ctx context.Context, venue models.Venue, trustLevel float64) (*models.ValidationResult, error) {
 	prompt := s.buildUnifiedPrompt(venue, trustLevel)
 
+	// Add per-request timeout for OpenAI call; TODO: make configurable
+	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	defer cancel()
+
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
 	resp, err := s.client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
 		Model: openai.GPT4oMini,
 		Messages: []openai.ChatCompletionMessage{
@@ -611,6 +621,12 @@ func (s *AIScorer) BatchScoreVenues(ctx context.Context, venues []models.Venue, 
 
 	// Process in batches to avoid overwhelming the API
 	for i := 0; i < len(venues); i += maxBatchSize {
+		// Respect cancellation between batches
+		select {
+		case <-ctx.Done():
+			return results, ctx.Err()
+		default:
+		}
 		end := i + maxBatchSize
 		if end > len(venues) {
 			end = len(venues)
@@ -625,11 +641,28 @@ func (s *AIScorer) BatchScoreVenues(ctx context.Context, venues []models.Venue, 
 		var mu sync.Mutex
 
 		for j, venue := range batch {
+			// Early cancellation check per item
+			if ctx.Err() != nil {
+				break
+			}
 			wg.Add(1)
 			go func(index int, v models.Venue) {
 				defer wg.Done()
+				// Check context before heavy work
+				select {
+				case <-ctx.Done():
+					return
+				default:
+				}
 				sem <- struct{}{}        // Acquire semaphore
 				defer func() { <-sem }() // Release semaphore
+
+				// Another cancellation check after waiting for semaphore
+				select {
+				case <-ctx.Done():
+					return
+				default:
+				}
 
 				result, err := s.ScoreVenue(ctx, v, models.User{})
 
