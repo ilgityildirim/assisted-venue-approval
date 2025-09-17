@@ -209,6 +209,7 @@ func (rl *RateLimiter) Wait(ctx context.Context) error {
 // ProcessingEngine handles concurrent venue processing with rate limiting and error recovery
 type ProcessingEngine struct {
 	repo           domain.Repository
+	uowFactory     domain.UnitOfWorkFactory
 	scraper        *scraper.GoogleMapsScraper
 	scorer         *scorer.AIScorer
 	decisionEngine *decision.DecisionEngine
@@ -271,7 +272,7 @@ func DefaultProcessingConfig() ProcessingConfig {
 }
 
 // NewProcessingEngine creates a new concurrent processing engine
-func NewProcessingEngine(repo domain.Repository, scraper *scraper.GoogleMapsScraper, scorer *scorer.AIScorer, config ProcessingConfig, decisionConfig decision.DecisionConfig) *ProcessingEngine {
+func NewProcessingEngine(repo domain.Repository, uowFactory domain.UnitOfWorkFactory, scraper *scraper.GoogleMapsScraper, scorer *scorer.AIScorer, config ProcessingConfig, decisionConfig decision.DecisionConfig) *ProcessingEngine {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	// Initialize decision engine with provided configuration (env-driven)
@@ -279,6 +280,7 @@ func NewProcessingEngine(repo domain.Repository, scraper *scraper.GoogleMapsScra
 
 	engine := &ProcessingEngine{
 		repo:            repo,
+		uowFactory:      uowFactory,
 		scraper:         scraper,
 		scorer:          scorer,
 		decisionEngine:  decisionEngine,
@@ -760,13 +762,24 @@ func (e *ProcessingEngine) handleSuccessfulResult(result *ProcessingResult) {
 		return
 	}
 
-	// Normal mode: update venue active only (do not write process notes into venues); save validation result + history separately
-	if err := e.repo.UpdateVenueActiveCtx(e.ctx, result.VenueID, dbStatus); err != nil {
-		log.Printf("Failed to update venue %d active status: %v", result.VenueID, err)
+	// Normal mode: perform both writes atomically via UnitOfWork
+	uow, err := e.uowFactory.Begin(e.ctx)
+	if err != nil {
+		log.Printf("Failed to begin unit of work for venue %d: %v", result.VenueID, err)
+		return
 	}
+	defer uow.Rollback()
 
-	if err := e.repo.SaveValidationResultCtx(e.ctx, validationResult); err != nil {
+	if err := uow.UpdateVenueActiveCtx(e.ctx, result.VenueID, dbStatus); err != nil {
+		log.Printf("Failed to update venue %d active status: %v", result.VenueID, err)
+		return
+	}
+	if err := uow.SaveValidationResultCtx(e.ctx, validationResult); err != nil {
 		log.Printf("Failed to save validation result for venue %d: %v", result.VenueID, err)
+		return
+	}
+	if err := uow.Commit(); err != nil {
+		log.Printf("Failed to commit unit of work for venue %d: %v", result.VenueID, err)
 	}
 }
 
@@ -776,8 +789,16 @@ func (e *ProcessingEngine) handleFailedResult(result *ProcessingResult) {
 	atomic.AddInt64(&e.stats.ManualReview, 1)
 
 	// Do not write error details into venues.admin_note; set active to manual review only
-	if err := e.repo.UpdateVenueActiveCtx(e.ctx, result.VenueID, 0); err != nil {
+	uow, err := e.uowFactory.Begin(e.ctx)
+	if err != nil {
+		log.Printf("Failed to begin unit of work for failed result %d: %v", result.VenueID, err)
+		return
+	}
+	defer uow.Rollback()
+
+	if err := uow.UpdateVenueActiveCtx(e.ctx, result.VenueID, 0); err != nil {
 		log.Printf("Failed to set venue %d to manual review: %v", result.VenueID, err)
+		return
 	}
 
 	// If we have Google Places data, persist it to validation history even when AI scoring failed
@@ -789,9 +810,13 @@ func (e *ProcessingEngine) handleFailedResult(result *ProcessingResult) {
 			Notes:          "AI scoring failed; saved Google data for manual review",
 			ScoreBreakdown: map[string]int{"google_data_only": 1},
 		}
-		if err := e.repo.SaveValidationResultWithGoogleDataCtx(e.ctx, vr, result.GoogleData); err != nil {
+		if err := uow.SaveValidationResultWithGoogleDataCtx(e.ctx, vr, result.GoogleData); err != nil {
 			log.Printf("Failed to save Google data on failure for venue %d: %v", result.VenueID, err)
+			return
 		}
+	}
+	if err := uow.Commit(); err != nil {
+		log.Printf("Failed to commit failed-result unit of work for venue %d: %v", result.VenueID, err)
 	}
 
 	log.Printf("Failed to process venue %d after %d retries: %v", result.VenueID, result.Retries, result.Error)

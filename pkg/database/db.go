@@ -1741,3 +1741,73 @@ func (db *DB) GetVenueStatsCtx(ctx context.Context) (*models.VenueStats, error) 
 func (db *DB) GetVenueStatisticsCtx(ctx context.Context) (*models.VenueStats, error) {
 	return db.GetVenueStatsCtx(ctx)
 }
+
+// Conn exposes the underlying *sql.DB for starting transactions.
+// Only infrastructure code should use this.
+func (db *DB) Conn() *sql.DB { return db.conn }
+
+// UpdateVenueActiveTx updates the active status within an existing transaction.
+func (db *DB) UpdateVenueActiveTx(ctx context.Context, tx *sql.Tx, venueID int64, active int) error {
+	ctx, cancel := db.withWriteTimeout(ctx)
+	defer cancel()
+	query := `UPDATE venues SET active = ?, admin_last_update = NOW() WHERE id = ?`
+	if _, err := tx.ExecContext(ctx, query, active, venueID); err != nil {
+		return fmt.Errorf("failed to update venue active status (tx): %w", err)
+	}
+	return nil
+}
+
+// SaveValidationResultTx saves a validation result within an existing transaction (no Google data fields).
+func (db *DB) SaveValidationResultTx(ctx context.Context, tx *sql.Tx, result *models.ValidationResult) error {
+	ctx, cancel := db.withWriteTimeout(ctx)
+	defer cancel()
+
+	insert := `INSERT INTO venue_validation_histories 
+		(venue_id, validation_score, validation_status, validation_notes, score_breakdown, ai_output_data, processed_at)
+		VALUES (?, ?, ?, ?, ?, ?, NOW())`
+
+	scoreBreakdownJSON, err := json.Marshal(result.ScoreBreakdown)
+	if err != nil {
+		return fmt.Errorf("failed to marshal score breakdown: %w", err)
+	}
+
+	if _, err := tx.ExecContext(ctx, insert, result.VenueID, result.Score, result.Status, result.Notes, string(scoreBreakdownJSON), result.AIOutputData); err != nil {
+		return fmt.Errorf("failed to insert validation history (tx): %w", err)
+	}
+	return nil
+}
+
+// SaveValidationResultWithGoogleDataTx saves validation result with Google data using an existing transaction.
+func (db *DB) SaveValidationResultWithGoogleDataTx(ctx context.Context, tx *sql.Tx, result *models.ValidationResult, googleData *models.GooglePlaceData) error {
+	ctx, cancel := db.withWriteTimeout(ctx)
+	defer cancel()
+
+	var googlePlaceID *string
+	var googlePlaceFound bool
+	var googlePlaceDataJSON *string
+	if googleData != nil {
+		googlePlaceID = &googleData.PlaceID
+		googlePlaceFound = true
+		data, err := json.Marshal(googleData)
+		if err != nil {
+			return fmt.Errorf("failed to marshal Google Places data: %w", err)
+		}
+		jsonStr := string(data)
+		googlePlaceDataJSON = &jsonStr
+	}
+
+	scoreBreakdownJSON, err := json.Marshal(result.ScoreBreakdown)
+	if err != nil {
+		return fmt.Errorf("failed to marshal score breakdown: %w", err)
+	}
+
+	stmt := db.stmts["insertValidationHistory"]
+	if stmt == nil {
+		return fmt.Errorf("prepared statement insertValidationHistory not initialized")
+	}
+	if _, err = tx.StmtContext(ctx, stmt).ExecContext(ctx, result.VenueID, result.Score, result.Status,
+		result.Notes, string(scoreBreakdownJSON), googlePlaceID, googlePlaceFound, googlePlaceDataJSON, result.AIOutputData); err != nil {
+		return fmt.Errorf("failed to insert validation history (tx): %w", err)
+	}
+	return nil
+}

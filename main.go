@@ -62,7 +62,8 @@ func main() {
 	if cfg.ApprovalThreshold > 0 {
 		decisionConfig.ApprovalThreshold = cfg.ApprovalThreshold
 	}
-	processingEngine := processor.NewProcessingEngine(repo, gmapsScraper, aiScorer, processingConfig, decisionConfig)
+	uowFactory := repository.NewSQLUnitOfWorkFactory(db)
+	processingEngine := processor.NewProcessingEngine(repo, uowFactory, gmapsScraper, aiScorer, processingConfig, decisionConfig)
 
 	// Load templates from embedded FS
 	if err := admin.LoadTemplates(Templates()); err != nil {
