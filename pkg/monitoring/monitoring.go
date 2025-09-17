@@ -1,7 +1,9 @@
 package monitoring
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"runtime"
 	"runtime/pprof"
@@ -9,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"assisted-venue-approval/pkg/config"
 	pp "net/http/pprof"
 )
 
@@ -142,5 +145,90 @@ func EnableProfiling(enabled bool) {
 	} else {
 		runtime.SetBlockProfileRate(0)
 		runtime.SetMutexProfileFraction(0)
+	}
+}
+
+// StartRuntimeMonitor samples runtime stats periodically and emits alerts when thresholds are exceeded.
+// It logs via the provided logger fn (fmt.Printf-compatible). Thresholds come from cfg.
+func StartRuntimeMonitor(ctx context.Context, cfg *config.Config, m *Metrics, logger func(string, ...any)) {
+	if logger == nil {
+		logger = func(format string, a ...any) { fmt.Printf(format+"\n", a...) }
+	}
+	if cfg == nil || !cfg.AlertsEnabled {
+		return
+	}
+	interval := cfg.AlertSampleEvery
+	if interval <= 0 {
+		interval = 5 * time.Second
+	}
+	t := time.NewTicker(interval)
+	defer t.Stop()
+
+	var alertedLatency, alertedGor, alertedMem, alertedGC bool
+	var lastNumGC uint32
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			var ms runtime.MemStats
+			runtime.ReadMemStats(&ms)
+			_, _, _, p95 := m.Snapshot()
+			gor := runtime.NumGoroutine()
+			allocMB := float64(ms.Alloc) / (1024.0 * 1024.0)
+			lastPauseMs := 0.0
+			if ms.NumGC != 0 {
+				lastPauseNs := ms.PauseNs[(ms.NumGC-1)%uint32(len(ms.PauseNs))]
+				lastPauseMs = float64(lastPauseNs) / 1e6
+			}
+
+			// p95 latency
+			if cfg.AlertP95Ms > 0 && p95 > cfg.AlertP95Ms {
+				if !alertedLatency {
+					logger("ALERT: p95 latency %.1fms exceeded threshold %.1fms", p95, cfg.AlertP95Ms)
+					alertedLatency = true
+				}
+			} else if alertedLatency {
+				logger("RECOVERY: p95 latency back to normal: %.1fms", p95)
+				alertedLatency = false
+			}
+
+			// goroutines
+			if cfg.AlertGoroutines > 0 && gor > cfg.AlertGoroutines {
+				if !alertedGor {
+					logger("ALERT: goroutines %d exceeded threshold %d", gor, cfg.AlertGoroutines)
+					alertedGor = true
+				}
+			} else if alertedGor {
+				logger("RECOVERY: goroutines back to normal: %d", gor)
+				alertedGor = false
+			}
+
+			// memory alloc
+			if cfg.AlertMemAllocMB > 0 && allocMB > cfg.AlertMemAllocMB {
+				if !alertedMem {
+					logger("ALERT: mem alloc %.1fMB exceeded threshold %.1fMB", allocMB, cfg.AlertMemAllocMB)
+					alertedMem = true
+				}
+			} else if alertedMem {
+				logger("RECOVERY: mem alloc back to normal: %.1fMB", allocMB)
+				alertedMem = false
+			}
+
+			// GC pause (only log on change of GC cycle)
+			if cfg.AlertGCPauseMs > 0 && ms.NumGC != lastNumGC {
+				lastNumGC = ms.NumGC
+				if lastPauseMs > cfg.AlertGCPauseMs {
+					if !alertedGC {
+						logger("ALERT: last GC pause %.1fms exceeded threshold %.1fms (NumGC=%d)", lastPauseMs, cfg.AlertGCPauseMs, ms.NumGC)
+						alertedGC = true
+					}
+				} else if alertedGC {
+					logger("RECOVERY: GC pause back to normal: %.1fms (NumGC=%d)", lastPauseMs, ms.NumGC)
+					alertedGC = false
+				}
+			}
+		}
 	}
 }

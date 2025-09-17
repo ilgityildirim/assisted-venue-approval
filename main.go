@@ -192,6 +192,11 @@ func main() {
 		}()
 	}
 
+	// Start runtime performance monitor (alerts)
+	if cfg.AlertsEnabled && cfg.MetricsEnabled && metrics != nil {
+		go monitoring.StartRuntimeMonitor(ctx, cfg, metrics, func(format string, a ...any) { log.Printf(format, a...) })
+	}
+
 	go func() {
 		fmt.Printf("Server starting on port %s\n", cfg.Port)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {

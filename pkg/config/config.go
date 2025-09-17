@@ -4,6 +4,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type Config struct {
@@ -32,9 +33,17 @@ type Config struct {
 	// Environment & profiling/metrics
 	Env              string // development, staging, production
 	ProfilingEnabled bool
-	ProfilingPort    string
+	ProfilingPort    string // also used as admin port
 	MetricsEnabled   bool
 	MetricsPath      string
+
+	// Performance alerts
+	AlertsEnabled    bool
+	AlertP95Ms       float64       // trigger when p95 request duration exceeds this (ms)
+	AlertGoroutines  int           // trigger when goroutine count exceeds this
+	AlertMemAllocMB  float64       // trigger when Alloc exceeds this (MB)
+	AlertGCPauseMs   float64       // trigger when last GC pause exceeds this (ms)
+	AlertSampleEvery time.Duration // sampling interval
 }
 
 func Load() *Config {
@@ -60,6 +69,15 @@ func Load() *Config {
 	profilingEnabled, _ := strconv.ParseBool(getEnv("PROFILING_ENABLED", strconv.FormatBool(profilingDefault)))
 	metricsDefault := profilingDefault
 	metricsEnabled, _ := strconv.ParseBool(getEnv("METRICS_ENABLED", strconv.FormatBool(metricsDefault)))
+
+	// Alerts defaults
+	alertsDefault := profilingDefault
+	alertsEnabled, _ := strconv.ParseBool(getEnv("ALERTS_ENABLED", strconv.FormatBool(alertsDefault)))
+	alertP95Ms, _ := strconv.ParseFloat(getEnv("ALERT_P95_MS", "500"), 64)
+	alertGoroutines, _ := strconv.Atoi(getEnv("ALERT_GOROUTINES", "500"))
+	alertMemAllocMB, _ := strconv.ParseFloat(getEnv("ALERT_MEM_ALLOC_MB", "512"), 64)
+	alertGCPauseMs, _ := strconv.ParseFloat(getEnv("ALERT_GC_PAUSE_MS", "200"), 64)
+	alertSampleEverySec, _ := strconv.Atoi(getEnv("ALERT_SAMPLE_EVERY_SEC", "5"))
 
 	return &Config{
 		DatabaseURL:       getEnv("DATABASE_URL", ""),
@@ -89,6 +107,14 @@ func Load() *Config {
 		ProfilingPort:    profPort,
 		MetricsEnabled:   metricsEnabled,
 		MetricsPath:      metricsPath,
+
+		// Alerts
+		AlertsEnabled:    alertsEnabled,
+		AlertP95Ms:       alertP95Ms,
+		AlertGoroutines:  alertGoroutines,
+		AlertMemAllocMB:  alertMemAllocMB,
+		AlertGCPauseMs:   alertGCPauseMs,
+		AlertSampleEvery: time.Duration(alertSampleEverySec) * time.Second,
 	}
 }
 
