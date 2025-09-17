@@ -10,10 +10,10 @@ import (
 	"time"
 
 	"assisted-venue-approval/internal/decision"
+	"assisted-venue-approval/internal/domain"
 	"assisted-venue-approval/internal/models"
 	"assisted-venue-approval/internal/scorer"
 	"assisted-venue-approval/internal/scraper"
-	"assisted-venue-approval/pkg/database"
 )
 
 // ProcessingJob represents a venue processing job
@@ -208,7 +208,7 @@ func (rl *RateLimiter) Wait(ctx context.Context) error {
 
 // ProcessingEngine handles concurrent venue processing with rate limiting and error recovery
 type ProcessingEngine struct {
-	db             *database.DB
+	repo           domain.Repository
 	scraper        *scraper.GoogleMapsScraper
 	scorer         *scorer.AIScorer
 	decisionEngine *decision.DecisionEngine
@@ -271,14 +271,14 @@ func DefaultProcessingConfig() ProcessingConfig {
 }
 
 // NewProcessingEngine creates a new concurrent processing engine
-func NewProcessingEngine(db *database.DB, scraper *scraper.GoogleMapsScraper, scorer *scorer.AIScorer, config ProcessingConfig, decisionConfig decision.DecisionConfig) *ProcessingEngine {
+func NewProcessingEngine(repo domain.Repository, scraper *scraper.GoogleMapsScraper, scorer *scorer.AIScorer, config ProcessingConfig, decisionConfig decision.DecisionConfig) *ProcessingEngine {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	// Initialize decision engine with provided configuration (env-driven)
 	decisionEngine := decision.NewDecisionEngine(decisionConfig)
 
 	engine := &ProcessingEngine{
-		db:              db,
+		repo:            repo,
 		scraper:         scraper,
 		scorer:          scorer,
 		decisionEngine:  decisionEngine,
@@ -754,18 +754,18 @@ func (e *ProcessingEngine) handleSuccessfulResult(result *ProcessingResult) {
 
 	if e.scoreOnly {
 		// Score-only mode: do not update venue status, only record history with Google data
-		if err := e.db.SaveValidationResultWithGoogleDataCtx(e.ctx, validationResult, result.GoogleData); err != nil {
+		if err := e.repo.SaveValidationResultWithGoogleDataCtx(e.ctx, validationResult, result.GoogleData); err != nil {
 			log.Printf("Failed to save validation history for venue %d: %v", result.VenueID, err)
 		}
 		return
 	}
 
 	// Normal mode: update venue active only (do not write process notes into venues); save validation result + history separately
-	if err := e.db.UpdateVenueActiveCtx(e.ctx, result.VenueID, dbStatus); err != nil {
+	if err := e.repo.UpdateVenueActiveCtx(e.ctx, result.VenueID, dbStatus); err != nil {
 		log.Printf("Failed to update venue %d active status: %v", result.VenueID, err)
 	}
 
-	if err := e.db.SaveValidationResultCtx(e.ctx, validationResult); err != nil {
+	if err := e.repo.SaveValidationResultCtx(e.ctx, validationResult); err != nil {
 		log.Printf("Failed to save validation result for venue %d: %v", result.VenueID, err)
 	}
 }
@@ -776,7 +776,7 @@ func (e *ProcessingEngine) handleFailedResult(result *ProcessingResult) {
 	atomic.AddInt64(&e.stats.ManualReview, 1)
 
 	// Do not write error details into venues.admin_note; set active to manual review only
-	if err := e.db.UpdateVenueActiveCtx(e.ctx, result.VenueID, 0); err != nil {
+	if err := e.repo.UpdateVenueActiveCtx(e.ctx, result.VenueID, 0); err != nil {
 		log.Printf("Failed to set venue %d to manual review: %v", result.VenueID, err)
 	}
 
@@ -789,7 +789,7 @@ func (e *ProcessingEngine) handleFailedResult(result *ProcessingResult) {
 			Notes:          "AI scoring failed; saved Google data for manual review",
 			ScoreBreakdown: map[string]int{"google_data_only": 1},
 		}
-		if err := e.db.SaveValidationResultWithGoogleDataCtx(e.ctx, vr, result.GoogleData); err != nil {
+		if err := e.repo.SaveValidationResultWithGoogleDataCtx(e.ctx, vr, result.GoogleData); err != nil {
 			log.Printf("Failed to save Google data on failure for venue %d: %v", result.VenueID, err)
 		}
 	}

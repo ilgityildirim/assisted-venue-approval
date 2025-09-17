@@ -1,0 +1,84 @@
+package repository
+
+import (
+	"context"
+
+	"assisted-venue-approval/internal/domain"
+	"assisted-venue-approval/internal/models"
+	"assisted-venue-approval/pkg/database"
+)
+
+// SQLRepository is a thin adapter over pkg/database.DB to satisfy domain repositories.
+// It keeps business logic decoupled from the SQL layer.
+type SQLRepository struct {
+	db *database.DB
+}
+
+func NewSQLRepository(db *database.DB) *SQLRepository {
+	return &SQLRepository{db: db}
+}
+
+// Ensure interface compliance at compile time
+var _ domain.Repository = (*SQLRepository)(nil)
+
+// VenueRepository methods
+func (r *SQLRepository) GetPendingVenuesWithUserCtx(ctx context.Context) ([]models.VenueWithUser, error) {
+	return r.db.GetPendingVenuesWithUserCtx(ctx)
+}
+
+func (r *SQLRepository) GetVenuesFilteredCtx(ctx context.Context, status string, search string, limit int, offset int) ([]models.VenueWithUser, int, error) {
+	return r.db.GetVenuesFilteredCtx(ctx, status, search, limit, offset)
+}
+
+func (r *SQLRepository) GetVenueWithUserByIDCtx(ctx context.Context, venueID int64) (*models.VenueWithUser, error) {
+	return r.db.GetVenueWithUserByIDCtx(ctx, venueID)
+}
+
+func (r *SQLRepository) GetSimilarVenuesCtx(ctx context.Context, venue models.Venue, limit int) ([]models.Venue, error) {
+	return r.db.GetSimilarVenuesCtx(ctx, venue, limit)
+}
+
+func (r *SQLRepository) GetManualReviewVenuesCtx(ctx context.Context, search string, limit int, offset int) ([]models.VenueWithUser, []int, int, error) {
+	return r.db.GetManualReviewVenuesCtx(ctx, search, limit, offset)
+}
+
+func (r *SQLRepository) GetVenueStatisticsCtx(ctx context.Context) (*models.VenueStats, error) {
+	return r.db.GetVenueStatisticsCtx(ctx)
+}
+
+func (r *SQLRepository) UpdateVenueStatusCtx(ctx context.Context, venueID int64, active int, notes string, reviewer *string) error {
+	return r.db.UpdateVenueStatusCtx(ctx, venueID, active, notes, reviewer)
+}
+
+func (r *SQLRepository) UpdateVenueActiveCtx(ctx context.Context, venueID int64, active int) error {
+	return r.db.UpdateVenueActiveCtx(ctx, venueID, active)
+}
+
+// ValidationRepository methods
+func (r *SQLRepository) SaveValidationResultCtx(ctx context.Context, result *models.ValidationResult) error {
+	return r.db.SaveValidationResultCtx(ctx, result)
+}
+
+func (r *SQLRepository) SaveValidationResultWithGoogleDataCtx(ctx context.Context, result *models.ValidationResult, googleData *models.GooglePlaceData) error {
+	return r.db.SaveValidationResultWithGoogleDataCtx(ctx, result, googleData)
+}
+
+func (r *SQLRepository) GetRecentValidationResultsCtx(ctx context.Context, limit int) ([]models.ValidationResult, error) {
+	return r.db.GetRecentValidationResultsCtx(ctx, limit)
+}
+
+func (r *SQLRepository) GetVenueValidationHistoryCtx(ctx context.Context, venueID int64) ([]models.ValidationHistory, error) {
+	return r.db.GetVenueValidationHistoryCtx(ctx, venueID)
+}
+
+func (r *SQLRepository) GetValidationHistoryPaginatedCtx(ctx context.Context, limit int, offset int) ([]models.ValidationHistory, int, error) {
+	return r.db.GetValidationHistoryPaginatedCtx(ctx, limit, offset)
+}
+
+func (r *SQLRepository) GetCachedGooglePlaceDataCtx(ctx context.Context, venueID int64) (*models.GooglePlaceData, error) {
+	return r.db.GetCachedGooglePlaceDataCtx(ctx, venueID)
+}
+
+func (r *SQLRepository) HasAnyValidationHistory(venueID int64) (bool, error) {
+	return r.db.HasAnyValidationHistory(venueID)
+}

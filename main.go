@@ -17,6 +17,7 @@ import (
 
 	"assisted-venue-approval/internal/admin"
 	"assisted-venue-approval/internal/decision"
+	"assisted-venue-approval/internal/infrastructure/repository"
 	"assisted-venue-approval/internal/models"
 	"assisted-venue-approval/internal/processor"
 	"assisted-venue-approval/internal/scorer"
@@ -45,6 +46,7 @@ func main() {
 		log.Fatal("Failed to initialize Google Maps scraper:", err)
 	}
 
+	repo := repository.NewSQLRepository(db)
 	aiScorer := scorer.NewAIScorer(cfg.OpenAIAPIKey)
 
 	// Initialize processing engine with configuration
@@ -60,7 +62,7 @@ func main() {
 	if cfg.ApprovalThreshold > 0 {
 		decisionConfig.ApprovalThreshold = cfg.ApprovalThreshold
 	}
-	processingEngine := processor.NewProcessingEngine(db, gmapsScraper, aiScorer, processingConfig, decisionConfig)
+	processingEngine := processor.NewProcessingEngine(repo, gmapsScraper, aiScorer, processingConfig, decisionConfig)
 
 	// Load templates from embedded FS
 	if err := admin.LoadTemplates(Templates()); err != nil {
@@ -106,7 +108,7 @@ func main() {
 	}
 
 	// Dashboard and main pages
-	router.HandleFunc("/", admin.HomeHandler(db, processingEngine)).Methods("GET")
+	router.HandleFunc("/", admin.HomeHandler(repo, processingEngine)).Methods("GET")
 	router.HandleFunc("/analytics", admin.AnalyticsHandler(db, processingEngine)).Methods("GET")
 
 	// Processing controls

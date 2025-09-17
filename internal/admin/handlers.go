@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"assisted-venue-approval/internal/domain"
 	"assisted-venue-approval/internal/models"
 	"assisted-venue-approval/internal/processor"
 	"assisted-venue-approval/pkg/database"
@@ -34,20 +35,20 @@ type SystemHealth struct {
 	LastProcessingTime time.Time
 }
 
-func HomeHandler(db *database.DB, engine *processor.ProcessingEngine) http.HandlerFunc {
+func HomeHandler(repo domain.Repository, engine *processor.ProcessingEngine) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Get processing statistics
 		stats := engine.GetStats()
 
 		// Get pending venues with user data
-		venuesWithUser, err := db.GetPendingVenuesWithUserCtx(r.Context())
+		venuesWithUser, err := repo.GetPendingVenuesWithUserCtx(r.Context())
 		if err != nil {
 			log.Printf("Error fetching pending venues: %v", err)
 			venuesWithUser = []models.VenueWithUser{}
 		}
 
 		// Get recent validation results
-		recentResults, err := db.GetRecentValidationResultsCtx(r.Context(), 50)
+		recentResults, err := repo.GetRecentValidationResultsCtx(r.Context(), 50)
 		if err != nil {
 			log.Printf("Error fetching recent results: %v", err)
 			recentResults = []models.ValidationResult{}
@@ -64,7 +65,7 @@ func HomeHandler(db *database.DB, engine *processor.ProcessingEngine) http.Handl
 		pendingTotal := len(venuesWithUser)
 
 		// Count pending venues that already have AI-assisted review results (validation history)
-		_, _, assistedTotal, err := db.GetManualReviewVenuesCtx(r.Context(), "", 1, 0)
+		_, _, assistedTotal, err := repo.GetManualReviewVenuesCtx(r.Context(), "", 1, 0)
 		if err != nil {
 			log.Printf("Error fetching manual review count: %v", err)
 			assistedTotal = 0
