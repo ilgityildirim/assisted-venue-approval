@@ -100,7 +100,6 @@ func (de *DecisionEngine) SetEventStore(es events.EventStore) { de.eventStore = 
 func (de *DecisionEngine) MakeDecision(venue models.Venue, user models.User, validationResult *models.ValidationResult) *DecisionResult {
 	startTime := time.Now()
 
-	// Build decision result structure
 	result := &DecisionResult{
 		VenueID:          venue.ID,
 		ValidationResult: validationResult,
@@ -108,22 +107,19 @@ func (de *DecisionEngine) MakeDecision(venue models.Venue, user models.User, val
 		FinalScore:       validationResult.Score,
 	}
 
-	// Analyze user authority
 	authority := de.analyzeUserAuthority(venue, user)
 	result.Authority = authority
 
-	// Apply authority-based score bonuses
 	enhancedScore := de.applyAuthorityBonuses(validationResult.Score, authority)
 	result.FinalScore = enhancedScore
+	fmt.Printf("decision: id=%d score=%d\n", venue.ID, enhancedScore) // debug
 
-	// Detect special cases and quality issues
 	specialCases := de.detectSpecialCases(venue)
 	qualityFlags := de.detectQualityFlags(venue, validationResult)
 
 	result.SpecialCaseFlags = specialCases
 	result.QualityFlags = qualityFlags
 
-	// Make final decision based on all factors
 	decision := de.determineStatus(venue, user, enhancedScore, authority, specialCases, qualityFlags)
 	result.FinalStatus = decision.Status
 	result.DecisionReason = decision.Reason
@@ -133,7 +129,7 @@ func (de *DecisionEngine) MakeDecision(venue models.Venue, user models.User, val
 	log.Printf("Decision for venue %d: %s (score: %d→%d) - %s",
 		venue.ID, result.FinalStatus, validationResult.Score, enhancedScore, result.DecisionReason)
 
-	// Publish decision event
+	// TODO: consider retries/backoff here if event store is flaky
 	if de.eventStore != nil {
 		flags := append([]string{}, result.SpecialCaseFlags...)
 		flags = append(flags, result.QualityFlags...)

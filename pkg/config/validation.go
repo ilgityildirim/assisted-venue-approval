@@ -17,7 +17,7 @@ type ValidationError struct {
 }
 
 func (e ValidationError) Error() string {
-	return fmt.Sprintf("config validation error for field '%s' with value '%s': %s", e.Field, e.Value, e.Message)
+	return fmt.Sprintf("%s=%q: %s", e.Field, e.Value, e.Message)
 }
 
 // ConfigValidator handles configuration validation
@@ -62,132 +62,99 @@ func (cv *ConfigValidator) GetErrorsAsString() string {
 
 // Validate validates the entire configuration
 func (c *Config) Validate() error {
-	validator := NewConfigValidator()
+	v := NewConfigValidator()
+	// TODO: make this pluggable if we ever need fancy config rules
+	fmt.Printf("config: validating...\n") // debug: keep for now
 
-	// Validate required fields
-	c.validateRequired(validator)
+	c.validateRequired(v)
+	c.validateFormats(v)
+	c.validateRanges(v)
+	c.validateEnvironment(v)
 
-	// Validate formats and values
-	c.validateFormats(validator)
-
-	// Validate ranges
-	c.validateRanges(validator)
-
-	// Check for environment-specific validation
-	c.validateEnvironment(validator)
-
-	if validator.HasErrors() {
-		return errs.NewValidation("config.Validate", fmt.Sprintf("configuration validation failed:\n%s", validator.GetErrorsAsString()), nil)
+	if v.HasErrors() {
+		fmt.Printf("config: %d errs\n", len(v.errors))
+		return errs.NewValidation("cfg.Validate", v.GetErrorsAsString(), nil)
 	}
-
 	return nil
 }
 
 // validateRequired checks required configuration fields
-func (c *Config) validateRequired(validator *ConfigValidator) {
-	// Database URL is required
+func (c *Config) validateRequired(v *ConfigValidator) {
 	if c.DatabaseURL == "" {
-		validator.AddError("DATABASE_URL", c.DatabaseURL, "database URL is required")
+		v.AddError("DATABASE_URL", c.DatabaseURL, "required")
 	}
-
-	// API keys are required
 	if c.GoogleMapsAPIKey == "" {
-		validator.AddError("GOOGLE_MAPS_API_KEY", c.GoogleMapsAPIKey, "Google Maps API key is required")
+		v.AddError("GOOGLE_MAPS_API_KEY", c.GoogleMapsAPIKey, "required")
 	}
-
 	if c.OpenAIAPIKey == "" {
-		validator.AddError("OPENAI_API_KEY", c.OpenAIAPIKey, "OpenAI API key is required")
+		v.AddError("OPENAI_API_KEY", c.OpenAIAPIKey, "required")
 	}
-
-	// Port is required
 	if c.Port == "" {
-		validator.AddError("PORT", c.Port, "port is required")
+		v.AddError("PORT", c.Port, "required")
 	}
 }
 
 // validateFormats checks format validity of configuration values
-func (c *Config) validateFormats(validator *ConfigValidator) {
-	// Validate database URL format
+func (c *Config) validateFormats(v *ConfigValidator) {
 	if c.DatabaseURL != "" {
 		if !strings.Contains(c.DatabaseURL, "@") || !strings.Contains(c.DatabaseURL, "/") {
-			validator.AddError("DATABASE_URL", c.DatabaseURL, "invalid database URL format")
+			v.AddError("DATABASE_URL", c.DatabaseURL, "bad db url")
 		}
 	}
-
-	// Validate port format
 	if c.Port != "" {
 		if port, err := strconv.Atoi(c.Port); err != nil || port < 1 || port > 65535 {
-			validator.AddError("PORT", c.Port, "invalid port number (must be 1-65535)")
+			v.AddError("PORT", c.Port, "bad port (1-65535)")
 		}
 	}
-
-	// Validate health check port
 	if c.HealthCheckPort != "" {
 		if port, err := strconv.Atoi(c.HealthCheckPort); err != nil || port < 1 || port > 65535 {
-			validator.AddError("HEALTH_CHECK_PORT", c.HealthCheckPort, "invalid health check port number")
+			v.AddError("HEALTH_CHECK_PORT", c.HealthCheckPort, "bad health port")
 		}
 	}
-
-	// Validate profiling/admin port when enabled
 	if (c.ProfilingEnabled || c.MetricsEnabled) && c.ProfilingPort != "" {
 		if port, err := strconv.Atoi(c.ProfilingPort); err != nil || port < 1 || port > 65535 {
-			validator.AddError("PROFILING_PORT", c.ProfilingPort, "invalid profiling port number")
+			v.AddError("PROFILING_PORT", c.ProfilingPort, "bad profiling port")
 		}
 	}
-
-	// Validate log level
 	validLogLevels := []string{"trace", "debug", "info", "warn", "error", "fatal"}
 	if c.LogLevel != "" && !contains(validLogLevels, strings.ToLower(c.LogLevel)) {
-		validator.AddError("LOG_LEVEL", c.LogLevel, "invalid log level (must be one of: trace, debug, info, warn, error, fatal)")
+		v.AddError("LOG_LEVEL", c.LogLevel, "bad log level")
 	}
-
-	// Validate log format
 	if c.LogFormat != "" && c.LogFormat != "json" && c.LogFormat != "text" {
-		validator.AddError("LOG_FORMAT", c.LogFormat, "invalid log format (must be 'json' or 'text')")
+		v.AddError("LOG_FORMAT", c.LogFormat, "bad log format")
 	}
-
 }
 
 // validateRanges checks value ranges
-func (c *Config) validateRanges(validator *ConfigValidator) {
-	// Validate approval threshold
+func (c *Config) validateRanges(v *ConfigValidator) {
 	if c.ApprovalThreshold < 0 || c.ApprovalThreshold > 100 {
-		validator.AddError("APPROVAL_THRESHOLD", strconv.Itoa(c.ApprovalThreshold), "approval threshold must be between 0 and 100")
+		v.AddError("APPROVAL_THRESHOLD", strconv.Itoa(c.ApprovalThreshold), "out of range (0-100)")
 	}
-
-	// Validate worker count
 	if c.WorkerCount < 0 || c.WorkerCount > 100 {
-		validator.AddError("WORKER_COUNT", strconv.Itoa(c.WorkerCount), "worker count must be between 0 and 100")
+		v.AddError("WORKER_COUNT", strconv.Itoa(c.WorkerCount), "out of range (0-100)")
 	}
-
-	// Validate database connection settings
 	if c.DBMaxOpenConns < 1 || c.DBMaxOpenConns > 1000 {
-		validator.AddError("DB_MAX_OPEN_CONNS", strconv.Itoa(c.DBMaxOpenConns), "max open connections must be between 1 and 1000")
+		v.AddError("DB_MAX_OPEN_CONNS", strconv.Itoa(c.DBMaxOpenConns), "out of range (1-1000)")
 	}
-
 	if c.DBMaxIdleConns < 0 || c.DBMaxIdleConns > c.DBMaxOpenConns {
-		validator.AddError("DB_MAX_IDLE_CONNS", strconv.Itoa(c.DBMaxIdleConns), "max idle connections must be between 0 and max open connections")
+		v.AddError("DB_MAX_IDLE_CONNS", strconv.Itoa(c.DBMaxIdleConns), "must be 0..max_open")
 	}
-
 	if c.DBConnMaxLifetime < 1 || c.DBConnMaxLifetime > 60 {
-		validator.AddError("DB_CONN_MAX_LIFETIME_MINUTES", strconv.Itoa(c.DBConnMaxLifetime), "connection max lifetime must be between 1 and 60 minutes")
+		v.AddError("DB_CONN_MAX_LIFETIME_MINUTES", strconv.Itoa(c.DBConnMaxLifetime), "out of range (1-60m)")
 	}
-
 	if c.DBConnMaxIdleTime < 1 || c.DBConnMaxIdleTime > 30 {
-		validator.AddError("DB_CONN_MAX_IDLE_TIME_MINUTES", strconv.Itoa(c.DBConnMaxIdleTime), "connection max idle time must be between 1 and 30 minutes")
+		v.AddError("DB_CONN_MAX_IDLE_TIME_MINUTES", strconv.Itoa(c.DBConnMaxIdleTime), "out of range (1-30m)")
 	}
 }
 
 // validateEnvironment performs environment-specific validation
-func (c *Config) validateEnvironment(validator *ConfigValidator) {
-	// Check if log directory is writable if file logging is enabled
+func (c *Config) validateEnvironment(v *ConfigValidator) {
 	if c.EnableFileLogging && c.LogFile != "" {
 		if err := checkDirectoryWritable(c.LogFile); err != nil {
-			validator.AddError("LOG_FILE", c.LogFile, fmt.Sprintf("log directory is not writable: %v", err))
+			v.AddError("LOG_FILE", c.LogFile, fmt.Sprintf("not writable: %v", err))
 		}
 	}
 
-	// Validate port conflicts
 	ports := map[string]string{
 		"PORT":              c.Port,
 		"HEALTH_CHECK_PORT": c.HealthCheckPort,
@@ -196,49 +163,42 @@ func (c *Config) validateEnvironment(validator *ConfigValidator) {
 		ports["PROFILING_PORT"] = c.ProfilingPort
 	}
 
-	usedPorts := make(map[string]string)
+	used := make(map[string]string)
 	for name, port := range ports {
 		if port != "" && port != "0" {
-			if existing, exists := usedPorts[port]; exists {
-				validator.AddError(name, port, fmt.Sprintf("port conflict with %s", existing))
+			if exist, ok := used[port]; ok {
+				v.AddError(name, port, fmt.Sprintf("conflicts with %s", exist))
 			} else {
-				usedPorts[port] = name
+				used[port] = name
 			}
 		}
 	}
 }
 
 // checkDirectoryWritable checks if a directory is writable
-func checkDirectoryWritable(filePath string) error {
-	// Extract directory from file path
-	dir := filePath
-	if !strings.HasSuffix(filePath, "/") {
-		// It's a file path, get the directory
-		lastSlash := strings.LastIndex(filePath, "/")
-		if lastSlash > 0 {
-			dir = filePath[:lastSlash]
+func checkDirectoryWritable(path string) error {
+	dir := path
+	if !strings.HasSuffix(path, "/") {
+		if i := strings.LastIndex(path, "/"); i > 0 {
+			dir = path[:i]
 		} else {
 			dir = "."
 		}
 	}
 
-	// Check if directory exists
 	if _, err := os.Stat(dir); os.IsNotExist(err) {
-		// Try to create directory
 		if err := os.MkdirAll(dir, 0755); err != nil {
-			return errs.NewValidation("config.checkDirectoryWritable", "cannot create directory", err)
+			return errs.NewValidation("cfg.dirWritable", "mkdir", err)
 		}
 	}
 
-	// Test write permission by creating a temporary file
-	tempFile := fmt.Sprintf("%s/.write_test_%d", dir, os.Getpid())
-	file, err := os.Create(tempFile)
+	tmp := fmt.Sprintf("%s/.write_test_%d", dir, os.Getpid())
+	f, err := os.Create(tmp)
 	if err != nil {
-		return errs.NewValidation("config.checkDirectoryWritable", "directory is not writable", err)
+		return errs.NewValidation("cfg.dirWritable", "not writable", err)
 	}
-	file.Close()
-	os.Remove(tempFile)
-
+	f.Close()
+	os.Remove(tmp)
 	return nil
 }
 

@@ -285,6 +285,7 @@ func (s *AIScorer) ScoreVenue(ctx context.Context, venue models.Venue, user mode
 	cacheKey := s.cache.generateKey(venue)
 	// Include submitter trust/user in cache key to avoid cross-user cache collisions
 	trust := s.calcTrustLevelFromUser(user)
+	fmt.Printf("score: id=%d trust=%.2f\n", venue.ID, trust) // debug
 	cacheKey = fmt.Sprintf("%s|trust=%.2f|uid=%d", cacheKey, trust, user.ID)
 	if cached, found := s.cache.Get(cacheKey); found {
 		return &cached, nil
@@ -672,6 +673,7 @@ func (s *AIScorer) BatchScoreVenues(ctx context.Context, venues []models.Venue, 
 		}
 
 		batch := venues[i:end]
+		fmt.Printf("score batch: %d items\n", len(batch)) // debug
 		batchResults := make([]models.ValidationResult, len(batch))
 
 		// Process batch venues concurrently (with goroutine limit)
@@ -730,7 +732,7 @@ func (s *AIScorer) BatchScoreVenues(ctx context.Context, venues []models.Venue, 
 	// Return results even if some venues failed
 	var combinedError error
 	if len(errors) > 0 {
-		combinedError = fmt.Errorf("batch processing completed with %d errors: %v", len(errors), errors)
+		combinedError = fmt.Errorf("batch: %d errs", len(errors))
 	}
 
 	return results, combinedError
