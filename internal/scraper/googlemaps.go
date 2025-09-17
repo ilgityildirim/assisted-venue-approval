@@ -11,12 +11,14 @@ import (
 	"time"
 
 	"assisted-venue-approval/internal/models"
+	"assisted-venue-approval/pkg/circuit"
 
 	"googlemaps.github.io/maps"
 )
 
 type GoogleMapsScraper struct {
 	client *maps.Client
+	cb     *circuit.Breaker
 }
 
 func NewGoogleMapsScraper(apiKey string) (*GoogleMapsScraper, error) {
@@ -25,7 +27,19 @@ func NewGoogleMapsScraper(apiKey string) (*GoogleMapsScraper, error) {
 		return nil, err
 	}
 
-	return &GoogleMapsScraper{client: client}, nil
+	// Circuit breaker tuned for Google Maps
+	cb := circuit.New(circuit.Config{
+		Name:              "googlemaps",
+		OperationTimeout:  10 * time.Second,
+		OpenFor:           30 * time.Second,
+		MaxConsecFailures: 3,
+		WindowSize:        20,
+		FailureRate:       0.6,
+		SlowCallThreshold: 1500 * time.Millisecond,
+		SlowCallRate:      0.7,
+	}, nil)
+
+	return &GoogleMapsScraper{client: client, cb: cb}, nil
 }
 
 type EnhancedVenueData struct {
@@ -55,8 +69,22 @@ func (s *GoogleMapsScraper) EnhanceVenue(ctx context.Context, venue models.Venue
 		Query: venue.Name + " " + venue.Location,
 	}
 
-	searchResp, err := s.client.TextSearch(ctx, searchReq)
-	if err != nil || len(searchResp.Results) == 0 {
+	var searchResp *maps.PlacesSearchResponse
+	var err error
+	// Use circuit breaker for TextSearch
+	err = s.cb.Do(ctx, func(ctx context.Context) error {
+		resp, e := s.client.TextSearch(ctx, searchReq)
+		if e != nil {
+			return e
+		}
+		searchResp = &resp
+		return nil
+	}, func(ctx context.Context, cause error) error {
+		// Fallback: fail soft with minimal data
+		searchResp = nil
+		return nil
+	})
+	if err != nil || searchResp == nil || len(searchResp.Results) == 0 {
 		return &EnhancedVenueData{Venue: venue}, nil
 	}
 
@@ -81,7 +109,18 @@ func (s *GoogleMapsScraper) EnhanceVenue(ctx context.Context, venue models.Venue
 		},
 	}
 
-	details, err := s.client.PlaceDetails(ctx, detailsReq)
+	var details maps.PlaceDetailsResult
+	err = s.cb.Do(ctx, func(ctx context.Context) error {
+		d, e := s.client.PlaceDetails(ctx, detailsReq)
+		if e != nil {
+			return e
+		}
+		details = d
+		return nil
+	}, func(ctx context.Context, cause error) error {
+		// Fallback: return minimal data from search result
+		return nil
+	})
 	if err != nil {
 		return &EnhancedVenueData{Venue: venue}, nil
 	}

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"assisted-venue-approval/internal/models"
+	"assisted-venue-approval/pkg/circuit"
 	errs "assisted-venue-approval/pkg/errors"
 	"assisted-venue-approval/pkg/metrics"
 
@@ -200,6 +201,7 @@ type AIScorer struct {
 	client      *openai.Client
 	costTracker *CostTracker
 	cache       *VenueCache
+	cb          *circuit.Breaker
 }
 
 // metrics
@@ -246,12 +248,23 @@ func (s *AIScorer) calcTrustLevelFromUser(user models.User) float64 {
 }
 
 func NewAIScorer(apiKey string) *AIScorer {
+	cb := circuit.New(circuit.Config{
+		Name:              "openai",
+		OperationTimeout:  50 * time.Second,
+		OpenFor:           45 * time.Second,
+		MaxConsecFailures: 2,
+		WindowSize:        10,
+		FailureRate:       0.5,
+		SlowCallThreshold: 20 * time.Second,
+		SlowCallRate:      0.5,
+	}, nil)
 	return &AIScorer{
 		client: openai.NewClient(apiKey),
 		costTracker: &CostTracker{
 			startTime: time.Now(),
 		},
 		cache: NewVenueCache(),
+		cb:    cb,
 	}
 }
 
@@ -305,26 +318,38 @@ func (s *AIScorer) scoreUnifiedVenue(ctx context.Context, venue models.Venue, tr
 	default:
 	}
 
-	resp, err := s.client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
+	var resp openai.ChatCompletionResponse
+	opReq := openai.ChatCompletionRequest{
 		Model: openai.GPT4oMini,
 		Messages: []openai.ChatCompletionMessage{
-			{
-				Role:    openai.ChatMessageRoleSystem,
-				Content: s.getSystemPrompt(),
-			},
-			{
-				Role:    openai.ChatMessageRoleUser,
-				Content: prompt,
-			},
+			{Role: openai.ChatMessageRoleSystem, Content: s.getSystemPrompt()},
+			{Role: openai.ChatMessageRoleUser, Content: prompt},
 		},
-		Temperature: 0.1,
-		MaxTokens:   250,
-		ResponseFormat: &openai.ChatCompletionResponseFormat{
-			Type: openai.ChatCompletionResponseFormatTypeJSONObject,
-		},
+		Temperature:    0.1,
+		MaxTokens:      250,
+		ResponseFormat: &openai.ChatCompletionResponseFormat{Type: openai.ChatCompletionResponseFormatTypeJSONObject},
+	}
+	err := s.cb.Do(ctx, func(ctx context.Context) error {
+		r, e := s.client.CreateChatCompletion(ctx, opReq)
+		if e != nil {
+			return e
+		}
+		resp = r
+		return nil
+	}, func(ctx context.Context, cause error) error {
+		// propagate so we can return a graceful fallback below
+		return cause
 	})
 	if err != nil {
-		return nil, fmt.Errorf("OpenAI API call failed: %w", err)
+		// Fallback: conservative manual review result
+		fb := models.ValidationResult{
+			VenueID:        venue.ID,
+			Score:          50,
+			Status:         "manual_review",
+			Notes:          "AI unavailable - manual review",
+			ScoreBreakdown: map[string]int{"legitimacy": 15, "completeness": 15, "relevance": 20},
+		}
+		return &fb, nil
 	}
 
 	// Track API usage
