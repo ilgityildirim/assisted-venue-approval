@@ -9,6 +9,7 @@ import (
 
 	"assisted-venue-approval/internal/models"
 	"assisted-venue-approval/pkg/config"
+	errs "assisted-venue-approval/pkg/errors"
 
 	_ "github.com/go-sql-driver/mysql"
 )
@@ -40,7 +41,7 @@ func New(databaseURL string) (*DB, error) {
 	}
 
 	if err := db.prepareStatements(); err != nil {
-		return nil, fmt.Errorf("failed to prepare statements: %w", err)
+		return nil, errs.NewDB("database.New", "failed to prepare statements", err)
 	}
 
 	return db, nil
@@ -69,7 +70,7 @@ func NewWithConfig(databaseURL string, cfg *config.Config) (*DB, error) {
 	}
 
 	if err := db.prepareStatements(); err != nil {
-		return nil, fmt.Errorf("failed to prepare statements: %w", err)
+		return nil, errs.NewDB("database.NewWithConfig", "failed to prepare statements", err)
 	}
 
 	return db, nil
@@ -90,7 +91,7 @@ func (db *DB) prepareStatements() error {
 	for name, query := range statements {
 		stmt, err := db.conn.Prepare(query)
 		if err != nil {
-			return fmt.Errorf("failed to prepare statement %s: %w", name, err)
+			return errs.NewDB("database.prepareStatements", fmt.Sprintf("failed to prepare statement %s", name), err)
 		}
 		db.stmts[name] = stmt
 	}
@@ -122,7 +123,7 @@ func (db *DB) GetPendingVenues() ([]models.Venue, error) {
 
 	rows, err := db.conn.Query(query)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query pending venues: %w", err)
+		return nil, errs.NewDB("database.GetPendingVenues", "failed to query pending venues", err)
 	}
 	defer rows.Close()
 
@@ -130,13 +131,13 @@ func (db *DB) GetPendingVenues() ([]models.Venue, error) {
 	for rows.Next() {
 		v, err := db.scanVenueRow(rows)
 		if err != nil {
-			return nil, fmt.Errorf("failed to scan venue row: %w", err)
+			return nil, errs.NewDB("database.GetPendingVenues", "failed to scan venue row", err)
 		}
 		venues = append(venues, *v)
 	}
 
 	if err = rows.Err(); err != nil {
-		return nil, fmt.Errorf("row iteration error: %w", err)
+		return nil, errs.NewDB("database.GetPendingVenues", "row iteration error", err)
 	}
 
 	return venues, nil
@@ -184,7 +185,7 @@ func (db *DB) GetPendingVenuesWithUser() ([]models.VenueWithUser, error) {
 
 	rows, err := db.conn.Query(query)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query pending venues with user info: %w", err)
+		return nil, errs.NewDB("database.GetPendingVenuesWithUser", "failed to query pending venues with user info", err)
 	}
 	defer rows.Close()
 
@@ -287,7 +288,7 @@ func (db *DB) BatchUpdateVenueStatus(venueIDs []int64, active int, notes string,
 
 	tx, err := db.conn.Begin()
 	if err != nil {
-		return fmt.Errorf("failed to begin transaction: %w", err)
+		return errs.NewDB("database.BatchUpdateVenueStatus", "failed to begin transaction", err)
 	}
 	defer tx.Rollback()
 
@@ -307,11 +308,11 @@ func (db *DB) BatchUpdateVenueStatus(venueIDs []int64, active int, notes string,
 
 	_, err = tx.Exec(query, args...)
 	if err != nil {
-		return fmt.Errorf("failed to batch update venues: %w", err)
+		return errs.NewDB("database.BatchUpdateVenueStatus", "failed to batch update venues", err)
 	}
 
 	if err = tx.Commit(); err != nil {
-		return fmt.Errorf("failed to commit batch update transaction: %w", err)
+		return errs.NewDB("database.BatchUpdateVenueStatus", "failed to commit batch update transaction", err)
 	}
 
 	return nil

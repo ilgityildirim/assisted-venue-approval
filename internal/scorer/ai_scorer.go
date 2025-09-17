@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"assisted-venue-approval/internal/models"
+	errs "assisted-venue-approval/pkg/errors"
 
 	"github.com/sashabaranov/go-openai"
 )
@@ -267,7 +268,7 @@ func (s *AIScorer) ScoreVenue(ctx context.Context, venue models.Venue, user mode
 	// Unified scoring regardless of Google data presence
 	result, err := s.scoreUnifiedVenue(ctx, venue, trust)
 	if err != nil {
-		return nil, fmt.Errorf("AI scoring failed: %w", err)
+		return nil, errs.NewExternal("scorer.ScoreVenue", "openai", "AI scoring failed", err)
 	}
 
 	// Cache the result

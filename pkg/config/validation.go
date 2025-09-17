@@ -5,6 +5,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	errs "assisted-venue-approval/pkg/errors"
 )
 
 // ValidationError represents a configuration validation error
@@ -75,7 +77,7 @@ func (c *Config) Validate() error {
 	c.validateEnvironment(validator)
 
 	if validator.HasErrors() {
-		return fmt.Errorf("configuration validation failed:\n%s", validator.GetErrorsAsString())
+		return errs.NewValidation("config.Validate", fmt.Sprintf("configuration validation failed:\n%s", validator.GetErrorsAsString()), nil)
 	}
 
 	return nil
@@ -214,7 +216,7 @@ func checkDirectoryWritable(filePath string) error {
 	if _, err := os.Stat(dir); os.IsNotExist(err) {
 		// Try to create directory
 		if err := os.MkdirAll(dir, 0755); err != nil {
-			return fmt.Errorf("cannot create directory: %w", err)
+			return errs.NewValidation("config.checkDirectoryWritable", "cannot create directory", err)
 		}
 	}
 
@@ -222,7 +224,7 @@ func checkDirectoryWritable(filePath string) error {
 	tempFile := fmt.Sprintf("%s/.write_test_%d", dir, os.Getpid())
 	file, err := os.Create(tempFile)
 	if err != nil {
-		return fmt.Errorf("directory is not writable: %w", err)
+		return errs.NewValidation("config.checkDirectoryWritable", "directory is not writable", err)
 	}
 	file.Close()
 	os.Remove(tempFile)
