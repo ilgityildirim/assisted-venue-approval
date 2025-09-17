@@ -12,8 +12,6 @@ import (
 	"assisted-venue-approval/internal/decision"
 	"assisted-venue-approval/internal/domain"
 	"assisted-venue-approval/internal/models"
-	"assisted-venue-approval/internal/scorer"
-	"assisted-venue-approval/internal/scraper"
 	"assisted-venue-approval/pkg/events"
 	"assisted-venue-approval/pkg/metrics"
 )
@@ -222,11 +220,23 @@ func (rl *RateLimiter) Wait(ctx context.Context) error {
 }
 
 // ProcessingEngine handles concurrent venue processing with rate limiting and error recovery
+// GoogleScraper abstracts the Google Maps integration used by the engine.
+type GoogleScraper interface {
+	EnhanceVenueWithValidation(ctx context.Context, venue models.Venue) (*models.Venue, error)
+}
+
+// VenueScorer abstracts the AI scoring used by the engine.
+type VenueScorer interface {
+	ScoreVenue(ctx context.Context, venue models.Venue, user models.User) (*models.ValidationResult, error)
+	GetCostStats() (totalTokens int, totalRequests int, estimatedCostUSD float64, duration time.Duration)
+	GetBufferPoolStats() (gets int64, puts int64, misses int64)
+}
+
 type ProcessingEngine struct {
 	repo           domain.Repository
 	uowFactory     domain.UnitOfWorkFactory
-	scraper        *scraper.GoogleMapsScraper
-	scorer         *scorer.AIScorer
+	scraper        GoogleScraper
+	scorer         VenueScorer
 	decisionEngine *decision.DecisionEngine
 	eventStore     events.EventStore
 
@@ -288,7 +298,7 @@ func DefaultProcessingConfig() ProcessingConfig {
 }
 
 // NewProcessingEngine creates a new concurrent processing engine
-func NewProcessingEngine(repo domain.Repository, uowFactory domain.UnitOfWorkFactory, scraper *scraper.GoogleMapsScraper, scorer *scorer.AIScorer, config ProcessingConfig, decisionConfig decision.DecisionConfig) *ProcessingEngine {
+func NewProcessingEngine(repo domain.Repository, uowFactory domain.UnitOfWorkFactory, scraper GoogleScraper, scorer VenueScorer, config ProcessingConfig, decisionConfig decision.DecisionConfig) *ProcessingEngine {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	// Initialize decision engine with provided configuration (env-driven)
