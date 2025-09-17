@@ -13,6 +13,7 @@ import (
 	"assisted-venue-approval/internal/models"
 	"assisted-venue-approval/internal/processor"
 	"assisted-venue-approval/pkg/database"
+	"assisted-venue-approval/pkg/events"
 
 	"github.com/gorilla/mux"
 )
@@ -34,6 +35,11 @@ type SystemHealth struct {
 	APIConnections     string
 	LastProcessingTime time.Time
 }
+
+// Event sink for admin actions. Set from main.
+var eventSink events.EventStore
+
+func SetEventStore(es events.EventStore) { eventSink = es }
 
 func HomeHandler(repo domain.Repository, engine *processor.ProcessingEngine) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -214,6 +220,15 @@ func ApproveVenueHandler(db *database.DB) http.HandlerFunc {
 			log.Printf("Failed to save validation result for manual approval: %v", err)
 		}
 
+		// Publish event
+		if eventSink != nil {
+			_ = eventSink.Append(r.Context(), events.VenueApproved{
+				Base:   events.Base{Ts: time.Now(), VID: id, Adm: &reviewer},
+				Reason: notes,
+				Score:  validationResult.Score,
+			})
+		}
+
 		// Return JSON for AJAX requests
 		if r.Header.Get("Content-Type") == "application/json" {
 			w.Header().Set("Content-Type", "application/json")
@@ -258,6 +273,15 @@ func RejectVenueHandler(db *database.DB) http.HandlerFunc {
 		// Save validation result
 		if err := db.SaveValidationResultCtx(r.Context(), validationResult); err != nil {
 			log.Printf("Failed to save validation result for manual rejection: %v", err)
+		}
+
+		// Publish event
+		if eventSink != nil {
+			_ = eventSink.Append(r.Context(), events.VenueRejected{
+				Base:   events.Base{Ts: time.Now(), VID: id, Adm: &reviewer},
+				Reason: reason,
+				Score:  validationResult.Score,
+			})
 		}
 
 		// Return JSON for AJAX requests

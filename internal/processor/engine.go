@@ -14,6 +14,7 @@ import (
 	"assisted-venue-approval/internal/models"
 	"assisted-venue-approval/internal/scorer"
 	"assisted-venue-approval/internal/scraper"
+	"assisted-venue-approval/pkg/events"
 )
 
 // ProcessingJob represents a venue processing job
@@ -213,6 +214,7 @@ type ProcessingEngine struct {
 	scraper        *scraper.GoogleMapsScraper
 	scorer         *scorer.AIScorer
 	decisionEngine *decision.DecisionEngine
+	eventStore     events.EventStore
 
 	// Configuration
 	workerCount int
@@ -304,6 +306,18 @@ func NewProcessingEngine(repo domain.Repository, uowFactory domain.UnitOfWorkFac
 	}
 
 	return engine
+}
+
+// SetEventStore wires an EventStore for audit trail publishing.
+func (e *ProcessingEngine) SetEventStore(es events.EventStore) {
+	e.eventStore = es
+	// Try to set on decision engine if it supports it
+	if e.decisionEngine != nil {
+		type setter interface{ SetEventStore(events.EventStore) }
+		if s, ok := interface{}(e.decisionEngine).(setter); ok {
+			s.SetEventStore(es)
+		}
+	}
 }
 
 // Start begins the processing engine with workers and rate limiters
@@ -551,6 +565,16 @@ func (e *ProcessingEngine) processJob(job *ProcessingJob) *ProcessingResult {
 	result.ProcessingTimeMs = 0
 	result.Retries = job.Retry
 
+	// Publish start event
+	if e.eventStore != nil {
+		uid := user.ID
+		_ = e.eventStore.Append(jobCtx, events.VenueValidationStarted{
+			Base:      events.Base{Ts: time.Now(), VID: venue.ID},
+			UserID:    &uid,
+			Triggered: "system",
+		})
+	}
+
 	// Process venue with exponential backoff retry logic
 	var err error
 	var validationResult *models.ValidationResult
@@ -577,6 +601,25 @@ func (e *ProcessingEngine) processJob(job *ProcessingJob) *ProcessingResult {
 			result.Success = true
 			result.ValidationResult = validationResult
 			result.GoogleData = googleData
+			// Publish completion event with summary details
+			if e.eventStore != nil && validationResult != nil {
+				gdFound := false
+				gpID := ""
+				if googleData != nil {
+					gdFound = true
+					gpID = googleData.PlaceID
+				}
+				_ = e.eventStore.Append(jobCtx, events.VenueValidationCompleted{
+					Base:           events.Base{Ts: time.Now(), VID: venue.ID},
+					Score:          validationResult.Score,
+					Status:         map[string]int{"approved": 1, "rejected": -1, "manual_review": 0}[validationResult.Status],
+					Notes:          validationResult.Notes,
+					ScoreBreakdown: validationResult.ScoreBreakdown,
+					GoogleFound:    gdFound,
+					GooglePlaceID:  gpID,
+					Conflicts:      nil,
+				})
+			}
 			break
 		}
 

@@ -24,6 +24,7 @@ import (
 	"assisted-venue-approval/internal/scraper"
 	"assisted-venue-approval/pkg/config"
 	"assisted-venue-approval/pkg/database"
+	"assisted-venue-approval/pkg/events"
 	"assisted-venue-approval/pkg/monitoring"
 )
 
@@ -64,6 +65,15 @@ func main() {
 	}
 	uowFactory := repository.NewSQLUnitOfWorkFactory(db)
 	processingEngine := processor.NewProcessingEngine(repo, uowFactory, gmapsScraper, aiScorer, processingConfig, decisionConfig)
+
+	// Initialize event store and wire it
+	evStore, err := events.NewSQLEventStore(db)
+	if err != nil {
+		log.Printf("Event store init failed: %v", err)
+	} else {
+		processingEngine.SetEventStore(evStore)
+		admin.SetEventStore(evStore)
+	}
 
 	// Load templates from embedded FS
 	if err := admin.LoadTemplates(Templates()); err != nil {

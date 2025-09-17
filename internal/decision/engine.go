@@ -1,12 +1,14 @@
 package decision
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"strings"
 	"time"
 
 	"assisted-venue-approval/internal/models"
+	"assisted-venue-approval/pkg/events"
 )
 
 // DecisionEngine handles venue approval/rejection logic with special case handling
@@ -15,6 +17,7 @@ type DecisionEngine struct {
 	rejectionThreshold  int
 	enableSpecialCases  bool
 	enableAuthorityMode bool
+	eventStore          events.EventStore
 }
 
 // DecisionConfig configures the decision engine behavior
@@ -80,6 +83,9 @@ func NewDecisionEngine(config DecisionConfig) *DecisionEngine {
 	}
 }
 
+// SetEventStore wires an EventStore for publishing decisions.
+func (de *DecisionEngine) SetEventStore(es events.EventStore) { de.eventStore = es }
+
 // MakeDecision processes a venue with user information and returns a final decision
 func (de *DecisionEngine) MakeDecision(venue models.Venue, user models.User, validationResult *models.ValidationResult) *DecisionResult {
 	startTime := time.Now()
@@ -116,6 +122,35 @@ func (de *DecisionEngine) MakeDecision(venue models.Venue, user models.User, val
 
 	log.Printf("Decision for venue %d: %s (score: %d→%d) - %s",
 		venue.ID, result.FinalStatus, validationResult.Score, enhancedScore, result.DecisionReason)
+
+	// Publish decision event
+	if de.eventStore != nil {
+		flags := append([]string{}, result.SpecialCaseFlags...)
+		flags = append(flags, result.QualityFlags...)
+		switch result.FinalStatus {
+		case "approved":
+			_ = de.eventStore.Append(context.Background(), events.VenueApproved{
+				Base:   events.Base{Ts: time.Now(), VID: venue.ID},
+				Reason: result.DecisionReason,
+				Score:  result.FinalScore,
+				Flags:  flags,
+			})
+		case "rejected":
+			_ = de.eventStore.Append(context.Background(), events.VenueRejected{
+				Base:   events.Base{Ts: time.Now(), VID: venue.ID},
+				Reason: result.DecisionReason,
+				Score:  result.FinalScore,
+				Flags:  flags,
+			})
+		case "manual_review":
+			_ = de.eventStore.Append(context.Background(), events.VenueRequiresManualReview{
+				Base:   events.Base{Ts: time.Now(), VID: venue.ID},
+				Reason: result.ReviewReason,
+				Score:  result.FinalScore,
+				Flags:  flags,
+			})
+		}
+	}
 
 	return result
 }

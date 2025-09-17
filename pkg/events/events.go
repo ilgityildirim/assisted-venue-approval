@@ -4,206 +4,179 @@ import (
 	"context"
 	"encoding/json"
 	"time"
+
+	"assisted-venue-approval/internal/models"
 )
 
-// EventType constants keep event names consistent
-const (
-	TypeValidationStarted   = "venue.validation.started"
-	TypeValidationCompleted = "venue.validation.completed"
-	TypeVenueApproved       = "venue.approved"
-	TypeVenueRejected       = "venue.rejected"
-	TypeVenueManualReview   = "venue.manual_review"
-)
-
-// Event is the domain event interface used for persistence
-// Keep it small and serializable.
+// Event is the base interface for all venue-related audit events.
+// Keep payloads small, use JSON-friendly fields.
+// Why: Enables replay and audit without coupling to DB schema.
+// TODO: consider schema versioning if payloads evolve.
 type Event interface {
 	Type() string
-	GetVenueID() int64
-	GetTime() time.Time
-	GetAdmin() *string
-	GetAdminID() *int
-	Payload() map[string]any
+	VenueID() int64
+	Timestamp() time.Time
+	Admin() *string
+	MarshalData() ([]byte, error)
 }
 
-// BaseEvent provides common fields and default implementations.
-type BaseEvent struct {
-	VenueID int64
-	At      time.Time
-	Admin   *string
-	AdminID *int
-	Data    map[string]any
+// Base contains common event metadata.
+type Base struct {
+	Ts  time.Time `json:"ts"`
+	VID int64     `json:"venue_id"`
+	Adm *string   `json:"admin,omitempty"`
 }
 
-func (b BaseEvent) GetVenueID() int64       { return b.VenueID }
-func (b BaseEvent) GetTime() time.Time      { return b.At }
-func (b BaseEvent) GetAdmin() *string       { return b.Admin }
-func (b BaseEvent) GetAdminID() *int        { return b.AdminID }
-func (b BaseEvent) Payload() map[string]any { return b.Data }
+func (b Base) Timestamp() time.Time { return b.Ts }
+func (b Base) VenueID() int64       { return b.VID }
+func (b Base) Admin() *string       { return b.Adm }
 
-// Concrete events
+// --- Concrete events ---
 
-type VenueValidationStarted struct{ BaseEvent }
+const (
+	TypeValidationStarted = "venue.validation.started"
+	TypeValidationDone    = "venue.validation.completed"
+	TypeApproved          = "venue.approved"
+	TypeRejected          = "venue.rejected"
+	TypeManualReview      = "venue.manual_review"
+)
 
-func (e VenueValidationStarted) Type() string { return TypeValidationStarted }
-
-type VenueValidationCompleted struct{ BaseEvent }
-
-func (e VenueValidationCompleted) Type() string { return TypeValidationCompleted }
-
-type VenueApproved struct{ BaseEvent }
-
-func (e VenueApproved) Type() string { return TypeVenueApproved }
-
-type VenueRejected struct{ BaseEvent }
-
-func (e VenueRejected) Type() string { return TypeVenueRejected }
-
-type VenueRequiresManualReview struct{ BaseEvent }
-
-func (e VenueRequiresManualReview) Type() string { return TypeVenueManualReview }
-
-// StoredEvent is a persisted event record
-// Data holds the JSON payload as-is for replay and external consumption.
-type StoredEvent struct {
-	ID      int64           `json:"id"`
-	VenueID int64           `json:"venue_id"`
-	Type    string          `json:"type"`
-	At      time.Time       `json:"at"`
-	Admin   *string         `json:"admin,omitempty"`
-	AdminID *int            `json:"admin_id,omitempty"`
-	Data    json.RawMessage `json:"data"`
+// VenueValidationStarted is emitted when processing for a venue begins.
+// Includes minimal context about the user initiating processing.
+type VenueValidationStarted struct {
+	Base
+	UserID    *uint   `json:"user_id,omitempty"`
+	Triggered string  `json:"triggered"` // system|admin|api
+	Note      *string `json:"note,omitempty"`
 }
 
-// VenueState is a projection rebuilt from events (kept minimal for audit)
-type VenueState struct {
-	VenueID          int64     `json:"venue_id"`
-	Status           string    `json:"status"`
-	LastScore        int       `json:"last_score"`
-	DecisionReason   string    `json:"decision_reason"`
-	GooglePlaceFound bool      `json:"google_place_found"`
-	GooglePlaceID    string    `json:"google_place_id"`
-	LastUpdated      time.Time `json:"last_updated"`
-	LastAdminAction  *string   `json:"last_admin_action,omitempty"`
+func (e VenueValidationStarted) Type() string                 { return TypeValidationStarted }
+func (e VenueValidationStarted) MarshalData() ([]byte, error) { return json.Marshal(e) }
+
+// VenueValidationCompleted captures AI scores and Google data presence.
+// Keep Google payload small; store only IDs and booleans we need for audit.
+// Full Google cache remains in existing tables.
+type VenueValidationCompleted struct {
+	Base
+	Score          int                   `json:"score"`
+	Status         int                   `json:"status"`
+	Notes          string                `json:"notes"`
+	ScoreBreakdown map[string]int        `json:"score_breakdown,omitempty"`
+	GoogleFound    bool                  `json:"google_found"`
+	GooglePlaceID  string                `json:"google_place_id,omitempty"`
+	Conflicts      []models.DataConflict `json:"conflicts,omitempty"`
 }
 
-// EventStore persists and replays events
-// Append should guarantee ordering via transactional insert order or monotonic ID.
+func (e VenueValidationCompleted) Type() string                 { return TypeValidationDone }
+func (e VenueValidationCompleted) MarshalData() ([]byte, error) { return json.Marshal(e) }
+
+// Decision events from decision engine or admin actions.
+// We use the same structs; admin will set Admin field and may add decision notes.
+
+type VenueApproved struct {
+	Base
+	Reason  string            `json:"reason"`
+	Score   int               `json:"score"`
+	Flags   []string          `json:"flags,omitempty"`
+	Context map[string]string `json:"context,omitempty"`
+}
+
+func (e VenueApproved) Type() string                 { return TypeApproved }
+func (e VenueApproved) MarshalData() ([]byte, error) { return json.Marshal(e) }
+
+type VenueRejected struct {
+	Base
+	Reason  string            `json:"reason"`
+	Score   int               `json:"score"`
+	Flags   []string          `json:"flags,omitempty"`
+	Context map[string]string `json:"context,omitempty"`
+}
+
+func (e VenueRejected) Type() string                 { return TypeRejected }
+func (e VenueRejected) MarshalData() ([]byte, error) { return json.Marshal(e) }
+
+type VenueRequiresManualReview struct {
+	Base
+	Reason  string            `json:"reason"`
+	Score   int               `json:"score"`
+	Flags   []string          `json:"flags,omitempty"`
+	Context map[string]string `json:"context,omitempty"`
+}
+
+func (e VenueRequiresManualReview) Type() string                 { return TypeManualReview }
+func (e VenueRequiresManualReview) MarshalData() ([]byte, error) { return json.Marshal(e) }
+
+// EventStore defines persistence and replay.
+// Implementations must guarantee ordering per venue.
 type EventStore interface {
-	Append(ctx context.Context, ev ...Event) error
+	Append(ctx context.Context, e Event) error
 	ListByVenue(ctx context.Context, venueID int64) ([]StoredEvent, error)
-	Replay(ctx context.Context, venueID int64) (*VenueState, error)
+	ReplayVenue(ctx context.Context, venueID int64) (*RebuiltState, error)
 }
 
-// New helper constructors
-func NewVenueValidationStarted(venueID int64) Event {
-	return VenueValidationStarted{BaseEvent{
-		VenueID: venueID,
-		At:      time.Now(),
-		Data:    map[string]any{"message": "validation started"},
-	}}
+// StoredEvent is a durable representation.
+// Seq is a monotonic order within the DB (BIGINT AUTO_INCREMENT/BIGSERIAL).
+type StoredEvent struct {
+	Seq     int64     `json:"seq"`
+	VenueID int64     `json:"venue_id"`
+	Type    string    `json:"type"`
+	Ts      time.Time `json:"ts"`
+	Admin   *string   `json:"admin,omitempty"`
+	Payload []byte    `json:"payload"` // original JSON
 }
 
-func NewVenueValidationCompleted(venueID int64, score int, notes string, googleFound bool, googlePlaceID string, scoreBreakdown map[string]int, extra map[string]any) Event {
-	data := map[string]any{
-		"score":           score,
-		"notes":           notes,
-		"google_found":    googleFound,
-		"google_place_id": googlePlaceID,
-		"score_breakdown": scoreBreakdown,
-	}
-	for k, v := range extra {
-		data[k] = v
-	}
-	return VenueValidationCompleted{BaseEvent{VenueID: venueID, At: time.Now(), Data: data}}
+// RebuiltState is the result of replay for a venue.
+// This is intentionally small: current status and last decision info.
+// UIs can still show full history by listing events.
+
+type RebuiltState struct {
+	VenueID      int64      `json:"venue_id"`
+	Status       int        `json:"status"`
+	LastUpdated  time.Time  `json:"last_updated"`
+	LastApproved *time.Time `json:"last_approved,omitempty"`
+	LastRejected *time.Time `json:"last_rejected,omitempty"`
+	ManualReview bool       `json:"manual_review"`
+	LastReason   string     `json:"last_reason"`
+	LastScore    int        `json:"last_score"`
 }
 
-func NewVenueApproved(venueID int64, reason string, score int, admin *string, adminID *int, extra map[string]any) Event {
-	data := map[string]any{"reason": reason, "score": score, "source": "auto"}
-	for k, v := range extra {
-		data[k] = v
-	}
-	return VenueApproved{BaseEvent{VenueID: venueID, At: time.Now(), Admin: admin, AdminID: adminID, Data: data}}
-}
-
-func NewVenueRejected(venueID int64, reason string, score int, admin *string, adminID *int, extra map[string]any) Event {
-	data := map[string]any{"reason": reason, "score": score, "source": "auto"}
-	for k, v := range extra {
-		data[k] = v
-	}
-	return VenueRejected{BaseEvent{VenueID: venueID, At: time.Now(), Admin: admin, AdminID: adminID, Data: data}}
-}
-
-func NewVenueRequiresManualReview(venueID int64, reviewReason string, score int, admin *string, adminID *int, extra map[string]any) Event {
-	data := map[string]any{"review_reason": reviewReason, "score": score, "source": "auto"}
-	for k, v := range extra {
-		data[k] = v
-	}
-	return VenueRequiresManualReview{BaseEvent{VenueID: venueID, At: time.Now(), Admin: admin, AdminID: adminID, Data: data}}
-}
-
-// RebuildState derives the latest state from a sequence of stored events
-func RebuildState(events []StoredEvent) *VenueState {
-	st := &VenueState{}
+// Replay applies events in order and rebuilds state.
+func Replay(events []StoredEvent) *RebuiltState {
+	st := &RebuiltState{}
 	for _, se := range events {
 		st.VenueID = se.VenueID
-		st.LastUpdated = se.At
+		st.LastUpdated = se.Ts
 		switch se.Type {
-		case TypeValidationStarted:
-			if st.Status == "" {
-				st.Status = "processing"
-			}
-		case TypeValidationCompleted:
-			var m map[string]any
-			_ = json.Unmarshal(se.Data, &m)
-			if v, ok := m["score"].(float64); ok {
-				st.LastScore = int(v)
-			}
-			if v, ok := m["notes"].(string); ok {
-				st.DecisionReason = v
-			}
-			if v, ok := m["google_found"].(bool); ok {
-				st.GooglePlaceFound = v
-			}
-			if v, ok := m["google_place_id"].(string); ok {
-				st.GooglePlaceID = v
-			}
-			if st.Status == "processing" {
-				st.Status = "validated"
-			}
-		case TypeVenueApproved:
-			st.Status = "approved"
-			var m map[string]any
-			_ = json.Unmarshal(se.Data, &m)
-			if v, ok := m["reason"].(string); ok {
-				st.DecisionReason = v
-			}
-			if v, ok := m["score"].(float64); ok {
-				st.LastScore = int(v)
-			}
-			st.LastAdminAction = se.Admin
-		case TypeVenueRejected:
-			st.Status = "rejected"
-			var m map[string]any
-			_ = json.Unmarshal(se.Data, &m)
-			if v, ok := m["reason"].(string); ok {
-				st.DecisionReason = v
-			}
-			if v, ok := m["score"].(float64); ok {
-				st.LastScore = int(v)
-			}
-			st.LastAdminAction = se.Admin
-		case TypeVenueManualReview:
-			st.Status = "manual_review"
-			var m map[string]any
-			_ = json.Unmarshal(se.Data, &m)
-			if v, ok := m["review_reason"].(string); ok {
-				st.DecisionReason = v
-			}
-			if v, ok := m["score"].(float64); ok {
-				st.LastScore = int(v)
-			}
-			st.LastAdminAction = se.Admin
+		case TypeValidationDone:
+			var ev VenueValidationCompleted
+			_ = json.Unmarshal(se.Payload, &ev)
+			st.Status = ev.Status
+			st.LastReason = ev.Notes
+			st.LastScore = ev.Score
+		case TypeApproved:
+			var ev VenueApproved
+			_ = json.Unmarshal(se.Payload, &ev)
+			st.Status = 1
+			st.LastReason = ev.Reason
+			st.LastScore = ev.Score
+			ap := se.Ts
+			st.LastApproved = &ap
+			st.ManualReview = false
+		case TypeRejected:
+			var ev VenueRejected
+			_ = json.Unmarshal(se.Payload, &ev)
+			st.Status = 0
+			st.LastReason = ev.Reason
+			st.LastScore = ev.Score
+			rj := se.Ts
+			st.LastRejected = &rj
+			st.ManualReview = false
+		case TypeManualReview:
+			var ev VenueRequiresManualReview
+			_ = json.Unmarshal(se.Payload, &ev)
+			st.ManualReview = true
+			st.LastReason = ev.Reason
+			st.LastScore = ev.Score
 		}
 	}
 	return st
