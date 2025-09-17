@@ -47,4 +47,4 @@ tasks:
   compile:
     desc: Compile the Go application for EC2 instance
     cmds:
-      - GOOS=linux GOARCH=amd64 go build -o ./bin/venue-validation-server
+      - GOOS=linux GOARCH=amd64 go build -o ./bin/assisted-venue-approval
