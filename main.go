@@ -23,10 +23,14 @@ import (
 	"assisted-venue-approval/internal/scraper"
 	"assisted-venue-approval/pkg/config"
 	"assisted-venue-approval/pkg/database"
+	"assisted-venue-approval/pkg/monitoring"
 )
 
 func main() {
 	cfg := config.Load()
+
+	// Enable runtime profiling rates conditionally (dev/staging)
+	monitoring.EnableProfiling(cfg.ProfilingEnabled)
 
 	log.Println("Starting venue validation system")
 
@@ -94,6 +98,13 @@ func main() {
 	// Set up routes
 	router := mux.NewRouter()
 
+	// Monitoring: request timing middleware in dev/staging as configured
+	var metrics *monitoring.Metrics
+	if cfg.MetricsEnabled {
+		metrics = monitoring.NewMetrics(512)
+		router.Use(monitoring.Middleware(metrics))
+	}
+
 	// Dashboard and main pages
 	router.HandleFunc("/", admin.HomeHandler(db, processingEngine)).Methods("GET")
 	router.HandleFunc("/analytics", admin.AnalyticsHandler(db, processingEngine)).Methods("GET")
@@ -127,6 +138,25 @@ func main() {
 		Handler: router,
 	}
 
+	// Optional admin server for pprof and metrics
+	var adminServer *http.Server
+	if cfg.ProfilingEnabled || cfg.MetricsEnabled {
+		mux := http.NewServeMux()
+		if cfg.ProfilingEnabled {
+			monitoring.RegisterPprof(mux)
+		}
+		if cfg.MetricsEnabled && metrics != nil {
+			mux.Handle(cfg.MetricsPath, monitoring.MetricsHandler(metrics))
+		}
+		adminServer = &http.Server{Addr: ":" + cfg.ProfilingPort, Handler: mux}
+		go func() {
+			fmt.Printf("Admin server (pprof/metrics) starting on port %s\n", cfg.ProfilingPort)
+			if err := adminServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				log.Printf("Admin HTTP server error: %v", err)
+			}
+		}()
+	}
+
 	go func() {
 		fmt.Printf("Server starting on port %s\n", cfg.Port)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
@@ -143,6 +173,11 @@ func main() {
 
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		log.Printf("HTTP server shutdown error: %v", err)
+	}
+	if adminServer != nil {
+		if err := adminServer.Shutdown(shutdownCtx); err != nil {
+			log.Printf("Admin HTTP server shutdown error: %v", err)
+		}
 	}
 
 	log.Println("Application shutdown complete")

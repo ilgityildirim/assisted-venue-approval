@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"strconv"
+	"strings"
 )
 
 type Config struct {
@@ -27,6 +28,13 @@ type Config struct {
 	// Health check settings
 	HealthCheckPort string
 	HealthCheckPath string
+
+	// Environment & profiling/metrics
+	Env              string // development, staging, production
+	ProfilingEnabled bool
+	ProfilingPort    string
+	MetricsEnabled   bool
+	MetricsPath      string
 }
 
 func Load() *Config {
@@ -41,6 +49,17 @@ func Load() *Config {
 
 	// Parse boolean environment variables
 	enableFileLogging, _ := strconv.ParseBool(getEnv("ENABLE_FILE_LOGGING", "true"))
+
+	// Environment and profiling defaults
+	env := strings.ToLower(getEnv("ENV", "development"))
+	profPort := getEnv("PROFILING_PORT", "6060")
+	metricsPath := getEnv("METRICS_PATH", "/metrics")
+
+	// Default toggles based on env
+	profilingDefault := env == "development" || env == "staging"
+	profilingEnabled, _ := strconv.ParseBool(getEnv("PROFILING_ENABLED", strconv.FormatBool(profilingDefault)))
+	metricsDefault := profilingDefault
+	metricsEnabled, _ := strconv.ParseBool(getEnv("METRICS_ENABLED", strconv.FormatBool(metricsDefault)))
 
 	return &Config{
 		DatabaseURL:       getEnv("DATABASE_URL", ""),
@@ -63,6 +82,13 @@ func Load() *Config {
 		// Health check settings
 		HealthCheckPort: getEnv("HEALTH_CHECK_PORT", "8081"),
 		HealthCheckPath: getEnv("HEALTH_CHECK_PATH", "/health"),
+
+		// Environment & profiling/metrics
+		Env:              env,
+		ProfilingEnabled: profilingEnabled,
+		ProfilingPort:    profPort,
+		MetricsEnabled:   metricsEnabled,
+		MetricsPath:      metricsPath,
 	}
 }
 

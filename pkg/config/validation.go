@@ -128,6 +128,13 @@ func (c *Config) validateFormats(validator *ConfigValidator) {
 		}
 	}
 
+	// Validate profiling/admin port when enabled
+	if (c.ProfilingEnabled || c.MetricsEnabled) && c.ProfilingPort != "" {
+		if port, err := strconv.Atoi(c.ProfilingPort); err != nil || port < 1 || port > 65535 {
+			validator.AddError("PROFILING_PORT", c.ProfilingPort, "invalid profiling port number")
+		}
+	}
+
 	// Validate log level
 	validLogLevels := []string{"trace", "debug", "info", "warn", "error", "fatal"}
 	if c.LogLevel != "" && !contains(validLogLevels, strings.ToLower(c.LogLevel)) {
@@ -184,6 +191,9 @@ func (c *Config) validateEnvironment(validator *ConfigValidator) {
 	ports := map[string]string{
 		"PORT":              c.Port,
 		"HEALTH_CHECK_PORT": c.HealthCheckPort,
+	}
+	if (c.ProfilingEnabled || c.MetricsEnabled) && c.ProfilingPort != "" && c.ProfilingPort != "0" {
+		ports["PROFILING_PORT"] = c.ProfilingPort
 	}
 
 	usedPorts := make(map[string]string)
@@ -258,6 +268,12 @@ func (c *Config) GetConfigSummary() map[string]interface{} {
 		"log_file":            c.LogFile,
 		"enable_file_logging": c.EnableFileLogging,
 		"health_check_port":   c.HealthCheckPort,
+		// Profiling & metrics
+		"env":               c.Env,
+		"profiling_enabled": c.ProfilingEnabled,
+		"profiling_port":    c.ProfilingPort,
+		"metrics_enabled":   c.MetricsEnabled,
+		"metrics_path":      c.MetricsPath,
 	}
 }
 
