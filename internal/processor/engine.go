@@ -35,6 +35,72 @@ type ProcessingResult struct {
 	Retries          int
 }
 
+// Reset clears a ProcessingJob for reuse
+func (j *ProcessingJob) Reset() {
+	j.Venue = models.Venue{}
+	j.User = models.User{}
+	j.Priority = 0
+	j.Retry = 0
+}
+
+// Reset clears a ProcessingResult for reuse
+func (r *ProcessingResult) Reset() {
+	r.VenueID = 0
+	r.Success = false
+	r.ValidationResult = nil
+	r.GoogleData = nil
+	r.Error = nil
+	r.ProcessingTimeMs = 0
+	r.Retries = 0
+}
+
+// Pools and stats for hot-path objects
+var (
+	jobPool = sync.Pool{New: func() any {
+		atomic.AddInt64(&jobPoolMisses, 1)
+		return &ProcessingJob{}
+	}}
+	resultPool = sync.Pool{New: func() any {
+		atomic.AddInt64(&resultPoolMisses, 1)
+		return &ProcessingResult{}
+	}}
+
+	jobPoolGets      int64
+	jobPoolPuts      int64
+	jobPoolMisses    int64
+	resultPoolGets   int64
+	resultPoolPuts   int64
+	resultPoolMisses int64
+)
+
+func getProcessingJob() *ProcessingJob {
+	atomic.AddInt64(&jobPoolGets, 1)
+	return jobPool.Get().(*ProcessingJob)
+}
+
+func putProcessingJob(j *ProcessingJob) {
+	if j == nil {
+		return
+	}
+	j.Reset()
+	atomic.AddInt64(&jobPoolPuts, 1)
+	jobPool.Put(j)
+}
+
+func getProcessingResult() *ProcessingResult {
+	atomic.AddInt64(&resultPoolGets, 1)
+	return resultPool.Get().(*ProcessingResult)
+}
+
+func putProcessingResult(r *ProcessingResult) {
+	if r == nil {
+		return
+	}
+	r.Reset()
+	atomic.AddInt64(&resultPoolPuts, 1)
+	resultPool.Put(r)
+}
+
 // ProcessingStats tracks processing statistics
 type ProcessingStats struct {
 	TotalJobs      int64
@@ -52,6 +118,17 @@ type ProcessingStats struct {
 	APICallsGoogle int64
 	APICallsOpenAI int64
 	TotalCostUSD   float64
+
+	// Pool stats (hot paths)
+	JobPoolGets      int64
+	JobPoolPuts      int64
+	JobPoolMisses    int64
+	ResultPoolGets   int64
+	ResultPoolPuts   int64
+	ResultPoolMisses int64
+	BufferPoolGets   int64
+	BufferPoolPuts   int64
+	BufferPoolMisses int64
 }
 
 // RateLimiter implements token bucket rate limiting
@@ -150,8 +227,8 @@ type ProcessingEngine struct {
 	openAIRateLimit *RateLimiter
 
 	// Processing control
-	jobQueue   chan ProcessingJob
-	resultChan chan ProcessingResult
+	jobQueue   chan *ProcessingJob
+	resultChan chan *ProcessingResult
 	ctx        context.Context
 	cancel     context.CancelFunc
 	wg         sync.WaitGroup
@@ -211,8 +288,8 @@ func NewProcessingEngine(db *database.DB, scraper *scraper.GoogleMapsScraper, sc
 		jobTimeout:      config.JobTimeout,
 		googleRateLimit: NewRateLimiter(config.GoogleRPS, config.GoogleBurst),
 		openAIRateLimit: NewRateLimiter(config.OpenAIRPS, config.OpenAIBurst),
-		jobQueue:        make(chan ProcessingJob, config.QueueSize),
-		resultChan:      make(chan ProcessingResult, config.QueueSize),
+		jobQueue:        make(chan *ProcessingJob, config.QueueSize),
+		resultChan:      make(chan *ProcessingResult, config.QueueSize),
 		ctx:             ctx,
 		cancel:          cancel,
 		shutdown:        make(chan struct{}),
@@ -320,21 +397,23 @@ func (e *ProcessingEngine) ProcessVenuesWithUsers(venuesWithUser []models.VenueW
 
 	log.Printf("Queuing %d venues with user data for processing", len(venuesWithUser))
 
-	for _, venueWithUser := range venuesWithUser {
-		priority := e.calculatePriorityWithUser(venueWithUser.Venue, venueWithUser.User)
-		job := ProcessingJob{
-			Venue:    venueWithUser.Venue,
-			User:     venueWithUser.User,
-			Priority: priority,
-			Retry:    0,
-		}
+	for _, vw := range venuesWithUser {
+		priority := e.calculatePriorityWithUser(vw.Venue, vw.User)
+		job := getProcessingJob()
+		job.Venue = vw.Venue
+		job.User = vw.User
+		job.Priority = priority
+		job.Retry = 0
 
 		select {
 		case e.jobQueue <- job:
 			atomic.AddInt64(&e.stats.QueueSize, 1)
 		case <-e.ctx.Done():
+			// return job to pool if we can't enqueue
+			putProcessingJob(job)
 			return fmt.Errorf("processing engine is shutting down")
 		default:
+			putProcessingJob(job)
 			return fmt.Errorf("job queue is full")
 		}
 	}
@@ -360,6 +439,21 @@ func (e *ProcessingEngine) GetStats() ProcessingStats {
 	stats := e.stats
 	stats.TotalCostUSD = costUSD
 	stats.QueueSize = atomic.LoadInt64(&e.stats.QueueSize)
+
+	// Pool stats snapshot
+	stats.JobPoolGets = atomic.LoadInt64(&jobPoolGets)
+	stats.JobPoolPuts = atomic.LoadInt64(&jobPoolPuts)
+	stats.JobPoolMisses = atomic.LoadInt64(&jobPoolMisses)
+	stats.ResultPoolGets = atomic.LoadInt64(&resultPoolGets)
+	stats.ResultPoolPuts = atomic.LoadInt64(&resultPoolPuts)
+	stats.ResultPoolMisses = atomic.LoadInt64(&resultPoolMisses)
+
+	// If scorer exposes buffer pool stats, include them (optional)
+	if bGets, bPuts, bMiss := e.scorer.GetBufferPoolStats(); bGets >= 0 {
+		stats.BufferPoolGets = bGets
+		stats.BufferPoolPuts = bPuts
+		stats.BufferPoolMisses = bMiss
+	}
 
 	return stats
 }
@@ -424,7 +518,12 @@ func (e *ProcessingEngine) worker(id int) {
 
 			select {
 			case e.resultChan <- result:
+				// after successful send, return job to pool
+				putProcessingJob(job)
 			case <-e.ctx.Done():
+				// if shutting down, return both objects
+				putProcessingResult(result)
+				putProcessingJob(job)
 				return
 			}
 
@@ -435,7 +534,7 @@ func (e *ProcessingEngine) worker(id int) {
 }
 
 // processJob processes a single venue with error recovery
-func (e *ProcessingEngine) processJob(job ProcessingJob) ProcessingResult {
+func (e *ProcessingEngine) processJob(job *ProcessingJob) *ProcessingResult {
 	startTime := time.Now()
 	venue := job.Venue
 	user := job.User
@@ -444,12 +543,11 @@ func (e *ProcessingEngine) processJob(job ProcessingJob) ProcessingResult {
 	jobCtx, cancel := context.WithTimeout(e.ctx, e.jobTimeout)
 	defer cancel()
 
-	result := ProcessingResult{
-		VenueID:          venue.ID,
-		Success:          false,
-		ProcessingTimeMs: 0,
-		Retries:          job.Retry,
-	}
+	result := getProcessingResult()
+	result.VenueID = venue.ID
+	result.Success = false
+	result.ProcessingTimeMs = 0
+	result.Retries = job.Retry
 
 	// Process venue with exponential backoff retry logic
 	var err error
@@ -600,6 +698,7 @@ func (e *ProcessingEngine) resultProcessor() {
 			}
 
 			e.handleResult(result)
+			putProcessingResult(result)
 
 		case <-e.ctx.Done():
 			return
@@ -608,7 +707,7 @@ func (e *ProcessingEngine) resultProcessor() {
 }
 
 // handleResult processes a venue processing result
-func (e *ProcessingEngine) handleResult(result ProcessingResult) {
+func (e *ProcessingEngine) handleResult(result *ProcessingResult) {
 	e.statsMu.Lock()
 	e.stats.CompletedJobs++
 	e.stats.LastActivity = time.Now()
@@ -629,7 +728,7 @@ func (e *ProcessingEngine) handleResult(result ProcessingResult) {
 }
 
 // handleSuccessfulResult processes a successful validation result
-func (e *ProcessingEngine) handleSuccessfulResult(result ProcessingResult) {
+func (e *ProcessingEngine) handleSuccessfulResult(result *ProcessingResult) {
 	atomic.AddInt64(&e.stats.SuccessfulJobs, 1)
 
 	validationResult := result.ValidationResult
@@ -672,7 +771,7 @@ func (e *ProcessingEngine) handleSuccessfulResult(result ProcessingResult) {
 }
 
 // handleFailedResult processes a failed processing result
-func (e *ProcessingEngine) handleFailedResult(result ProcessingResult) {
+func (e *ProcessingEngine) handleFailedResult(result *ProcessingResult) {
 	atomic.AddInt64(&e.stats.FailedJobs, 1)
 	atomic.AddInt64(&e.stats.ManualReview, 1)
 

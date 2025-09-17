@@ -254,6 +254,12 @@ func (s *AIScorer) GetCostStats() (totalTokens, totalRequests int, estimatedCost
 	return s.costTracker.GetStats()
 }
 
+// GetBufferPoolStats returns pooled buffer statistics (currently stubbed)
+// TODO: implement pooled buffer for prompt building if profiling shows it helps
+func (s *AIScorer) GetBufferPoolStats() (gets, puts, misses int64) {
+	return 0, 0, 0
+}
+
 // ScoreVenue performs AI-based venue validation with caching and cost optimization
 func (s *AIScorer) ScoreVenue(ctx context.Context, venue models.Venue, user models.User) (*models.ValidationResult, error) {
 	// Check cache first to avoid duplicate API calls
