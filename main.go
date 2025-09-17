@@ -17,12 +17,14 @@ import (
 
 	"assisted-venue-approval/internal/admin"
 	"assisted-venue-approval/internal/decision"
+	"assisted-venue-approval/internal/domain"
 	"assisted-venue-approval/internal/infrastructure/repository"
 	"assisted-venue-approval/internal/models"
 	"assisted-venue-approval/internal/processor"
 	"assisted-venue-approval/internal/scorer"
 	"assisted-venue-approval/internal/scraper"
 	"assisted-venue-approval/pkg/config"
+	"assisted-venue-approval/pkg/container"
 	"assisted-venue-approval/pkg/database"
 	"assisted-venue-approval/pkg/events"
 	metricsPkg "assisted-venue-approval/pkg/metrics"
@@ -30,106 +32,110 @@ import (
 )
 
 func main() {
-	cfg := config.Load()
+	// Build container and register providers
+	c := container.New()
 
-	// Enable runtime profiling rates conditionally (dev/staging)
+	// Config (singleton)
+	_ = c.Provide(func() *config.Config { return config.Load() }, true)
+
+	// Database (singleton)
+	_ = c.Provide(func(cfg *config.Config) (*database.DB, error) { return database.NewWithConfig(cfg.DatabaseURL, cfg) }, true)
+
+	// Repository and UoW factory (singletons)
+	_ = c.Provide(func(db *database.DB) domain.Repository { return repository.NewSQLRepository(db) }, true)
+	_ = c.Provide(func(db *database.DB) domain.UnitOfWorkFactory { return repository.NewSQLUnitOfWorkFactory(db) }, true)
+
+	// External clients (singletons)
+	_ = c.Provide(func(cfg *config.Config) (*scraper.GoogleMapsScraper, error) {
+		return scraper.NewGoogleMapsScraper(cfg.GoogleMapsAPIKey)
+	}, true)
+	_ = c.Provide(func(cfg *config.Config) *scorer.AIScorer { return scorer.NewAIScorer(cfg.OpenAIAPIKey) }, true)
+
+	// Processing engine (singleton)
+	_ = c.Provide(func(repo domain.Repository, uow domain.UnitOfWorkFactory, g *scraper.GoogleMapsScraper, s *scorer.AIScorer, cfg *config.Config) *processor.ProcessingEngine {
+		pc := processor.DefaultProcessingConfig()
+		if cfg.WorkerCount > 0 {
+			pc.WorkerCount = cfg.WorkerCount
+		}
+		dc := decision.DefaultDecisionConfig()
+		if cfg.ApprovalThreshold > 0 {
+			dc.ApprovalThreshold = cfg.ApprovalThreshold
+		}
+		return processor.NewProcessingEngine(repo, uow, g, s, pc, dc)
+	}, true)
+
+	// Event store (singleton)
+	_ = c.Provide(func(db *database.DB) (events.EventStore, error) { return events.NewSQLEventStore(db) }, true)
+
+	// Resolve config early for monitoring setup
+	var cfg *config.Config
+	if err := c.Resolve(&cfg); err != nil {
+		log.Fatal("config resolve:", err)
+	}
 	monitoring.EnableProfiling(cfg.ProfilingEnabled)
-
 	log.Println("Starting venue validation system")
 
-	db, err := database.NewWithConfig(cfg.DatabaseURL, cfg)
-	if err != nil {
-		log.Fatal("Failed to connect to database:", err)
-	}
-	defer db.Close()
-
-	gmapsScraper, err := scraper.NewGoogleMapsScraper(cfg.GoogleMapsAPIKey)
-	if err != nil {
-		log.Fatal("Failed to initialize Google Maps scraper:", err)
-	}
-
-	repo := repository.NewSQLRepository(db)
-	aiScorer := scorer.NewAIScorer(cfg.OpenAIAPIKey)
-
-	// Initialize processing engine with configuration
-	processingConfig := processor.DefaultProcessingConfig()
-
-	// Override defaults with environment-specific values if needed
-	if cfg.WorkerCount > 0 {
-		processingConfig.WorkerCount = cfg.WorkerCount
-	}
-
-	// Build decision engine config using env-driven approval threshold
-	decisionConfig := decision.DefaultDecisionConfig()
-	if cfg.ApprovalThreshold > 0 {
-		decisionConfig.ApprovalThreshold = cfg.ApprovalThreshold
-	}
-	uowFactory := repository.NewSQLUnitOfWorkFactory(db)
-	processingEngine := processor.NewProcessingEngine(repo, uowFactory, gmapsScraper, aiScorer, processingConfig, decisionConfig)
-
-	// Initialize event store and wire it
-	evStore, err := events.NewSQLEventStore(db)
-	if err != nil {
-		log.Printf("Event store init failed: %v", err)
-	} else {
-		processingEngine.SetEventStore(evStore)
-		admin.SetEventStore(evStore)
-	}
-
-	// Load templates from embedded FS
+	// Load templates
 	if err := admin.LoadTemplates(Templates()); err != nil {
 		log.Fatal("Failed to load templates:", err)
 	}
 
-	app := &App{
-		db:      db,
-		scraper: gmapsScraper,
-		scorer:  aiScorer,
-		config:  cfg,
-		engine:  processingEngine,
+	// Wire event store into engine and admin
+	if err := c.Invoke(func(pe *processor.ProcessingEngine, es events.EventStore) {
+		pe.SetEventStore(es)
+		admin.SetEventStore(es)
+	}); err != nil {
+		log.Printf("Event store init failed: %v", err)
 	}
 
-	// Set up graceful shutdown
+	// Resolve runtime dependencies
+	var (
+		db   *database.DB
+		repo domain.Repository
+		eng  *processor.ProcessingEngine
+	)
+	if err := c.Resolve(&db); err != nil {
+		log.Fatal("db resolve:", err)
+	}
+	if err := c.Resolve(&repo); err != nil {
+		log.Fatal("repo resolve:", err)
+	}
+	if err := c.Resolve(&eng); err != nil {
+		log.Fatal("engine resolve:", err)
+	}
+
+	app := &App{db: db, config: cfg, engine: eng}
+
+	// Graceful shutdown context
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-
-	// Handle shutdown signals
 	go func() {
 		sigChan := make(chan os.Signal, 1)
 		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 		<-sigChan
-
 		log.Println("Received shutdown signal, initiating graceful shutdown...")
-
-		// Stop processing engine with 30-second timeout
-		if err := processingEngine.Stop(30 * time.Second); err != nil {
+		if err := eng.Stop(30 * time.Second); err != nil {
 			log.Printf("Processing engine shutdown error: %v", err)
 		}
-
 		cancel()
 	}()
 
-	// Set up routes
+	// HTTP routing
 	router := mux.NewRouter()
 
-	// Monitoring: request timing middleware in dev/staging as configured
 	var metrics *monitoring.Metrics
 	if cfg.MetricsEnabled {
 		metrics = monitoring.NewMetrics(512)
 		router.Use(monitoring.Middleware(metrics))
 	}
 
-	// Dashboard and main pages
-	router.HandleFunc("/", admin.HomeHandler(repo, processingEngine)).Methods("GET")
-	router.HandleFunc("/analytics", admin.AnalyticsHandler(db, processingEngine)).Methods("GET")
+	router.HandleFunc("/", admin.HomeHandler(repo, eng)).Methods("GET")
+	router.HandleFunc("/analytics", admin.AnalyticsHandler(db, eng)).Methods("GET")
 
-	// Processing controls
 	router.HandleFunc("/validate", app.validateHandler).Methods("POST")
 	router.HandleFunc("/validate/batch", app.validateBatchHandler).Methods("POST")
-	// Removed /validate/stats endpoint
-	router.HandleFunc("/api/stats", admin.APIStatsHandler(db, processingEngine)).Methods("GET")
+	router.HandleFunc("/api/stats", admin.APIStatsHandler(db, eng)).Methods("GET")
 
-	// Venue management
 	router.HandleFunc("/venues/pending", admin.PendingVenuesHandler(db)).Methods("GET")
 	router.HandleFunc("/venues/manual-review", admin.ManualReviewHandler(db)).Methods("GET")
 	router.HandleFunc("/venues/{id}", admin.VenueDetailHandler(db)).Methods("GET")
@@ -137,22 +143,13 @@ func main() {
 	router.HandleFunc("/venues/{id}/reject", admin.RejectVenueHandler(db)).Methods("POST")
 	router.HandleFunc("/venues/{id}/validate", app.validateSingleHandler).Methods("POST")
 
-	// Batch operations
 	router.HandleFunc("/batch-operation", admin.BatchOperationHandler(db)).Methods("POST")
-
-	// History and audit
 	router.HandleFunc("/validation/history", admin.ValidationHistoryHandler(db)).Methods("GET")
 
-	// Static files served from embedded filesystem
 	router.PathPrefix("/static/").Handler(http.StripPrefix("/static/", http.FileServer(http.FS(Static()))))
 
-	// Start HTTP server with graceful shutdown
-	server := &http.Server{
-		Addr:    ":" + cfg.Port,
-		Handler: router,
-	}
+	server := &http.Server{Addr: ":" + cfg.Port, Handler: router}
 
-	// Optional admin server for pprof and metrics
 	var adminServer *http.Server
 	if cfg.ProfilingEnabled || cfg.MetricsEnabled {
 		mux := http.NewServeMux()
@@ -162,7 +159,6 @@ func main() {
 		if cfg.MetricsEnabled && metrics != nil {
 			mux.Handle(cfg.MetricsPath, monitoring.MetricsHandler(metrics))
 		}
-		// Always expose Prometheus-compatible metrics when metrics enabled
 		if cfg.MetricsEnabled {
 			mux.Handle("/metrics", metricsPkg.Handler())
 		}
@@ -182,13 +178,10 @@ func main() {
 		}
 	}()
 
-	// Wait for shutdown signal
 	<-ctx.Done()
 
-	// Shutdown HTTP server
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer shutdownCancel()
-
 	if err := server.Shutdown(shutdownCtx); err != nil {
 		log.Printf("HTTP server shutdown error: %v", err)
 	}
@@ -197,7 +190,6 @@ func main() {
 			log.Printf("Admin HTTP server shutdown error: %v", err)
 		}
 	}
-
 	log.Println("Application shutdown complete")
 }
 
