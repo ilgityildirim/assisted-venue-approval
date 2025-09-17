@@ -106,6 +106,27 @@ func main() {
 
 	app := &App{db: db, config: cfg, engine: eng}
 
+	// Start config watcher for hot-reload (applies worker count and approval threshold)
+	cw := config.NewWatcher(2 * time.Second)
+	cw.Start()
+	chgCh := cw.Subscribe()
+	go func() {
+		for chg := range chgCh {
+			if chg.Err != nil {
+				log.Printf("Config reload failed: %v", chg.Err)
+				continue
+			}
+			// Apply relevant changes
+			wc := chg.New.WorkerCount
+			if wc <= 0 {
+				wc = cfg.WorkerCount
+			}
+			eng.ApplyConfig(wc, chg.New.ApprovalThreshold)
+			cfg = chg.New
+			log.Printf("Config applied. Changed fields: %v", chg.Fields)
+		}
+	}()
+
 	// Graceful shutdown context
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

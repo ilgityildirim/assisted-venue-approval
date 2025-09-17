@@ -260,6 +260,11 @@ type ProcessingEngine struct {
 	cancel     context.CancelFunc
 	wg         sync.WaitGroup
 
+	// worker management
+	workersMu    sync.Mutex
+	workerStops  []chan struct{}
+	nextWorkerID int
+
 	// Statistics
 	stats   ProcessingStats
 	statsMu sync.RWMutex
@@ -332,6 +337,60 @@ func NewProcessingEngine(repo domain.Repository, uowFactory domain.UnitOfWorkFac
 	return engine
 }
 
+// ApplyConfig applies runtime-configurable changes safely.
+// Currently supports resizing worker pool.
+func (e *ProcessingEngine) ApplyConfig(newWorkers int, approvalThreshold int) {
+	// Resize workers if needed
+	if newWorkers > 0 {
+		e.resizeWorkers(newWorkers)
+	}
+	// Forward to decision engine for threshold update if provided (>0)
+	if e.decisionEngine != nil && approvalThreshold > 0 {
+		// best-effort; decision engine will clamp values as needed
+		type applier interface{ ApplyConfig(approvalThreshold int) }
+		if a, ok := interface{}(e.decisionEngine).(applier); ok {
+			a.ApplyConfig(approvalThreshold)
+		}
+	}
+}
+
+func (e *ProcessingEngine) resizeWorkers(target int) {
+	e.workersMu.Lock()
+	defer e.workersMu.Unlock()
+
+	cur := len(e.workerStops)
+	if target == cur {
+		return
+	}
+	if target > cur {
+		// scale up
+		for i := 0; i < target-cur; i++ {
+			stopCh := make(chan struct{})
+			e.workerStops = append(e.workerStops, stopCh)
+			id := e.nextWorkerID
+			e.nextWorkerID++
+			e.wg.Add(1)
+			go e.worker(id, stopCh)
+		}
+		e.statsMu.Lock()
+		e.stats.WorkerCount = target
+		e.statsMu.Unlock()
+		log.Printf("Scaled workers up: %d -> %d", cur, target)
+		return
+	}
+	// scale down: close extra stop channels; workers will exit gracefully after current job
+	toStop := cur - target
+	for i := 0; i < toStop; i++ {
+		idx := len(e.workerStops) - 1
+		close(e.workerStops[idx])
+		e.workerStops = e.workerStops[:idx]
+	}
+	e.statsMu.Lock()
+	e.stats.WorkerCount = target
+	e.statsMu.Unlock()
+	log.Printf("Scaled workers down: %d -> %d", cur, target)
+}
+
 // SetEventStore wires an EventStore for audit trail publishing.
 func (e *ProcessingEngine) SetEventStore(es events.EventStore) {
 	e.eventStore = es
@@ -353,10 +412,16 @@ func (e *ProcessingEngine) Start() {
 	e.openAIRateLimit.Start()
 
 	// Start workers
+	e.workersMu.Lock()
 	for i := 0; i < e.workerCount; i++ {
+		stopCh := make(chan struct{})
+		e.workerStops = append(e.workerStops, stopCh)
+		id := e.nextWorkerID
+		e.nextWorkerID++
 		e.wg.Add(1)
-		go e.worker(i)
+		go e.worker(id, stopCh)
 	}
+	e.workersMu.Unlock()
 
 	// Start result processor
 	e.wg.Add(1)
@@ -542,7 +607,7 @@ func (e *ProcessingEngine) calculatePriorityWithUser(venue models.Venue, user mo
 }
 
 // worker processes jobs from the queue
-func (e *ProcessingEngine) worker(id int) {
+func (e *ProcessingEngine) worker(id int, stopCh <-chan struct{}) {
 	defer e.wg.Done()
 
 	log.Printf("Worker %d started", id)
@@ -550,6 +615,8 @@ func (e *ProcessingEngine) worker(id int) {
 
 	for {
 		select {
+		case <-stopCh:
+			return
 		case job, ok := <-e.jobQueue:
 			if !ok {
 				return // Queue closed, worker should exit

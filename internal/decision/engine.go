@@ -86,6 +86,13 @@ func NewDecisionEngine(config DecisionConfig) *DecisionEngine {
 	}
 }
 
+// ApplyConfig allows runtime updates of thresholds.
+func (de *DecisionEngine) ApplyConfig(approvalThreshold int) {
+	if approvalThreshold > 0 && approvalThreshold <= 100 {
+		de.approvalThreshold = approvalThreshold
+	}
+}
+
 // SetEventStore wires an EventStore for publishing decisions.
 func (de *DecisionEngine) SetEventStore(es events.EventStore) { de.eventStore = es }
 
