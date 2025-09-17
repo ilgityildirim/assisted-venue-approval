@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"assisted-venue-approval/internal/models"
+	"assisted-venue-approval/internal/prompts"
 	"assisted-venue-approval/pkg/circuit"
 	errs "assisted-venue-approval/pkg/errors"
 	"assisted-venue-approval/pkg/metrics"
@@ -202,6 +203,7 @@ type AIScorer struct {
 	costTracker *CostTracker
 	cache       *VenueCache
 	cb          *circuit.Breaker
+	pm          *prompts.Manager
 }
 
 // metrics
@@ -258,6 +260,11 @@ func NewAIScorer(apiKey string) *AIScorer {
 		SlowCallThreshold: 20 * time.Second,
 		SlowCallRate:      0.5,
 	}, nil)
+	pm, err := prompts.NewManager()
+	if err != nil {
+		// Keep running, but log a message; we'll fallback to inline prompts
+		fmt.Printf("prompts: init failed: %v\n", err)
+	}
 	return &AIScorer{
 		client: openai.NewClient(apiKey),
 		costTracker: &CostTracker{
@@ -265,6 +272,7 @@ func NewAIScorer(apiKey string) *AIScorer {
 		},
 		cache: NewVenueCache(),
 		cb:    cb,
+		pm:    pm,
 	}
 }
 
@@ -489,6 +497,27 @@ func (s *AIScorer) buildUnifiedPrompt(venue models.Venue, trustLevel float64) st
 	}
 	venueJSON, _ := json.Marshal(venueInfo)
 
+	// Prefer rendering from template; fallback to inline format for resilience
+	if s.pm != nil {
+		data := map[string]any{
+			"CombinedJSON":       string(combinedJSON),
+			"VenueJSON":          string(venueJSON),
+			"AdminNote":          escapeForPrompt(adminNote),
+			"AdminHoldEmailNote": escapeForPrompt(adminHoldEmailNote),
+			"GoogleStatus":       googleStatus,
+			"GoogleTypes":        googleTypes,
+			"VegOnly":            venue.VegOnly,
+			"Vegan":              venue.Vegan,
+			"Category":           venue.Category,
+			"TrustLevel":         trustLevel,
+		}
+		if out, err := s.pm.Render("unified_user", data); err == nil {
+			return out
+		} else {
+			fmt.Printf("prompts: render unified_user failed: %v\n", err)
+		}
+	}
+
 	return fmt.Sprintf(`You must score the venue and reply with JSON only.
 
 Data:
@@ -537,6 +566,13 @@ func escapeForPrompt(s string) string {
 // Optimized prompt functions for cost efficiency
 
 func (s *AIScorer) getSystemPrompt() string {
+	if s.pm != nil {
+		if out, err := s.pm.Render("system", nil); err == nil {
+			return out
+		} else {
+			fmt.Printf("prompts: render system failed: %v\n", err)
+		}
+	}
 	return `System role: You are an expert venue data validator for HappyCow (vegan/vegetarian directory).
 Goals:
 - Score venues for (1) legitimacy (35), (2) completeness (30), (3) relevance (35).
