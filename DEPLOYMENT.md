@@ -40,7 +40,7 @@ The fastest way to deploy is using the provided deployment script:
 ```bash
 # Clone the repository
 git clone <repository-url>
-cd automatic-vendor-validation
+cd assisted-venue-approval
 
 # Run automated deployment (requires root)
 sudo ./scripts/deploy.sh
