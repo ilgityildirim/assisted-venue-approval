@@ -14,6 +14,7 @@ import (
 	"assisted-venue-approval/internal/processor"
 	"assisted-venue-approval/pkg/database"
 	"assisted-venue-approval/pkg/events"
+	"assisted-venue-approval/pkg/metrics"
 
 	"github.com/gorilla/mux"
 )
@@ -38,6 +39,15 @@ type SystemHealth struct {
 
 // Event sink for admin actions. Set from main.
 var eventSink events.EventStore
+
+// metrics
+var (
+	mAdminApproved = metrics.Default.Counter("admin_approved_total", "Admin manual approvals")
+	mAdminRejected = metrics.Default.Counter("admin_rejected_total", "Admin manual rejections")
+	gManualPending = metrics.Default.Gauge("manual_review_pending_gauge", "Current number of venues pending manual review")
+	gApprovalRate  = metrics.Default.Gauge("approval_rate_percent", "Overall approval rate percentage")
+	gThroughputMin = metrics.Default.Gauge("processing_throughput_per_min", "Processing throughput per minute (approx)")
+)
 
 func SetEventStore(es events.EventStore) { eventSink = es }
 
@@ -153,6 +163,8 @@ func ManualReviewHandler(db *database.DB) http.HandlerFunc {
 			http.Error(w, fmt.Sprintf("Error fetching manual review venues: %v", err), http.StatusInternalServerError)
 			return
 		}
+		// update gauge
+		gManualPending.SetFloat64(float64(total))
 
 		// Build a view model combining scores with venues for the template
 		type Item struct {
@@ -210,6 +222,8 @@ func ApproveVenueHandler(db *database.DB) http.HandlerFunc {
 
 		// Update venue status
 		err := db.UpdateVenueStatusCtx(r.Context(), id, 1, notes, &reviewer)
+		// metrics
+		mAdminApproved.Inc(1)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Error updating venue: %v", err), http.StatusInternalServerError)
 			return
@@ -265,6 +279,8 @@ func RejectVenueHandler(db *database.DB) http.HandlerFunc {
 
 		// Update venue status
 		err := db.UpdateVenueStatusCtx(r.Context(), id, -1, reason, &reviewer)
+		// metrics
+		mAdminRejected.Inc(1)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Error updating venue: %v", err), http.StatusInternalServerError)
 			return
@@ -639,6 +655,13 @@ func BatchOperationHandler(db *database.DB) http.HandlerFunc {
 		results["success_count"] = successCount
 		results["total_count"] = len(ids)
 		results["action"] = action
+		// metrics for batch decisions
+		switch action {
+		case "approve":
+			mAdminApproved.Inc(int64(successCount))
+		case "reject":
+			mAdminRejected.Inc(int64(successCount))
+		}
 
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(results)
@@ -710,6 +733,16 @@ func AnalyticsHandler(db *database.DB, engine *processor.ProcessingEngine) http.
 			VenueStats:      venueStats,
 			AutomationRate:  automationRate,
 			CostPerVenue:    stats.TotalCostUSD / float64(max(stats.TotalJobs, 1)),
+		}
+
+		// Update business metrics gauges
+		if venueStats != nil && venueStats.Total > 0 {
+			apr := float64(venueStats.Approved) / float64(venueStats.Total) * 100.0
+			gApprovalRate.SetFloat64(apr)
+		}
+		mins := time.Since(stats.StartTime).Minutes()
+		if mins > 0 {
+			gThroughputMin.SetFloat64(float64(stats.CompletedJobs) / mins)
 		}
 
 		if err := ExecuteTemplate(w, "analytics.tmpl", data); err != nil {

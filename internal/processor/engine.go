@@ -15,6 +15,7 @@ import (
 	"assisted-venue-approval/internal/scorer"
 	"assisted-venue-approval/internal/scraper"
 	"assisted-venue-approval/pkg/events"
+	"assisted-venue-approval/pkg/metrics"
 )
 
 // ProcessingJob represents a venue processing job
@@ -72,6 +73,19 @@ var (
 	resultPoolGets   int64
 	resultPoolPuts   int64
 	resultPoolMisses int64
+
+	// metrics
+	mProcQueued       = metrics.Default.Counter("venue_processing_queued_total", "Venues queued for processing")
+	mProcCompleted    = metrics.Default.Counter("venue_processing_completed_total", "Venues processed (completed)")
+	mProcSuccess      = metrics.Default.Counter("venue_processing_success_total", "Successful processing results")
+	mProcFailed       = metrics.Default.Counter("venue_processing_failed_total", "Failed processing results")
+	mProcDuration     = metrics.Default.Histogram("venue_processing_duration_seconds", "Processing time per venue (seconds)", []float64{0.1, 0.25, 0.5, 1, 2, 5, 10, 20, 60, 120})
+	mQueueGauge       = metrics.Default.Gauge("venue_processing_queue_size", "Current processing queue size")
+	mApiGoogle        = metrics.Default.Counter("google_api_calls_total", "Google Maps API calls")
+	mApiOpenAI        = metrics.Default.Counter("openai_api_calls_total", "OpenAI API calls")
+	mDecisionAutoAppr = metrics.Default.Counter("decision_auto_approved_total", "Auto-approved venues")
+	mDecisionAutoRej  = metrics.Default.Counter("decision_auto_rejected_total", "Auto-rejected venues")
+	mDecisionManual   = metrics.Default.Counter("decision_manual_review_total", "Venues sent to manual review")
 )
 
 func getProcessingJob() *ProcessingJob {
@@ -424,6 +438,8 @@ func (e *ProcessingEngine) ProcessVenuesWithUsers(venuesWithUser []models.VenueW
 		select {
 		case e.jobQueue <- job:
 			atomic.AddInt64(&e.stats.QueueSize, 1)
+			mProcQueued.Inc(1)
+			mQueueGauge.SetFloat64(float64(atomic.LoadInt64(&e.stats.QueueSize)))
 		case <-e.ctx.Done():
 			// return job to pool if we can't enqueue
 			putProcessingJob(job)
@@ -530,6 +546,7 @@ func (e *ProcessingEngine) worker(id int) {
 			}
 
 			atomic.AddInt64(&e.stats.QueueSize, -1)
+			mQueueGauge.SetFloat64(float64(atomic.LoadInt64(&e.stats.QueueSize)))
 			result := e.processJob(job)
 
 			select {
@@ -654,9 +671,11 @@ func (e *ProcessingEngine) processVenueWithRateLimit(ctx context.Context, venue 
 	enhancedVenue, err := e.scraper.EnhanceVenueWithValidation(ctx, venue)
 	if err != nil {
 		atomic.AddInt64(&e.stats.APICallsGoogle, 1)
+		mApiGoogle.Inc(1)
 		return nil, nil, fmt.Errorf("failed to enhance venue: %w", err)
 	}
 	atomic.AddInt64(&e.stats.APICallsGoogle, 1)
+	mApiGoogle.Inc(1)
 
 	// Prepare Google data (if any) early so we can return it even on AI failure
 	var gData *models.GooglePlaceData
@@ -675,9 +694,11 @@ func (e *ProcessingEngine) processVenueWithRateLimit(ctx context.Context, venue 
 	validationResult, err := e.scorer.ScoreVenue(ctx, *enhancedVenue, user)
 	if err != nil {
 		atomic.AddInt64(&e.stats.APICallsOpenAI, 1)
+		mApiOpenAI.Inc(1)
 		return nil, gData, fmt.Errorf("failed to score venue: %w", err)
 	}
 	atomic.AddInt64(&e.stats.APICallsOpenAI, 1)
+	mApiOpenAI.Inc(1)
 
 	// Use decision engine to make final decision with user context
 	decisionResult := e.decisionEngine.MakeDecision(*enhancedVenue, user, validationResult)
@@ -753,6 +774,10 @@ func (e *ProcessingEngine) resultProcessor() {
 
 // handleResult processes a venue processing result
 func (e *ProcessingEngine) handleResult(result *ProcessingResult) {
+	// metrics first
+	mProcCompleted.Inc(1)
+	mProcDuration.Observe(float64(result.ProcessingTimeMs) / 1000.0)
+
 	e.statsMu.Lock()
 	e.stats.CompletedJobs++
 	e.stats.LastActivity = time.Now()
@@ -766,8 +791,10 @@ func (e *ProcessingEngine) handleResult(result *ProcessingResult) {
 	e.statsMu.Unlock()
 
 	if result.Success && result.ValidationResult != nil {
+		mProcSuccess.Inc(1)
 		e.handleSuccessfulResult(result)
 	} else {
+		mProcFailed.Inc(1)
 		e.handleFailedResult(result)
 	}
 }
@@ -784,16 +811,19 @@ func (e *ProcessingEngine) handleSuccessfulResult(result *ProcessingResult) {
 	case "approved":
 		dbStatus = 1
 		atomic.AddInt64(&e.stats.AutoApproved, 1)
+		mDecisionAutoAppr.Inc(1)
 		log.Printf("Auto-approved venue %d with score %d (Decision engine)", result.VenueID, validationResult.Score)
 
 	case "rejected":
 		dbStatus = -1
 		atomic.AddInt64(&e.stats.AutoRejected, 1)
+		mDecisionAutoRej.Inc(1)
 		log.Printf("Auto-rejected venue %d with score %d (Decision engine)", result.VenueID, validationResult.Score)
 
 	default: // manual_review
 		dbStatus = 0
 		atomic.AddInt64(&e.stats.ManualReview, 1)
+		mDecisionManual.Inc(1)
 		log.Printf("Venue %d requires manual review (score: %d) (Decision engine)", result.VenueID, validationResult.Score)
 	}
 

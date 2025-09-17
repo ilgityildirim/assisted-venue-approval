@@ -25,6 +25,7 @@ import (
 	"assisted-venue-approval/pkg/config"
 	"assisted-venue-approval/pkg/database"
 	"assisted-venue-approval/pkg/events"
+	metricsPkg "assisted-venue-approval/pkg/metrics"
 	"assisted-venue-approval/pkg/monitoring"
 )
 
@@ -160,6 +161,10 @@ func main() {
 		}
 		if cfg.MetricsEnabled && metrics != nil {
 			mux.Handle(cfg.MetricsPath, monitoring.MetricsHandler(metrics))
+		}
+		// Always expose Prometheus-compatible metrics when metrics enabled
+		if cfg.MetricsEnabled {
+			mux.Handle("/metrics", metricsPkg.Handler())
 		}
 		adminServer = &http.Server{Addr: ":" + cfg.ProfilingPort, Handler: mux}
 		go func() {

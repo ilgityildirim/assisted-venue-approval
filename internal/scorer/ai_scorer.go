@@ -13,6 +13,7 @@ import (
 
 	"assisted-venue-approval/internal/models"
 	errs "assisted-venue-approval/pkg/errors"
+	"assisted-venue-approval/pkg/metrics"
 
 	"github.com/sashabaranov/go-openai"
 )
@@ -201,6 +202,11 @@ type AIScorer struct {
 	cache       *VenueCache
 }
 
+// metrics
+var (
+	mScoringDuration = metrics.Default.Histogram("venue_scoring_duration_seconds", "AI scoring duration (seconds)", []float64{0.1, 0.25, 0.5, 1, 2, 5, 10, 20, 60})
+)
+
 // calcTrustLevelFromUser derives a trust level (0.0-1.0) from submitter info, mirroring venue detail logic
 func (s *AIScorer) calcTrustLevelFromUser(user models.User) float64 {
 	// Base trust
@@ -272,7 +278,9 @@ func (s *AIScorer) ScoreVenue(ctx context.Context, venue models.Venue, user mode
 	}
 
 	// Unified scoring regardless of Google data presence
+	t := mScoringDuration.Start()
 	result, err := s.scoreUnifiedVenue(ctx, venue, trust)
+	t.Observe()
 	if err != nil {
 		return nil, errs.NewExternal("scorer.ScoreVenue", "openai", "AI scoring failed", err)
 	}
