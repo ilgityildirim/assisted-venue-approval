@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"assisted-venue-approval/internal/domain/specs"
 	"assisted-venue-approval/internal/models"
 	"assisted-venue-approval/pkg/events"
 )
@@ -18,6 +19,7 @@ type DecisionEngine struct {
 	enableSpecialCases  bool
 	enableAuthorityMode bool
 	eventStore          events.EventStore
+	approvalSpec        specs.Specification[models.Venue]
 }
 
 // DecisionConfig configures the decision engine behavior
@@ -80,6 +82,7 @@ func NewDecisionEngine(config DecisionConfig) *DecisionEngine {
 		rejectionThreshold:  config.RejectionThreshold,
 		enableSpecialCases:  config.EnableSpecialCases,
 		enableAuthorityMode: config.EnableAuthorityMode,
+		approvalSpec:        specs.BuildApprovalSpecFromEnv(),
 	}
 }
 
@@ -509,31 +512,11 @@ func (de *DecisionEngine) determineStatus(venue models.Venue, user models.User, 
 
 // hasCompleteCriticalData checks if venue has all critical data for authority-based approval
 func (de *DecisionEngine) hasCompleteCriticalData(venue models.Venue) bool {
-	// Critical data requirements for auto-approval
-	if venue.Name == "" {
-		return false
+	if de.approvalSpec == nil {
+		// Fallback to conservative check if spec not initialized
+		return venue.Name != "" && venue.Location != "" && venue.Lat != nil && venue.Lng != nil
 	}
-	if venue.Location == "" {
-		return false
-	}
-	if venue.Lat == nil || venue.Lng == nil {
-		return false
-	}
-
-	// Check for basic vegan/vegetarian relevance indicators
-	hasVeganRelevance := venue.Vegan > 0 || venue.VegOnly > 0
-	if venue.AdditionalInfo != nil {
-		info := strings.ToLower(*venue.AdditionalInfo)
-		veganKeywords := []string{"vegan", "vegetarian", "plant-based", "veggie"}
-		for _, keyword := range veganKeywords {
-			if strings.Contains(info, keyword) {
-				hasVeganRelevance = true
-				break
-			}
-		}
-	}
-
-	return hasVeganRelevance
+	return de.approvalSpec.IsSatisfiedBy(context.TODO(), venue)
 }
 
 // GetDecisionSummary returns a human-readable summary of the decision logic

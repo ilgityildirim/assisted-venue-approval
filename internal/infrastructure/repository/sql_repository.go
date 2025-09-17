@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"assisted-venue-approval/internal/domain"
+	"assisted-venue-approval/internal/domain/specs"
 	"assisted-venue-approval/internal/models"
 	"assisted-venue-approval/pkg/database"
 )
@@ -81,4 +82,20 @@ func (r *SQLRepository) GetCachedGooglePlaceDataCtx(ctx context.Context, venueID
 
 func (r *SQLRepository) HasAnyValidationHistory(venueID int64) (bool, error) {
 	return r.db.HasAnyValidationHistory(venueID)
+}
+
+// FilterPendingBySpecCtx fetches pending venues and filters them using a Specification.
+// Note: This applies the spec in-memory. For large datasets, consider adding SQL translations.
+func (r *SQLRepository) FilterPendingBySpecCtx(ctx context.Context, s specs.Specification[models.Venue]) ([]models.VenueWithUser, error) {
+	items, err := r.GetPendingVenuesWithUserCtx(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]models.VenueWithUser, 0, len(items))
+	for _, v := range items {
+		if s.IsSatisfiedBy(ctx, v.Venue) {
+			out = append(out, v)
+		}
+	}
+	return out, nil
 }
