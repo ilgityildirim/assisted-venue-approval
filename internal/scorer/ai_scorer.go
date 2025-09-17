@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"automatic-vendor-validation/internal/models"
+	"assisted-venue-approval/internal/models"
 
 	"github.com/sashabaranov/go-openai"
 )

@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"automatic-vendor-validation/pkg/logging"
+	"assisted-venue-approval/pkg/logging"
 )
 
 // HealthStatus represents the health status of a component

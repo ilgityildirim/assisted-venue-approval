@@ -145,6 +145,7 @@
                 </div>
                 {{end}}
 
+                {{if or .LatestHist (or .AIReviewNote .AIOutputNotes) }}
                 <div class="section">
                     <h2>AI Review</h2>
                     <div class="field-grid">
@@ -170,6 +171,7 @@
                         </div>
                     </div>
                 </div>
+                {{end}}
 
                 {{if .GoogleData}}
                 <div class="section">

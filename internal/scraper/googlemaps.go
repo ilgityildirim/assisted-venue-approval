@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"automatic-vendor-validation/internal/models"
+	"assisted-venue-approval/internal/models"
 
 	"googlemaps.github.io/maps"
 )

@@ -9,11 +9,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"automatic-vendor-validation/internal/decision"
-	"automatic-vendor-validation/internal/models"
-	"automatic-vendor-validation/internal/scorer"
-	"automatic-vendor-validation/internal/scraper"
-	"automatic-vendor-validation/pkg/database"
+	"assisted-venue-approval/internal/decision"
+	"assisted-venue-approval/internal/models"
+	"assisted-venue-approval/internal/scorer"
+	"assisted-venue-approval/internal/scraper"
+	"assisted-venue-approval/pkg/database"
 )
 
 // ProcessingJob represents a venue processing job

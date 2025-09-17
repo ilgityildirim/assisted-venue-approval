@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"automatic-vendor-validation/internal/models"
+	"assisted-venue-approval/internal/models"
 )
 
 // DecisionEngine handles venue approval/rejection logic with special case handling

@@ -15,14 +15,14 @@ import (
 	"github.com/gorilla/mux"
 	_ "github.com/joho/godotenv/autoload"
 
-	"automatic-vendor-validation/internal/admin"
-	"automatic-vendor-validation/internal/decision"
-	"automatic-vendor-validation/internal/models"
-	"automatic-vendor-validation/internal/processor"
-	"automatic-vendor-validation/internal/scorer"
-	"automatic-vendor-validation/internal/scraper"
-	"automatic-vendor-validation/pkg/config"
-	"automatic-vendor-validation/pkg/database"
+	"assisted-venue-approval/internal/admin"
+	"assisted-venue-approval/internal/decision"
+	"assisted-venue-approval/internal/models"
+	"assisted-venue-approval/internal/processor"
+	"assisted-venue-approval/internal/scorer"
+	"assisted-venue-approval/internal/scraper"
+	"assisted-venue-approval/pkg/config"
+	"assisted-venue-approval/pkg/database"
 )
 
 func main() {

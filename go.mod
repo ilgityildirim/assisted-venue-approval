@@ -1,4 +1,4 @@
-module automatic-vendor-validation
+module assisted-venue-approval
 
 go 1.25
 

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"automatic-vendor-validation/internal/models"
-	"automatic-vendor-validation/pkg/config"
+	"assisted-venue-approval/internal/models"
+	"assisted-venue-approval/pkg/config"
 
 	_ "github.com/go-sql-driver/mysql"
 )

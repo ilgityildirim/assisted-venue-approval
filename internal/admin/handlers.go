@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"automatic-vendor-validation/internal/models"
-	"automatic-vendor-validation/internal/processor"
-	"automatic-vendor-validation/pkg/database"
+	"assisted-venue-approval/internal/models"
+	"assisted-venue-approval/internal/processor"
+	"assisted-venue-approval/pkg/database"
 
 	"github.com/gorilla/mux"
 )
