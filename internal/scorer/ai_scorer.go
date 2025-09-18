@@ -13,6 +13,7 @@ import (
 
 	"assisted-venue-approval/internal/models"
 	"assisted-venue-approval/internal/prompts"
+	"assisted-venue-approval/internal/trust"
 	"assisted-venue-approval/pkg/circuit"
 	errs "assisted-venue-approval/pkg/errors"
 	"assisted-venue-approval/pkg/metrics"
@@ -204,6 +205,7 @@ type AIScorer struct {
 	cache       *VenueCache
 	cb          *circuit.Breaker
 	pm          *prompts.Manager
+	tc          *trust.Calculator
 }
 
 // metrics
@@ -273,6 +275,7 @@ func NewAIScorer(apiKey string) *AIScorer {
 		cache: NewVenueCache(),
 		cb:    cb,
 		pm:    pm,
+		tc:    trust.NewDefault(),
 	}
 }
 
@@ -292,8 +295,9 @@ func (s *AIScorer) ScoreVenue(ctx context.Context, venue models.Venue, user mode
 	// Check cache first to avoid duplicate API calls
 	cacheKey := s.cache.generateKey(venue)
 	// Include submitter trust/user in cache key to avoid cross-user cache collisions
-	trust := s.calcTrustLevelFromUser(user)
-	fmt.Printf("score: id=%d trust=%.2f\n", venue.ID, trust) // debug
+	assessment := s.tc.Assess(user, venue.Location)
+	trust := assessment.Trust
+	fmt.Printf("score: id=%d trust=%.2f (%s)\n", venue.ID, trust, assessment.Authority) // debug
 	cacheKey = fmt.Sprintf("%s|trust=%.2f|uid=%d", cacheKey, trust, user.ID)
 	if cached, found := s.cache.Get(cacheKey); found {
 		return &cached, nil

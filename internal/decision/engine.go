@@ -9,6 +9,7 @@ import (
 
 	"assisted-venue-approval/internal/domain/specs"
 	"assisted-venue-approval/internal/models"
+	"assisted-venue-approval/internal/trust"
 	"assisted-venue-approval/pkg/events"
 )
 
@@ -20,6 +21,7 @@ type DecisionEngine struct {
 	enableAuthorityMode bool
 	eventStore          events.EventStore
 	approvalSpec        specs.Specification[models.Venue]
+	tc                  *trust.Calculator
 }
 
 // DecisionConfig configures the decision engine behavior
@@ -83,6 +85,7 @@ func NewDecisionEngine(config DecisionConfig) *DecisionEngine {
 		enableSpecialCases:  config.EnableSpecialCases,
 		enableAuthorityMode: config.EnableAuthorityMode,
 		approvalSpec:        specs.BuildApprovalSpecFromEnv(),
+		tc:                  trust.NewDefault(),
 	}
 }
 
@@ -163,57 +166,21 @@ func (de *DecisionEngine) MakeDecision(venue models.Venue, user models.User, val
 
 // analyzeUserAuthority determines the user's authority level for this venue
 func (de *DecisionEngine) analyzeUserAuthority(venue models.Venue, user models.User) *AuthorityInfo {
+	assess := de.tc.Assess(user, venue.Location)
+
 	authority := &AuthorityInfo{
 		UserID:          user.ID,
 		IsVenueAdmin:    user.IsVenueAdmin,
 		IsTrustedMember: user.Trusted,
-		BonusPoints:     0,
-		TrustLevel:      0.0,
+		AuthorityLevel:  assess.Authority,
+		BonusPoints:     assess.Bonus,
+		TrustLevel:      assess.Trust,
 	}
 
-	// Determine authority level and trust
-	if user.IsVenueAdmin {
-		authority.AuthorityLevel = "venue_admin"
-		authority.BonusPoints = 50 // Near-automatic approval
-		authority.TrustLevel = 1.0
-
-	} else if user.AmbassadorLevel != nil && user.AmbassadorPoints != nil {
-		// Analyze ambassador authority
-		ambassadorInfo := de.analyzeAmbassadorAuthority(venue, user)
-		authority.AmbassadorInfo = ambassadorInfo
-
-		if ambassadorInfo.IsHighRanking && ambassadorInfo.RegionMatches {
-			authority.AuthorityLevel = "high_ambassador"
-			authority.BonusPoints = 30
-			authority.TrustLevel = 0.8
-		} else {
-			authority.AuthorityLevel = "ambassador"
-			authority.BonusPoints = 15
-			authority.TrustLevel = 0.6
-		}
-
-	} else if user.Trusted {
-		authority.AuthorityLevel = "trusted"
-		authority.BonusPoints = 10
-		authority.TrustLevel = 0.7
-
-	} else {
-		authority.AuthorityLevel = "regular"
-		authority.BonusPoints = 0
-		authority.TrustLevel = 0.3
-	}
-
-	// Adjust trust based on contribution history
-	if user.Contributions > 100 {
-		authority.TrustLevel += 0.1
-	}
-	if user.Contributions > 500 {
-		authority.TrustLevel += 0.1
-	}
-
-	// Cap trust level at 1.0
-	if authority.TrustLevel > 1.0 {
-		authority.TrustLevel = 1.0
+	// Populate ambassador info for transparency/debugging in UI/logs
+	if user.AmbassadorLevel != nil || user.AmbassadorPoints != nil || user.AmbassadorRegion != nil {
+		amb := de.analyzeAmbassadorAuthority(venue, user)
+		authority.AmbassadorInfo = amb
 	}
 
 	return authority
