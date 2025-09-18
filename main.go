@@ -177,11 +177,13 @@ func main() {
 		if cfg.ProfilingEnabled {
 			monitoring.RegisterPprof(mux)
 		}
-		if cfg.MetricsEnabled && metrics != nil {
-			mux.Handle(cfg.MetricsPath, monitoring.MetricsHandler(metrics))
-		}
 		if cfg.MetricsEnabled {
-			mux.Handle("/metrics", metricsPkg.Handler())
+			// Expose Prometheus-compatible metrics at configurable path (default: /metrics)
+			mux.Handle(cfg.MetricsPath, metricsPkg.Handler())
+		}
+		// Keep lightweight JSON metrics for humans at /metrics.json (non-Prometheus)
+		if cfg.MetricsEnabled && metrics != nil && cfg.MetricsPath != "/metrics.json" {
+			mux.Handle("/metrics.json", monitoring.MetricsHandler(metrics))
 		}
 		adminServer = &http.Server{Addr: ":" + cfg.ProfilingPort, Handler: mux}
 		go func() {
