@@ -632,35 +632,23 @@ func (e *ProcessingEngine) processJob(job *ProcessingJob) *ProcessingResult {
 	result.ProcessingTimeMs = 0
 	result.Retries = job.Retry
 
-	// Skip venues with admin notes - they require manual review regardless of other factors
-	if job.Venue.AdminNote != nil && strings.TrimSpace(*job.Venue.AdminNote) != "" {
+	// Centralized manual review checks (admin notes, region restrictions)
+	if skip, reason := models.ShouldRequireManualReview(job.Venue); skip {
+		key := "manual_review"
+		if strings.Contains(reason, "Admin") {
+			key = "admin_note_block"
+		} else if strings.Contains(reason, "Asian") {
+			key = "asian_venue_block"
+		}
 		result.ValidationResult = &models.ValidationResult{
 			VenueID:        job.Venue.ID,
 			Score:          0,
 			Status:         "manual_review",
-			Notes:          "Admin note present - manual review required",
-			ScoreBreakdown: map[string]int{"admin_note_block": 0},
+			Notes:          reason,
+			ScoreBreakdown: map[string]int{key: 0},
 		}
 		result.Success = true
 		return result
-	}
-
-	// Skip Asian venues from API calls - they require manual review
-	if job.Venue.Path != nil {
-		path := strings.ToLower(strings.TrimSpace(*job.Venue.Path))
-		if strings.HasPrefix(path, "asia|china") ||
-			strings.HasPrefix(path, "asia|japan") ||
-			strings.HasPrefix(path, "asia|south_korea") {
-			result.ValidationResult = &models.ValidationResult{
-				VenueID:        job.Venue.ID,
-				Score:          0,
-				Status:         "manual_review",
-				Notes:          "Asian venue - manual review required (no API calls)",
-				ScoreBreakdown: map[string]int{"asian_venue_block": 0},
-			}
-			result.Success = true
-			return result
-		}
 	}
 
 	// Publish start event

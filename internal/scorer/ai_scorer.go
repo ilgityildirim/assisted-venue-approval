@@ -282,35 +282,21 @@ func (s *AIScorer) ScoreVenue(ctx context.Context, venue models.Venue, user mode
 		return &cached, nil
 	}
 
-	// Early exit for venues with admin notes - always manual review
-	if venue.AdminNote != nil && strings.TrimSpace(*venue.AdminNote) != "" {
-		return &models.ValidationResult{
-			VenueID: venue.ID,
-			Score:   0,
-			Status:  "manual_review",
-			Notes:   "Admin note present - manual review required",
-			ScoreBreakdown: map[string]int{
-				"admin_note_block": 0,
-			},
-		}, nil
-	}
-
-	// Early exit for Asian venues - always manual review, no API calls
-	if venue.Path != nil {
-		path := strings.ToLower(*venue.Path)
-		if strings.HasPrefix(path, "asia|china") ||
-			strings.HasPrefix(path, "asia|japan") ||
-			strings.HasPrefix(path, "asia|south_korea") {
-			return &models.ValidationResult{
-				VenueID: venue.ID,
-				Score:   0,
-				Status:  "manual_review",
-				Notes:   "Asian venue - manual review required due to language barriers",
-				ScoreBreakdown: map[string]int{
-					"asian_venue_block": 0,
-				},
-			}, nil
+	// Centralized manual review checks (admin notes, region restrictions)
+	if skip, reason := models.ShouldRequireManualReview(venue); skip {
+		key := "manual_review"
+		if strings.Contains(reason, "Admin") {
+			key = "admin_note_block"
+		} else if strings.Contains(reason, "Asian") {
+			key = "asian_venue_block"
 		}
+		return &models.ValidationResult{
+			VenueID:        venue.ID,
+			Score:          0,
+			Status:         "manual_review",
+			Notes:          reason,
+			ScoreBreakdown: map[string]int{key: 0},
+		}, nil
 	}
 
 	// Unified scoring regardless of Google data presence
