@@ -264,6 +264,15 @@ func (s *AIScorer) GetBufferPoolStats() (gets, puts, misses int64) {
 func (s *AIScorer) ScoreVenue(ctx context.Context, venue models.Venue, user models.User) (*models.ValidationResult, error) {
 	// Check cache first to avoid duplicate API calls
 	cacheKey := s.cache.generateKey(venue)
+
+	// Determine if this is a venue owner submission
+	isVenueOwner := user.IsVenueOwner || venue.Source == 1 // Adjust source value as needed
+
+	// Update user object with venue owner status for trust calculation
+	if isVenueOwner {
+		user.IsVenueOwner = true
+	}
+
 	// Include submitter trust/user in cache key to avoid cross-user cache collisions
 	assessment := s.tc.Assess(user, venue.Location)
 	trustLevel := assessment.Trust

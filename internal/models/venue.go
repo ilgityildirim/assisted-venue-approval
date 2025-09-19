@@ -163,6 +163,7 @@ type User struct {
 	Contributions      int     `json:"contributions"`
 	ApprovedVenueCount *int    `json:"approved_venue_count,omitempty" db:"approved_venue_count"`
 	IsVenueAdmin       bool    `json:"is_venue_admin"`
+	IsVenueOwner       bool    `json:"is_venue_owner"`
 	AmbassadorLevel    *int    `json:"ambassador_level,omitempty"`
 	AmbassadorPoints   *int    `json:"ambassador_points,omitempty"`
 	AmbassadorRegion   *string `json:"ambassador_region,omitempty"`
