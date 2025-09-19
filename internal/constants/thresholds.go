@@ -6,7 +6,7 @@ package constants
 
 const (
 	// Trust levels (0.0 - 1.0)
-	BaseRegularTrust = 0.3
+	BaseRegularTrust = 0.0
 	TrustedTrust     = 0.7
 	AmbassadorTrust  = 0.6
 	HighAmbTrust     = 0.8
@@ -16,8 +16,8 @@ const (
 	AmbHighPoints = 1000
 
 	// Contribution-based boost thresholds
-	ContributionBoost1Threshold = 100
-	ContributionBoost2Threshold = 500
+	ContributionBoost1Threshold = 1000
+	ContributionBoost2Threshold = 5000
 	ContributionBoostStep       = 0.1
 
 	// Approved venue boost thresholds
