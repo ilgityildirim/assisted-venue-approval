@@ -128,15 +128,18 @@ func (w *Watcher) checkOnce() {
 	}
 
 	newCfg := Load()
-	if err := newCfg.Validate(); err != nil {
-		w.mFailures.Inc(1)
-		w.notify(Change{Old: w.cur, New: newCfg, Err: fmt.Errorf("invalid config: %w", err)})
+
+	// compute diffs of selected keys first to avoid unnecessary validation
+	fields := diffKeys(w.cur, newCfg)
+	if len(fields) == 0 {
 		return
 	}
 
-	// compute diffs of selected keys
-	fields := diffKeys(w.cur, newCfg)
-	if len(fields) == 0 {
+	// only log and validate when there are actual changes
+	fmt.Printf("config: config has changed, validating...\n")
+	if err := newCfg.Validate(); err != nil {
+		w.mFailures.Inc(1)
+		w.notify(Change{Old: w.cur, New: newCfg, Err: fmt.Errorf("invalid config: %w", err)})
 		return
 	}
 

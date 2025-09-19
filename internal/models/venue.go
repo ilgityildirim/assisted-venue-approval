@@ -69,6 +69,7 @@ type ValidationResult struct {
 	Notes          string         `json:"notes"`
 	ScoreBreakdown map[string]int `json:"score_breakdown"`
 	AIOutputData   *string        `json:"ai_output_data,omitempty"`
+	PromptVersion  *string        `json:"prompt_version,omitempty"`
 }
 
 type ValidationDetails struct {
@@ -185,6 +186,7 @@ type ValidationHistory struct {
 	ValidationNotes  string         `json:"validation_notes"`
 	ScoreBreakdown   map[string]int `json:"score_breakdown"`
 	AIOutputData     *string        `json:"ai_output_data,omitempty"`
+	PromptVersion    *string        `json:"prompt_version,omitempty"`
 
 	// Google Places API data
 	GooglePlaceID    *string          `json:"google_place_id,omitempty"`

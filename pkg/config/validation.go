@@ -64,7 +64,6 @@ func (cv *ConfigValidator) GetErrorsAsString() string {
 func (c *Config) Validate() error {
 	v := NewConfigValidator()
 	// TODO: make this pluggable if we ever need fancy config rules
-	fmt.Printf("config: validating...\n") // debug: keep for now
 
 	c.validateRequired(v)
 	c.validateFormats(v)
