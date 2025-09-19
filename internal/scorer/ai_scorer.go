@@ -413,9 +413,142 @@ func (s *AIScorer) buildUnifiedPrompt(venue models.Venue, user models.User, trus
 		googleStatus = venue.GoogleData.BusinessStatus
 	}
 
-	// Centralized Combined Info
-	combined, _ := models.GetCombinedVenueInfo(venue, user, trustLevel)
-	googleTypes := combined.Types
+	// Enhanced location handling logic
+	var latPtr, lngPtr *float64
+	var locationSource string = "user_provided"
+
+	// Check if user provided coordinates are missing or zero
+	userHasValidCoords := venue.Lat != nil && venue.Lng != nil &&
+		*venue.Lat != 0.0 && *venue.Lng != 0.0
+
+	if venue.GoogleData != nil {
+		googleLat := venue.GoogleData.Geometry.Location.Lat
+		googleLng := venue.GoogleData.Geometry.Location.Lng
+		googleHasValidCoords := googleLat != 0.0 && googleLng != 0.0
+
+		if !userHasValidCoords && googleHasValidCoords {
+			// Use Google coordinates when user coordinates are missing/zero
+			latPtr = &googleLat
+			lngPtr = &googleLng
+			locationSource = "google_fallback"
+		} else if userHasValidCoords {
+			// Use user coordinates
+			latPtr = venue.Lat
+			lngPtr = venue.Lng
+			locationSource = "user_provided"
+		}
+		// If neither has valid coords, both remain nil
+	} else {
+		// No Google data, use user coords if valid
+		if userHasValidCoords {
+			latPtr = venue.Lat
+			lngPtr = venue.Lng
+			locationSource = "user_provided"
+		}
+	}
+
+	// Location validation for prompt
+	locationValidation := ""
+	if latPtr == nil || lngPtr == nil {
+		locationValidation = "CRITICAL: No valid coordinates available - MUST require manual review regardless of other scores."
+	} else {
+		locationValidation = fmt.Sprintf("Location source: %s. Coordinates: %.6f, %.6f", locationSource, *latPtr, *lngPtr)
+	}
+
+	// Determine Google types (from venue GoogleData)
+	var googleTypes []string
+	if venue.GoogleData != nil {
+		googleTypes = venue.GoogleData.Types
+	}
+
+	// Data priority logic based on trust level and venue ownership
+	isHighTrust := trustLevel >= 0.8
+	isVenueOwner := venue.Source == 1 // Adjust based on your venue owner detection logic
+
+	// Determine data source priority
+	var priorityPhone, priorityWebsite, priorityAddress string
+	var dataPriorityNote string
+
+	if isVenueOwner || isHighTrust {
+		// High trust users and venue owners: prioritize their data
+		priorityPhone = phone
+		if priorityPhone == "" && venue.GoogleData != nil {
+			priorityPhone = venue.GoogleData.FormattedPhone
+		}
+
+		priorityWebsite = url
+		if priorityWebsite == "" && venue.GoogleData != nil {
+			priorityWebsite = venue.GoogleData.Website
+		}
+
+		priorityAddress = venue.Location
+		if priorityAddress == "" && venue.GoogleData != nil {
+			priorityAddress = venue.GoogleData.FormattedAddress
+		}
+
+		dataPriorityNote = "User data prioritized (high trust/venue owner)"
+	} else {
+		// Regular users: prioritize Google data
+		if venue.GoogleData != nil {
+			priorityPhone = venue.GoogleData.FormattedPhone
+			if priorityPhone == "" {
+				priorityPhone = phone
+			}
+
+			priorityWebsite = venue.GoogleData.Website
+			if priorityWebsite == "" {
+				priorityWebsite = url
+			}
+
+			priorityAddress = venue.GoogleData.FormattedAddress
+			if priorityAddress == "" {
+				priorityAddress = venue.Location
+			}
+		} else {
+			priorityPhone = phone
+			priorityWebsite = url
+			priorityAddress = venue.Location
+		}
+
+		dataPriorityNote = "Google data prioritized (standard user)"
+	}
+
+	// Hours priority logic (align with data priority approach)
+	var hours []string
+	if isVenueOwner || isHighTrust {
+		if venue.OpenHours != nil && strings.TrimSpace(*venue.OpenHours) != "" {
+			hours = []string{*venue.OpenHours}
+		} else if venue.GoogleData != nil && venue.GoogleData.OpeningHours != nil && len(venue.GoogleData.OpeningHours.WeekdayText) > 0 {
+			hours = venue.GoogleData.OpeningHours.WeekdayText
+		}
+	} else {
+		if venue.GoogleData != nil && venue.GoogleData.OpeningHours != nil && len(venue.GoogleData.OpeningHours.WeekdayText) > 0 {
+			hours = venue.GoogleData.OpeningHours.WeekdayText
+		} else if venue.OpenHours != nil && strings.TrimSpace(*venue.OpenHours) != "" {
+			hours = []string{*venue.OpenHours}
+		}
+	}
+
+	// New venue handling instructions
+	newVenuePolicy := ""
+	if isVenueOwner || isHighTrust {
+		newVenuePolicy = "High trust users and venue owners should not be penalized for submitting new venues. Score based on data quality, not newness."
+	} else {
+		newVenuePolicy = "New venues from regular users require more scrutiny and should generally require manual review unless data is exceptionally complete and verified."
+	}
+
+	// Build CombinedInfo using priority data
+	combined := models.CombinedInfo{
+		Name:        venue.Name,
+		Address:     priorityAddress,
+		Phone:       priorityPhone,
+		Website:     priorityWebsite,
+		Hours:       hours,
+		Lat:         latPtr,
+		Lng:         lngPtr,
+		Types:       googleTypes,
+		Description: description,
+	}
 
 	combinedJSON, _ := json.Marshal(combined)
 
@@ -459,7 +592,10 @@ func (s *AIScorer) buildUnifiedPrompt(venue models.Venue, user models.User, trus
 			"Vegan":              venue.Vegan,
 			"Category":           venue.Category,
 			"TrustLevel":         trustLevel,
-			"IsVenueOwner":       false,
+			"LocationValidation": locationValidation,
+			"DataPriority":       dataPriorityNote,
+			"NewVenuePolicy":     newVenuePolicy,
+			"IsVenueOwner":       isVenueOwner,
 		}
 		if out, err := s.pm.Render("unified_user", data); err == nil {
 			return out
