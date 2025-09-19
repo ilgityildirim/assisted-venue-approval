@@ -32,6 +32,11 @@ type Config struct {
 	ContributionBoost2Threshold int
 	ContributionBoostStep       float64
 
+	ApprovedVenueBoost1Threshold int
+	ApprovedVenueBoost2Threshold int
+	ApprovedVenueBoost3Threshold int
+	ApprovedVenueBoostStep       float64
+
 	BonusVenueAdmin int
 	BonusHighAmb    int
 	BonusAmb        int
@@ -42,18 +47,22 @@ type Config struct {
 // DefaultConfig returns thresholds that match existing logic.
 func DefaultConfig() Config {
 	return Config{
-		BaseRegularTrust:            0.3,
-		TrustedTrust:                0.7,
-		AmbassadorTrust:             0.6,
-		HighAmbTrust:                0.8,
-		ContributionBoost1Threshold: 100,
-		ContributionBoost2Threshold: 500,
-		ContributionBoostStep:       0.1,
-		BonusVenueAdmin:             50,
-		BonusHighAmb:                30,
-		BonusAmb:                    15,
-		BonusTrusted:                10,
-		BonusRegular:                0,
+		BaseRegularTrust:             0.3,
+		TrustedTrust:                 0.7,
+		AmbassadorTrust:              0.6,
+		HighAmbTrust:                 0.8,
+		ContributionBoost1Threshold:  100,
+		ContributionBoost2Threshold:  500,
+		ContributionBoostStep:        0.1,
+		ApprovedVenueBoost1Threshold: 2,
+		ApprovedVenueBoost2Threshold: 5,
+		ApprovedVenueBoost3Threshold: 10,
+		ApprovedVenueBoostStep:       0.15,
+		BonusVenueAdmin:              50,
+		BonusHighAmb:                 30,
+		BonusAmb:                     15,
+		BonusTrusted:                 10,
+		BonusRegular:                 0,
 	}
 }
 
@@ -86,21 +95,31 @@ func (c *Calculator) Assess(user models.User, venueLocation string) Assessment {
 		if isHigh && regionMatch {
 			trust := c.cfg.HighAmbTrust
 			trust = c.applyContributionBoosts(trust, user.Contributions)
+			approvedCount := 0
+			if user.ApprovedVenueCount != nil {
+				approvedCount = *user.ApprovedVenueCount
+			}
+			trust = c.applyApprovedVenueBoosts(trust, approvedCount)
 			return Assessment{
 				Trust:     trust,
 				Authority: "high_ambassador",
 				Bonus:     c.cfg.BonusHighAmb,
-				Reason:    c.buildAmbReason(isHigh, regionMatch, trust),
+				Reason:    c.buildAmbReason(isHigh, regionMatch, trust, approvedCount),
 			}
 		}
 
 		trust := c.cfg.AmbassadorTrust
 		trust = c.applyContributionBoosts(trust, user.Contributions)
+		approvedCount := 0
+		if user.ApprovedVenueCount != nil {
+			approvedCount = *user.ApprovedVenueCount
+		}
+		trust = c.applyApprovedVenueBoosts(trust, approvedCount)
 		return Assessment{
 			Trust:     trust,
 			Authority: "ambassador",
 			Bonus:     c.cfg.BonusAmb,
-			Reason:    c.buildAmbReason(isHigh, regionMatch, trust),
+			Reason:    c.buildAmbReason(isHigh, regionMatch, trust, approvedCount),
 		}
 	}
 
@@ -108,22 +127,32 @@ func (c *Calculator) Assess(user models.User, venueLocation string) Assessment {
 	if user.Trusted {
 		trust := c.cfg.TrustedTrust
 		trust = c.applyContributionBoosts(trust, user.Contributions)
+		approvedCount := 0
+		if user.ApprovedVenueCount != nil {
+			approvedCount = *user.ApprovedVenueCount
+		}
+		trust = c.applyApprovedVenueBoosts(trust, approvedCount)
 		return Assessment{
 			Trust:     trust,
 			Authority: "trusted",
 			Bonus:     c.cfg.BonusTrusted,
-			Reason:    c.buildTrustedReason(trust, user.Contributions),
+			Reason:    c.buildTrustedReason(trust, user.Contributions, approvedCount),
 		}
 	}
 
 	// Regular user baseline
 	trust := c.cfg.BaseRegularTrust
 	trust = c.applyContributionBoosts(trust, user.Contributions)
+	approvedCount := 0
+	if user.ApprovedVenueCount != nil {
+		approvedCount = *user.ApprovedVenueCount
+	}
+	trust = c.applyApprovedVenueBoosts(trust, approvedCount)
 	return Assessment{
 		Trust:     trust,
 		Authority: "regular",
 		Bonus:     c.cfg.BonusRegular,
-		Reason:    c.buildRegularReason(trust, user.Contributions),
+		Reason:    c.buildRegularReason(trust, user.Contributions, approvedCount),
 	}
 }
 
@@ -144,6 +173,23 @@ func (c *Calculator) applyContributionBoosts(base float64, contrib int) float64 
 	return trust
 }
 
+func (c *Calculator) applyApprovedVenueBoosts(base float64, approvedCount int) float64 {
+	trust := base
+	if approvedCount >= c.cfg.ApprovedVenueBoost1Threshold {
+		trust += c.cfg.ApprovedVenueBoostStep
+	}
+	if approvedCount >= c.cfg.ApprovedVenueBoost2Threshold {
+		trust += c.cfg.ApprovedVenueBoostStep
+	}
+	if approvedCount >= c.cfg.ApprovedVenueBoost3Threshold {
+		trust += c.cfg.ApprovedVenueBoostStep
+	}
+	if trust > 1.0 {
+		trust = 1.0
+	}
+	return trust
+}
+
 func (c *Calculator) matchesRegion(userRegion *string, venueLocation string) bool {
 	if userRegion == nil || *userRegion == "" || venueLocation == "" {
 		return false
@@ -153,7 +199,22 @@ func (c *Calculator) matchesRegion(userRegion *string, venueLocation string) boo
 	return strings.Contains(vl, ur)
 }
 
-func (c *Calculator) buildAmbReason(isHigh, regionMatch bool, trust float64) string {
+// describeApproved returns a short descriptor for approved venue counts when
+// they meet configured thresholds. Empty string otherwise.
+func (c *Calculator) describeApproved(approvedCount int) string {
+	if approvedCount >= c.cfg.ApprovedVenueBoost3Threshold {
+		return ">=10 approved"
+	}
+	if approvedCount >= c.cfg.ApprovedVenueBoost2Threshold {
+		return ">=5 approved"
+	}
+	if approvedCount >= c.cfg.ApprovedVenueBoost1Threshold {
+		return ">=2 approved"
+	}
+	return ""
+}
+
+func (c *Calculator) buildAmbReason(isHigh, regionMatch bool, trust float64, approvedCount int) string {
 	lvl := "ambassador"
 	if isHigh && regionMatch {
 		lvl = "high_ambassador"
@@ -165,25 +226,35 @@ func (c *Calculator) buildAmbReason(isHigh, regionMatch bool, trust float64) str
 	if regionMatch {
 		why = append(why, "region match")
 	}
+	// Mention approved venues if significant
+	if ac := c.describeApproved(approvedCount); ac != "" {
+		why = append(why, ac)
+	}
 	return fmt.Sprintf("%s (%s), trust=%.2f", lvl, strings.Join(why[1:], ", "), trust)
 }
 
-func (c *Calculator) buildTrustedReason(trust float64, contrib int) string {
+func (c *Calculator) buildTrustedReason(trust float64, contrib int, approvedCount int) string {
 	parts := []string{"trusted member"}
 	if contrib > c.cfg.ContributionBoost2Threshold {
 		parts = append(parts, ">500 contrib")
 	} else if contrib > c.cfg.ContributionBoost1Threshold {
 		parts = append(parts, ">100 contrib")
 	}
+	if ac := c.describeApproved(approvedCount); ac != "" {
+		parts = append(parts, ac)
+	}
 	return fmt.Sprintf("%s, trust=%.2f", strings.Join(parts, ", "), trust)
 }
 
-func (c *Calculator) buildRegularReason(trust float64, contrib int) string {
+func (c *Calculator) buildRegularReason(trust float64, contrib int, approvedCount int) string {
 	parts := []string{"regular"}
 	if contrib > c.cfg.ContributionBoost2Threshold {
 		parts = append(parts, ">500 contrib")
 	} else if contrib > c.cfg.ContributionBoost1Threshold {
 		parts = append(parts, ">100 contrib")
+	}
+	if ac := c.describeApproved(approvedCount); ac != "" {
+		parts = append(parts, ac)
 	}
 	return fmt.Sprintf("%s, trust=%.2f", strings.Join(parts, ", "), trust)
 }

@@ -156,15 +156,16 @@ type AddressComponent struct {
 
 // User represents user information for authority checking
 type User struct {
-	ID               uint    `json:"id"`
-	Username         string  `json:"username"`
-	Email            string  `json:"email"`
-	Trusted          bool    `json:"trusted"`
-	Contributions    int     `json:"contributions"`
-	IsVenueAdmin     bool    `json:"is_venue_admin"`
-	AmbassadorLevel  *int    `json:"ambassador_level,omitempty"`
-	AmbassadorPoints *int    `json:"ambassador_points,omitempty"`
-	AmbassadorRegion *string `json:"ambassador_region,omitempty"`
+	ID                 uint    `json:"id"`
+	Username           string  `json:"username"`
+	Email              string  `json:"email"`
+	Trusted            bool    `json:"trusted"`
+	Contributions      int     `json:"contributions"`
+	ApprovedVenueCount *int    `json:"approved_venue_count,omitempty" db:"approved_venue_count"`
+	IsVenueAdmin       bool    `json:"is_venue_admin"`
+	AmbassadorLevel    *int    `json:"ambassador_level,omitempty"`
+	AmbassadorPoints   *int    `json:"ambassador_points,omitempty"`
+	AmbassadorRegion   *string `json:"ambassador_region,omitempty"`
 }
 
 // VenueWithUser combines venue and user information
