@@ -781,7 +781,7 @@ func (e *ProcessingEngine) processVenueWithRateLimit(ctx context.Context, venue 
 	mApiOpenAI.Inc(1)
 
 	// Use decision engine to make final decision with user context
-	decisionResult := e.decisionEngine.MakeDecision(*enhancedVenue, user, validationResult)
+	decisionResult := e.decisionEngine.MakeDecision(ctx, *enhancedVenue, user, validationResult)
 
 	// Override validation result with decision engine output
 	validationResult.Status = decisionResult.FinalStatus

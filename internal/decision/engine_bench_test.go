@@ -1,6 +1,7 @@
 package decision
 
 import (
+	"context"
 	"testing"
 
 	"assisted-venue-approval/internal/models"
@@ -33,7 +34,8 @@ func BenchmarkMakeDecision(b *testing.B) {
 
 	b.ReportAllocs()
 	b.ResetTimer()
+	ctx := context.Background()
 	for i := 0; i < b.N; i++ {
-		_ = de.MakeDecision(venue, user, vr)
+		_ = de.MakeDecision(ctx, venue, user, vr)
 	}
 }

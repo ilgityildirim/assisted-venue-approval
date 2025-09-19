@@ -100,7 +100,7 @@ func (de *DecisionEngine) ApplyConfig(approvalThreshold int) {
 func (de *DecisionEngine) SetEventStore(es events.EventStore) { de.eventStore = es }
 
 // MakeDecision processes a venue with user information and returns a final decision
-func (de *DecisionEngine) MakeDecision(venue models.Venue, user models.User, validationResult *models.ValidationResult) *DecisionResult {
+func (de *DecisionEngine) MakeDecision(ctx context.Context, venue models.Venue, user models.User, validationResult *models.ValidationResult) *DecisionResult {
 	startTime := time.Now()
 
 	result := &DecisionResult{
@@ -123,7 +123,7 @@ func (de *DecisionEngine) MakeDecision(venue models.Venue, user models.User, val
 	result.SpecialCaseFlags = specialCases
 	result.QualityFlags = qualityFlags
 
-	decision := de.determineStatus(venue, user, enhancedScore, authority, specialCases, qualityFlags)
+	decision := de.determineStatus(ctx, venue, user, enhancedScore, authority, specialCases, qualityFlags)
 	result.FinalStatus = decision.Status
 	result.DecisionReason = decision.Reason
 	result.RequiresManualReview = decision.RequiresReview
@@ -138,21 +138,21 @@ func (de *DecisionEngine) MakeDecision(venue models.Venue, user models.User, val
 		flags = append(flags, result.QualityFlags...)
 		switch result.FinalStatus {
 		case "approved":
-			_ = de.eventStore.Append(context.Background(), events.VenueApproved{
+			_ = de.eventStore.Append(ctx, events.VenueApproved{
 				Base:   events.Base{Ts: time.Now(), VID: venue.ID},
 				Reason: result.DecisionReason,
 				Score:  result.FinalScore,
 				Flags:  flags,
 			})
 		case "rejected":
-			_ = de.eventStore.Append(context.Background(), events.VenueRejected{
+			_ = de.eventStore.Append(ctx, events.VenueRejected{
 				Base:   events.Base{Ts: time.Now(), VID: venue.ID},
 				Reason: result.DecisionReason,
 				Score:  result.FinalScore,
 				Flags:  flags,
 			})
 		case "manual_review":
-			_ = de.eventStore.Append(context.Background(), events.VenueRequiresManualReview{
+			_ = de.eventStore.Append(ctx, events.VenueRequiresManualReview{
 				Base:   events.Base{Ts: time.Now(), VID: venue.ID},
 				Reason: result.ReviewReason,
 				Score:  result.FinalScore,
@@ -363,18 +363,18 @@ type DecisionOutcome struct {
 }
 
 // determineStatus makes the final approval/rejection decision
-func (de *DecisionEngine) determineStatus(venue models.Venue, user models.User, score int, authority *AuthorityInfo, specialCases, qualityFlags []string) DecisionOutcome {
+func (de *DecisionEngine) determineStatus(ctx context.Context, venue models.Venue, user models.User, score int, authority *AuthorityInfo, specialCases, qualityFlags []string) DecisionOutcome {
 
 	// Authority-based auto-approval rules (highest priority)
 	if de.enableAuthorityMode {
-		if authority.AuthorityLevel == "venue_admin" && de.hasCompleteCriticalData(venue) {
+		if authority.AuthorityLevel == "venue_admin" && de.hasCompleteCriticalData(ctx, venue) {
 			return DecisionOutcome{
 				Status: "approved",
 				Reason: fmt.Sprintf("Auto-approved: Venue admin with complete data (score: %d)", score),
 			}
 		}
 
-		if authority.AuthorityLevel == "high_ambassador" && authority.AmbassadorInfo.RegionMatches && de.hasCompleteCriticalData(venue) {
+		if authority.AuthorityLevel == "high_ambassador" && authority.AmbassadorInfo.RegionMatches && de.hasCompleteCriticalData(ctx, venue) {
 			return DecisionOutcome{
 				Status: "approved",
 				Reason: fmt.Sprintf("Auto-approved: High-ranking regional ambassador with complete data (score: %d)", score),
@@ -481,12 +481,12 @@ func (de *DecisionEngine) determineStatus(venue models.Venue, user models.User, 
 }
 
 // hasCompleteCriticalData checks if venue has all critical data for authority-based approval
-func (de *DecisionEngine) hasCompleteCriticalData(venue models.Venue) bool {
+func (de *DecisionEngine) hasCompleteCriticalData(ctx context.Context, venue models.Venue) bool {
 	if de.approvalSpec == nil {
 		// Fallback to conservative check if spec not initialized
 		return venue.Name != "" && venue.Location != "" && venue.Lat != nil && venue.Lng != nil
 	}
-	return de.approvalSpec.IsSatisfiedBy(context.TODO(), venue)
+	return de.approvalSpec.IsSatisfiedBy(ctx, venue)
 }
 
 // GetDecisionSummary returns a human-readable summary of the decision logic

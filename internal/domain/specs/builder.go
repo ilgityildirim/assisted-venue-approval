@@ -67,5 +67,8 @@ func BuildApprovalSpecFromEnv() Specification[models.Venue] {
 	return base
 }
 
-// Evaluate is a tiny helper for convenience in callers with no context.
-func Evaluate[T any](s Specification[T], v T) bool { return s.IsSatisfiedBy(context.TODO(), v) }
+// Evaluate evaluates a spec with the provided context.
+// Keeping it simple: callers should pass their request or processing ctx.
+func Evaluate[T any](ctx context.Context, s Specification[T], v T) bool {
+	return s.IsSatisfiedBy(ctx, v)
+}
