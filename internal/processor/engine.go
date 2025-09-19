@@ -632,6 +632,19 @@ func (e *ProcessingEngine) processJob(job *ProcessingJob) *ProcessingResult {
 	result.ProcessingTimeMs = 0
 	result.Retries = job.Retry
 
+	// Skip venues with admin notes - they require manual review regardless of other factors
+	if job.Venue.AdminNote != nil && strings.TrimSpace(*job.Venue.AdminNote) != "" {
+		result.ValidationResult = &models.ValidationResult{
+			VenueID:        job.Venue.ID,
+			Score:          0,
+			Status:         "manual_review",
+			Notes:          "Admin note present - manual review required",
+			ScoreBreakdown: map[string]int{"admin_note_block": 0},
+		}
+		result.Success = true
+		return result
+	}
+
 	// Publish start event
 	if e.eventStore != nil {
 		uid := user.ID
