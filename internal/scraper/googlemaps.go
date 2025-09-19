@@ -12,6 +12,7 @@ import (
 
 	"assisted-venue-approval/internal/models"
 	"assisted-venue-approval/pkg/circuit"
+	"assisted-venue-approval/pkg/utils"
 
 	"googlemaps.github.io/maps"
 )
@@ -150,188 +151,6 @@ func (s *GoogleMapsScraper) EnhanceVenue(ctx context.Context, venue models.Venue
 	}
 
 	return enhanced, nil
-}
-
-// NormalizePhoneNumber Phone number normalization functions
-func NormalizePhoneNumber(phone string) string {
-	if phone == "" {
-		return ""
-	}
-
-	// Remove all non-digit characters except +
-	cleaned := regexp.MustCompile(`[^\d+]`).ReplaceAllString(phone, "")
-
-	// Handle international format
-	if strings.HasPrefix(cleaned, "+") {
-		return cleaned
-	}
-
-	// Handle common US formats
-	if len(cleaned) == 10 {
-		return "+1" + cleaned
-	}
-
-	if len(cleaned) == 11 && strings.HasPrefix(cleaned, "1") {
-		return "+" + cleaned
-	}
-
-	// Return as-is for other formats
-	return "+" + cleaned
-}
-
-// ExtractPhoneDigits Extract just the digits for loose comparison
-func ExtractPhoneDigits(phone string) string {
-	return regexp.MustCompile(`\D`).ReplaceAllString(phone, "")
-}
-
-// ComparePhoneNumbers Compare phone numbers with fuzzy matching
-func ComparePhoneNumbers(phone1, phone2 string) float64 {
-	if phone1 == "" || phone2 == "" {
-		return 0.0
-	}
-
-	// Exact match after normalization
-	norm1 := NormalizePhoneNumber(phone1)
-	norm2 := NormalizePhoneNumber(phone2)
-	if norm1 == norm2 {
-		return 1.0
-	}
-
-	// Compare just digits (handles formatting differences)
-	digits1 := ExtractPhoneDigits(phone1)
-	digits2 := ExtractPhoneDigits(phone2)
-
-	if digits1 == digits2 {
-		return 0.9
-	}
-
-	// Compare last 10 digits (handles country code differences)
-	if len(digits1) >= 10 && len(digits2) >= 10 {
-		suffix1 := digits1[len(digits1)-10:]
-		suffix2 := digits2[len(digits2)-10:]
-		if suffix1 == suffix2 {
-			return 0.8
-		}
-	}
-
-	return 0.0
-}
-
-// NormalizeAddress Address normalization functions
-func NormalizeAddress(address string) string {
-	if address == "" {
-		return ""
-	}
-
-	// Convert to lowercase
-	normalized := strings.ToLower(strings.TrimSpace(address))
-
-	// Common address abbreviations
-	abbreviations := map[string]string{
-		"street":    "st",
-		"avenue":    "ave",
-		"boulevard": "blvd",
-		"road":      "rd",
-		"drive":     "dr",
-		"lane":      "ln",
-		"court":     "ct",
-		"place":     "pl",
-		"square":    "sq",
-		"north":     "n",
-		"south":     "s",
-		"east":      "e",
-		"west":      "w",
-		"northeast": "ne",
-		"northwest": "nw",
-		"southeast": "se",
-		"southwest": "sw",
-	}
-
-	// Apply abbreviations
-	words := strings.Fields(normalized)
-	for i, word := range words {
-		if abbrev, exists := abbreviations[word]; exists {
-			words[i] = abbrev
-		}
-		// Remove punctuation
-		words[i] = regexp.MustCompile(`[^\w\s]`).ReplaceAllString(words[i], "")
-	}
-
-	return strings.Join(words, " ")
-}
-
-// ExtractAddressComponents Extract address components for comparison
-func ExtractAddressComponents(address string) map[string]string {
-	components := make(map[string]string)
-	normalized := NormalizeAddress(address)
-
-	// Extract street number
-	if match := regexp.MustCompile(`^\d+`).FindString(normalized); match != "" {
-		components["number"] = match
-	}
-
-	// Extract zip code
-	if match := regexp.MustCompile(`\b\d{5}(-\d{4})?\b`).FindString(normalized); match != "" {
-		components["zip"] = match
-	}
-
-	// Remove zip and number for street name extraction
-	streetName := regexp.MustCompile(`^\d+\s*`).ReplaceAllString(normalized, "")
-	streetName = regexp.MustCompile(`\s+\d{5}(-\d{4})?\b.*$`).ReplaceAllString(streetName, "")
-	components["street"] = strings.TrimSpace(streetName)
-
-	return components
-}
-
-// CompareAddresses Compare addresses with fuzzy matching
-func CompareAddresses(addr1, addr2 string) float64 {
-	if addr1 == "" || addr2 == "" {
-		return 0.0
-	}
-
-	// Exact match after normalization
-	norm1 := NormalizeAddress(addr1)
-	norm2 := NormalizeAddress(addr2)
-	if norm1 == norm2 {
-		return 1.0
-	}
-
-	// Component-wise comparison
-	comp1 := ExtractAddressComponents(addr1)
-	comp2 := ExtractAddressComponents(addr2)
-
-	score := 0.0
-	totalWeight := 0.0
-
-	// Street number (weight: 30%)
-	if comp1["number"] != "" && comp2["number"] != "" {
-		if comp1["number"] == comp2["number"] {
-			score += 0.3
-		}
-		totalWeight += 0.3
-	}
-
-	// Street name (weight: 60%)
-	if comp1["street"] != "" && comp2["street"] != "" {
-		streetSim := calculateStringSimilarity(comp1["street"], comp2["street"])
-		score += 0.6 * streetSim
-		totalWeight += 0.6
-	}
-
-	// Zip code (weight: 10%)
-	if comp1["zip"] != "" && comp2["zip"] != "" {
-		if comp1["zip"] == comp2["zip"] {
-			score += 0.1
-		}
-		totalWeight += 0.1
-	}
-
-	if totalWeight > 0 {
-		return score / totalWeight
-	}
-
-	// Fallback to string similarity
-	return calculateStringSimilarity(norm1, norm2)
 }
 
 // NormalizedHours Opening hours normalization functions
@@ -620,98 +439,6 @@ func abs(x int) int {
 	return x
 }
 
-// NormalizeURL URL/Website normalization functions
-func NormalizeURL(url string) string {
-	if url == "" {
-		return ""
-	}
-
-	// Convert to lowercase
-	normalized := strings.ToLower(strings.TrimSpace(url))
-
-	// Add protocol if missing
-	if !strings.HasPrefix(normalized, "http://") && !strings.HasPrefix(normalized, "https://") {
-		normalized = "https://" + normalized
-	}
-
-	// Remove www prefix for comparison
-	normalized = regexp.MustCompile(`^(https?://)www\.`).ReplaceAllString(normalized, "$1")
-
-	// Remove trailing slash
-	normalized = strings.TrimSuffix(normalized, "/")
-
-	return normalized
-}
-
-// ExtractDomain Extract domain from URL
-func ExtractDomain(url string) string {
-	normalized := NormalizeURL(url)
-
-	// Remove protocol
-	domain := regexp.MustCompile(`^https?://`).ReplaceAllString(normalized, "")
-
-	// Remove path
-	domain = regexp.MustCompile(`/.*$`).ReplaceAllString(domain, "")
-
-	return domain
-}
-
-// CompareURLs Compare URLs
-func CompareURLs(url1, url2 string) float64 {
-	if url1 == "" || url2 == "" {
-		return 0.0
-	}
-
-	// Exact match after normalization
-	norm1 := NormalizeURL(url1)
-	norm2 := NormalizeURL(url2)
-	if norm1 == norm2 {
-		return 1.0
-	}
-
-	// Domain comparison
-	domain1 := ExtractDomain(url1)
-	domain2 := ExtractDomain(url2)
-	if domain1 == domain2 {
-		return 0.8
-	}
-
-	// String similarity fallback
-	return calculateStringSimilarity(domain1, domain2)
-}
-
-// Utility function for string similarity (Levenshtein-based)
-func calculateStringSimilarity(s1, s2 string) float64 {
-	if s1 == s2 {
-		return 1.0
-	}
-
-	if s1 == "" || s2 == "" {
-		return 0.0
-	}
-
-	// Simple similarity based on common characters
-	longer := s1
-	shorter := s2
-	if len(s2) > len(s1) {
-		longer = s2
-		shorter = s1
-	}
-
-	if len(longer) == 0 {
-		return 1.0
-	}
-
-	commonChars := 0
-	for _, char := range shorter {
-		if strings.ContainsRune(longer, char) {
-			commonChars++
-		}
-	}
-
-	return float64(commonChars) / float64(len(longer))
-}
-
 // CompareVenueData compares HappyCow venue data with Google Places data using normalization
 func CompareVenueData(happyCowVenue models.Venue, googleData models.GooglePlaceData) models.ValidationDetails {
 	startTime := time.Now()
@@ -720,7 +447,7 @@ func CompareVenueData(happyCowVenue models.Venue, googleData models.GooglePlaceD
 	scoreBreakdown := models.ScoreBreakdown{}
 
 	// 1. Venue Name Matching (25 points)
-	nameScore := calculateStringSimilarity(strings.ToLower(happyCowVenue.Name),
+	nameScore := utils.CalculateStringSimilarity(strings.ToLower(happyCowVenue.Name),
 		strings.ToLower(googleData.Name))
 	scoreBreakdown.VenueNameMatch = int(nameScore * 25)
 
@@ -736,7 +463,7 @@ func CompareVenueData(happyCowVenue models.Venue, googleData models.GooglePlaceD
 	// 2. Address Accuracy (20 points)
 	addressScore := 0.0
 	if happyCowVenue.Location != "" && googleData.FormattedAddress != "" {
-		addressScore = CompareAddresses(happyCowVenue.Location, googleData.FormattedAddress)
+		addressScore = utils.CompareAddresses(happyCowVenue.Location, googleData.FormattedAddress)
 	}
 	scoreBreakdown.AddressAccuracy = int(addressScore * 20)
 
@@ -768,7 +495,7 @@ func CompareVenueData(happyCowVenue models.Venue, googleData models.GooglePlaceD
 	// 4. Phone Number Verification (10 points)
 	phoneScore := 0.0
 	if happyCowVenue.Phone != nil && googleData.FormattedPhone != "" {
-		phoneScore = ComparePhoneNumbers(*happyCowVenue.Phone, googleData.FormattedPhone)
+		phoneScore = utils.ComparePhoneNumbers(*happyCowVenue.Phone, googleData.FormattedPhone)
 	} else if happyCowVenue.Phone == nil && googleData.FormattedPhone == "" {
 		phoneScore = 1.0 // Both missing is neutral
 	} else {
@@ -788,7 +515,7 @@ func CompareVenueData(happyCowVenue models.Venue, googleData models.GooglePlaceD
 	// 5. Website Verification (5 points)
 	websiteScore := 0.0
 	if happyCowVenue.URL != nil && googleData.Website != "" {
-		websiteScore = CompareURLs(*happyCowVenue.URL, googleData.Website)
+		websiteScore = utils.CompareURLs(*happyCowVenue.URL, googleData.Website)
 	} else if happyCowVenue.URL == nil && googleData.Website == "" {
 		websiteScore = 1.0 // Both missing is neutral
 	} else {
