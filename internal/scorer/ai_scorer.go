@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"assisted-venue-approval/internal/constants"
 	"assisted-venue-approval/internal/models"
 	"assisted-venue-approval/internal/prompts"
 	"assisted-venue-approval/internal/trust"
@@ -216,19 +217,19 @@ var (
 )
 
 func NewAIScorer(apiKey string) *AIScorer {
-	return NewAIScorerWithTimeout(apiKey, 60*time.Second)
+	return NewAIScorerWithTimeout(apiKey, constants.AIScorerDefaultAPITimeout)
 }
 
 func NewAIScorerWithTimeout(apiKey string, timeout time.Duration) *AIScorer {
 	cb := circuit.New(circuit.Config{
 		Name:              "openai",
-		OperationTimeout:  50 * time.Second,
-		OpenFor:           45 * time.Second,
+		OperationTimeout:  constants.AIScorerOperationTimeout,
+		OpenFor:           constants.AIScorerOpenFor,
 		MaxConsecFailures: 2,
 		WindowSize:        10,
-		FailureRate:       0.5,
-		SlowCallThreshold: 20 * time.Second,
-		SlowCallRate:      0.5,
+		FailureRate:       constants.OpenAICircuitFailureRate,
+		SlowCallThreshold: constants.AIScorerSlowCallThreshold,
+		SlowCallRate:      constants.OpenAICircuitSlowCallRate,
 	}, nil)
 	pm, err := prompts.NewManager()
 	if err != nil {

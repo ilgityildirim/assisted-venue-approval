@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"assisted-venue-approval/internal/constants"
 	"assisted-venue-approval/internal/models"
 	"assisted-venue-approval/pkg/circuit"
 	"assisted-venue-approval/pkg/utils"
@@ -31,13 +32,13 @@ func NewGoogleMapsScraper(apiKey string) (*GoogleMapsScraper, error) {
 	// Circuit breaker tuned for Google Maps
 	cb := circuit.New(circuit.Config{
 		Name:              "googlemaps",
-		OperationTimeout:  10 * time.Second,
-		OpenFor:           30 * time.Second,
+		OperationTimeout:  constants.GoogleMapsOperationTimeout,
+		OpenFor:           constants.GoogleMapsOpenFor,
 		MaxConsecFailures: 3,
 		WindowSize:        20,
-		FailureRate:       0.6,
-		SlowCallThreshold: 1500 * time.Millisecond,
-		SlowCallRate:      0.7,
+		FailureRate:       constants.CircuitFailureRate,
+		SlowCallThreshold: constants.GoogleMapsSlowCallThreshold,
+		SlowCallRate:      constants.CircuitSlowCallRate,
 	}, nil)
 
 	return &GoogleMapsScraper{client: client, cb: cb}, nil
@@ -55,7 +56,7 @@ type EnhancedVenueData struct {
 
 func (s *GoogleMapsScraper) EnhanceVenue(ctx context.Context, venue models.Venue) (*EnhancedVenueData, error) {
 	// Add per-request timeout; TODO: make configurable
-	ctx, cancel := context.WithTimeout(ctx, 12*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, constants.GoogleMapsRequestTimeout)
 	defer cancel()
 
 	// Respect cancellation early

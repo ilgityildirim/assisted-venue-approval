@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"assisted-venue-approval/internal/constants"
 	"assisted-venue-approval/pkg/logging"
 )
 
@@ -97,7 +98,7 @@ type HealthConfig struct {
 // DefaultHealthConfig returns sensible defaults
 func DefaultHealthConfig() HealthConfig {
 	return HealthConfig{
-		Timeout: 30 * time.Second,
+		Timeout: constants.HealthTimeoutDefault,
 		Version: "1.0.0",
 	}
 }

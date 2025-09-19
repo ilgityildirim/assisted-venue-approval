@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"assisted-venue-approval/internal/constants"
 	"assisted-venue-approval/internal/models"
 )
 
@@ -47,22 +48,22 @@ type Config struct {
 // DefaultConfig returns thresholds that match existing logic.
 func DefaultConfig() Config {
 	return Config{
-		BaseRegularTrust:             0.3,
-		TrustedTrust:                 0.7,
-		AmbassadorTrust:              0.6,
-		HighAmbTrust:                 0.8,
-		ContributionBoost1Threshold:  100,
-		ContributionBoost2Threshold:  500,
-		ContributionBoostStep:        0.1,
-		ApprovedVenueBoost1Threshold: 2,
-		ApprovedVenueBoost2Threshold: 5,
-		ApprovedVenueBoost3Threshold: 10,
-		ApprovedVenueBoostStep:       0.15,
-		BonusVenueAdmin:              50,
-		BonusHighAmb:                 30,
-		BonusAmb:                     15,
-		BonusTrusted:                 10,
-		BonusRegular:                 0,
+		BaseRegularTrust:             constants.BaseRegularTrust,
+		TrustedTrust:                 constants.TrustedTrust,
+		AmbassadorTrust:              constants.AmbassadorTrust,
+		HighAmbTrust:                 constants.HighAmbTrust,
+		ContributionBoost1Threshold:  constants.ContributionBoost1Threshold,
+		ContributionBoost2Threshold:  constants.ContributionBoost2Threshold,
+		ContributionBoostStep:        constants.ContributionBoostStep,
+		ApprovedVenueBoost1Threshold: constants.ApprovedVenueBoost1Threshold,
+		ApprovedVenueBoost2Threshold: constants.ApprovedVenueBoost2Threshold,
+		ApprovedVenueBoost3Threshold: constants.ApprovedVenueBoost3Threshold,
+		ApprovedVenueBoostStep:       constants.ApprovedVenueBoostStep,
+		BonusVenueAdmin:              constants.BonusVenueAdmin,
+		BonusHighAmb:                 constants.BonusHighAmb,
+		BonusAmb:                     constants.BonusAmb,
+		BonusTrusted:                 constants.BonusTrusted,
+		BonusRegular:                 constants.BonusRegular,
 	}
 }
 
@@ -89,7 +90,7 @@ func (c *Calculator) Assess(user models.User, venueLocation string) Assessment {
 
 	// Ambassador logic (level/points may be nil)
 	if user.AmbassadorLevel != nil && user.AmbassadorPoints != nil {
-		isHigh := (*user.AmbassadorLevel >= 3) || (*user.AmbassadorPoints >= 1000)
+		isHigh := (*user.AmbassadorLevel >= constants.AmbHighLevel) || (*user.AmbassadorPoints >= constants.AmbHighPoints)
 		regionMatch := c.matchesRegion(user.AmbassadorRegion, venueLocation)
 
 		if isHigh && regionMatch {

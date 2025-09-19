@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"assisted-venue-approval/internal/constants"
 	"assisted-venue-approval/internal/domain/specs"
 	"assisted-venue-approval/internal/models"
 	"assisted-venue-approval/internal/trust"
@@ -456,7 +457,7 @@ func (de *DecisionEngine) determineStatus(ctx context.Context, venue models.Venu
 		}
 	} else if score < de.rejectionThreshold {
 		// Only auto-reject if no special circumstances
-		if len(specialCases) == 0 && authority.TrustLevel < 0.7 {
+		if len(specialCases) == 0 && authority.TrustLevel < constants.DecisionTrustGate {
 			return DecisionOutcome{
 				Status: "rejected",
 				Reason: fmt.Sprintf("Auto-rejected: Low confidence score (score: %d)", score),

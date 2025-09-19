@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"assisted-venue-approval/internal/constants"
 	"assisted-venue-approval/internal/models"
 	"assisted-venue-approval/pkg/config"
 	errs "assisted-venue-approval/pkg/errors"
@@ -41,8 +42,8 @@ func New(databaseURL string) (*DB, error) {
 	db := &DB{
 		conn:         conn,
 		stmts:        make(map[string]*sql.Stmt),
-		readTimeout:  8 * time.Second,
-		writeTimeout: 6 * time.Second,
+		readTimeout:  constants.DBReadTimeoutDefault,
+		writeTimeout: constants.DBWriteTimeoutDefault,
 	}
 
 	if err := db.prepareStatements(); err != nil {
@@ -71,11 +72,11 @@ func NewWithConfig(databaseURL string, cfg *config.Config) (*DB, error) {
 
 	rt := cfg.DBReadTimeout
 	if rt == 0 {
-		rt = 8 * time.Second
+		rt = constants.DBReadTimeoutDefault
 	}
 	wt := cfg.DBWriteTimeout
 	if wt == 0 {
-		wt = 6 * time.Second
+		wt = constants.DBWriteTimeoutDefault
 	}
 
 	db := &DB{

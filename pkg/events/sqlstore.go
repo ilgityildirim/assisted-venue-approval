@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"assisted-venue-approval/internal/constants"
 	"assisted-venue-approval/pkg/database"
 )
 
@@ -49,7 +50,7 @@ func (s *SQLEventStore) Append(ctx context.Context, e Event) error {
 		return fmt.Errorf("marshal event %s: %w", e.Type(), err)
 	}
 	conn := s.db.Conn()
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, constants.EventsSQLTimeoutDefault)
 	defer cancel()
 	_, err = conn.ExecContext(ctx, `INSERT INTO venue_events (venue_id, type, ts, admin, payload) VALUES (?, ?, ?, ?, ?)`,
 		e.VenueID(), e.Type(), e.Timestamp(), e.Admin(), json.RawMessage(data))
@@ -61,7 +62,7 @@ func (s *SQLEventStore) Append(ctx context.Context, e Event) error {
 
 func (s *SQLEventStore) ListByVenue(ctx context.Context, venueID int64) ([]StoredEvent, error) {
 	conn := s.db.Conn()
-	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, constants.EventsSQLTimeoutDefault)
 	defer cancel()
 	rows, err := conn.QueryContext(ctx, `SELECT id, venue_id, type, ts, admin, payload FROM venue_events WHERE venue_id = ? ORDER BY id ASC`, venueID)
 	if err != nil {
