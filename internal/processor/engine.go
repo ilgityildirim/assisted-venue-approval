@@ -764,6 +764,19 @@ func (e *ProcessingEngine) processVenueWithRateLimit(ctx context.Context, venue 
 		gData = enhancedVenue.GoogleData
 	}
 
+	// If no location information available after Google enrichment, require manual review
+	if enhancedVenue.Lat == nil || enhancedVenue.Lng == nil ||
+		(*enhancedVenue.Lat == 0.0 && *enhancedVenue.Lng == 0.0) {
+		vr := &models.ValidationResult{
+			VenueID:        venue.ID,
+			Score:          0,
+			Status:         "manual_review",
+			Notes:          "No location coordinates available - manual review required",
+			ScoreBreakdown: map[string]int{"no_location": 0},
+		}
+		return vr, gData, nil
+	}
+
 	// Rate limit OpenAI API call (only if needed for basic venues or vegan relevance)
 	if enhancedVenue.ValidationDetails == nil || !enhancedVenue.ValidationDetails.GooglePlaceFound {
 		if err := e.openAIRateLimit.Wait(ctx); err != nil {
