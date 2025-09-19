@@ -645,6 +645,24 @@ func (e *ProcessingEngine) processJob(job *ProcessingJob) *ProcessingResult {
 		return result
 	}
 
+	// Skip Asian venues from API calls - they require manual review
+	if job.Venue.Path != nil {
+		path := strings.ToLower(strings.TrimSpace(*job.Venue.Path))
+		if strings.HasPrefix(path, "asia|china") ||
+			strings.HasPrefix(path, "asia|japan") ||
+			strings.HasPrefix(path, "asia|south_korea") {
+			result.ValidationResult = &models.ValidationResult{
+				VenueID:        job.Venue.ID,
+				Score:          0,
+				Status:         "manual_review",
+				Notes:          "Asian venue - manual review required (no API calls)",
+				ScoreBreakdown: map[string]int{"asian_venue_block": 0},
+			}
+			result.Success = true
+			return result
+		}
+	}
+
 	// Publish start event
 	if e.eventStore != nil {
 		uid := user.ID
