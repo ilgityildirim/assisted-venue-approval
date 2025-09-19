@@ -459,6 +459,7 @@ func (s *AIScorer) buildUnifiedPrompt(venue models.Venue, user models.User, trus
 			"Vegan":              venue.Vegan,
 			"Category":           venue.Category,
 			"TrustLevel":         trustLevel,
+			"IsVenueOwner":       false,
 		}
 		if out, err := s.pm.Render("unified_user", data); err == nil {
 			return out

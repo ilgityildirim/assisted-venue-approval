@@ -1,5 +1,15 @@
 You must score the venue and reply with JSON only.
 
+{{- if .LocationValidation}}
+Location Validation: {{.LocationValidation}}
+{{- end}}
+{{- if .DataPriority}}
+Data Priority: {{.DataPriority}}
+{{- end}}
+{{- if .NewVenuePolicy}}
+New Venue Policy: {{.NewVenuePolicy}}
+{{- end}}
+
 Data:
 - Combined Information (JSON): {{.CombinedJSON}}
 - Venue Information Data (JSON): {{.VenueJSON}}
@@ -9,19 +19,20 @@ Data:
 - Google Types: {{.GoogleTypes}}
 - Venue Type Indicators: {"vegonly": {{.VegOnly}}, "vegan": {{.Vegan}}, "category": {{.Category}}}
 - Trust Level (0.0-1.0): {{printf "%.2f" .TrustLevel}}
+- Venue Owner: {{.IsVenueOwner}}
 
 Instructions:
-- Always produce a single JSON object: {"score": X, "notes": "brief", "breakdown": {"legitimacy": X, "completeness": X, "relevance": X}}
-- Score range: 0-100. Keep notes concise.
-- If admin_note or admin_hold_email_note indicates this venue should not be approved for ANY reason, set score=0 and explain briefly in notes (manual review).
-- If Google business_status is provided and is not OPERATIONAL, set score=0 unless trust_level >= 0.80, and note why using notes.
-- For type validation: Check if Google types are LOGICALLY compatible with food venues. Food venues should have at least one food-related type (restaurant, food, meal_takeaway, meal_delivery, cafe, bakery, bar, establishment, point_of_interest). Types like ["premise", "street_address"] alone or ["lodging", "travel_agency"] suggest non-food business. Only set score=0 for clear mismatches when trust_level < 0.80.
-- Venue Type indicators (vegonly/vegan/category) suggest this should be a food-related venue.
-- LEGITIMACY (35 points): Score based on data verification and completeness. If venue has Google-verified data (formatted address, coordinates, phone, business status), award 25-35 points regardless of trust_level. Trust level is for validation rules only, not legitimacy assessment. Missing or unverified data reduces legitimacy points.
-- COMPLETENESS (30 points): Award points for available fields (name, address, phone, website, hours, coordinates).
-- RELEVANCE (35 points): Assess how well this fits HappyCow directory (vegan/vegetarian focus).
+- Always produce a single JSON object: {"score": X, "notes": "brief explanation", "breakdown": {"legitimacy": X, "completeness": X, "relevance": X}}
+- Score range: 0-100. Keep notes concise and specific.
+- ADMIN NOTES: If any admin notes present, score=0 (should not reach this point due to early exit)
+- LOCATION: If no valid coordinates, score=0 and require manual review
+- VEGAN-FRIENDLY: Accept venues with vegan options even if they serve meat. Only reject if NO vegan options exist.
+- VENUE INCLUSION: All food-related venues (restaurants, cafes, stores, bakeries, juice bars) are acceptable if vegan-friendly
+- LEGITIMACY: Base on data verification and Google presence, not trust level
+- COMPLETENESS: Award points for available fields (name, address, phone, website, hours, coordinates)
+- RELEVANCE: Assess vegan/vegetarian focus for HappyCow directory
+- CLARITY: Explain specific missing elements, avoid vague terms like "lacks indicators"
+- TRUST LEVEL: Only affects validation strictness, not legitimacy scoring
+- DATA PRIORITY: Follow data priority guidance for conflicting information
 - Use Combined Information if present; otherwise rely on Venue Information Data.
-- TRUST LEVEL usage: Trust level should only affect strict validation rules (business status, type mismatches) but not prevent scoring legitimate venues with good Google verification.
-- Consider venue description (can be empty) in relevance.
-- Allocate points roughly: legitimacy 35, completeness 30, relevance 35.
 - Respond with JSON only, no extra text.
