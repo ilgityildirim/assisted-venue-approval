@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"time"
 
 	"assisted-venue-approval/internal/constants"
 	"assisted-venue-approval/pkg/database"
