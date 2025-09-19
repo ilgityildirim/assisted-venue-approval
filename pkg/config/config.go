@@ -19,6 +19,11 @@ type Config struct {
 	DBMaxIdleConns    int
 	DBConnMaxLifetime int // minutes
 	DBConnMaxIdleTime int // minutes
+	DBReadTimeout     time.Duration
+	DBWriteTimeout    time.Duration
+
+	// OpenAI client settings
+	OpenAITimeout time.Duration
 
 	// Monitoring and logging settings
 	LogLevel          string
@@ -79,6 +84,11 @@ func Load() *Config {
 	alertGCPauseMs, _ := strconv.ParseFloat(getEnv("ALERT_GC_PAUSE_MS", "200"), 64)
 	alertSampleEverySec, _ := strconv.Atoi(getEnv("ALERT_SAMPLE_EVERY_SEC", "5"))
 
+	// Timeouts (use Go duration strings like "8s", "500ms")
+	dbReadTO, _ := time.ParseDuration(getEnv("DB_READ_TIMEOUT", "8s"))
+	dbWriteTO, _ := time.ParseDuration(getEnv("DB_WRITE_TIMEOUT", "6s"))
+	openaiTO, _ := time.ParseDuration(getEnv("OPENAI_TIMEOUT", "60s"))
+
 	return &Config{
 		DatabaseURL:       getEnv("DATABASE_URL", ""),
 		GoogleMapsAPIKey:  getEnv("GOOGLE_MAPS_API_KEY", ""),
@@ -90,6 +100,9 @@ func Load() *Config {
 		DBMaxIdleConns:    dbMaxIdleConns,
 		DBConnMaxLifetime: dbConnMaxLifetime,
 		DBConnMaxIdleTime: dbConnMaxIdleTime,
+		DBReadTimeout:     dbReadTO,
+		DBWriteTimeout:    dbWriteTO,
+		OpenAITimeout:     openaiTO,
 
 		// Monitoring and logging settings
 		LogLevel:          getEnv("LOG_LEVEL", "info"),

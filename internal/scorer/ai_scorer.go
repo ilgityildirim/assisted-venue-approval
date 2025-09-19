@@ -207,6 +207,7 @@ type AIScorer struct {
 	cb          *circuit.Breaker
 	pm          *prompts.Manager
 	tc          *trust.Calculator
+	timeout     time.Duration
 }
 
 // metrics
@@ -215,6 +216,10 @@ var (
 )
 
 func NewAIScorer(apiKey string) *AIScorer {
+	return NewAIScorerWithTimeout(apiKey, 60*time.Second)
+}
+
+func NewAIScorerWithTimeout(apiKey string, timeout time.Duration) *AIScorer {
 	cb := circuit.New(circuit.Config{
 		Name:              "openai",
 		OperationTimeout:  50 * time.Second,
@@ -235,10 +240,11 @@ func NewAIScorer(apiKey string) *AIScorer {
 		costTracker: &CostTracker{
 			startTime: time.Now(),
 		},
-		cache: NewVenueCache(),
-		cb:    cb,
-		pm:    pm,
-		tc:    trust.NewDefault(),
+		cache:   NewVenueCache(),
+		cb:      cb,
+		pm:      pm,
+		tc:      trust.NewDefault(),
+		timeout: timeout,
 	}
 }
 
@@ -315,8 +321,8 @@ func (s *AIScorer) ScoreVenue(ctx context.Context, venue models.Venue, user mode
 func (s *AIScorer) scoreUnifiedVenue(ctx context.Context, venue models.Venue, user models.User, trustLevel float64) (*models.ValidationResult, error) {
 	prompt := s.buildUnifiedPrompt(venue, user, trustLevel)
 
-	// Add per-request timeout for OpenAI call; TODO: make configurable
-	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	// Add per-request timeout for OpenAI call (configurable)
+	ctx, cancel := context.WithTimeout(ctx, s.timeout)
 	defer cancel()
 
 	select {

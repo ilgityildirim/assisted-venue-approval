@@ -16,15 +16,11 @@ import (
 )
 
 type DB struct {
-	conn  *sql.DB
-	stmts map[string]*sql.Stmt
+	conn         *sql.DB
+	stmts        map[string]*sql.Stmt
+	readTimeout  time.Duration
+	writeTimeout time.Duration
 }
-
-// default operation timeouts; TODO: make configurable via config.Config
-const (
-	readTimeout  = 8 * time.Second
-	writeTimeout = 6 * time.Second
-)
 
 func New(databaseURL string) (*DB, error) {
 	conn, err := sql.Open("mysql", databaseURL)
@@ -43,8 +39,10 @@ func New(databaseURL string) (*DB, error) {
 	}
 
 	db := &DB{
-		conn:  conn,
-		stmts: make(map[string]*sql.Stmt),
+		conn:         conn,
+		stmts:        make(map[string]*sql.Stmt),
+		readTimeout:  8 * time.Second,
+		writeTimeout: 6 * time.Second,
 	}
 
 	if err := db.prepareStatements(); err != nil {
@@ -71,9 +69,20 @@ func NewWithConfig(databaseURL string, cfg *config.Config) (*DB, error) {
 		return nil, err
 	}
 
+	rt := cfg.DBReadTimeout
+	if rt == 0 {
+		rt = 8 * time.Second
+	}
+	wt := cfg.DBWriteTimeout
+	if wt == 0 {
+		wt = 6 * time.Second
+	}
+
 	db := &DB{
-		conn:  conn,
-		stmts: make(map[string]*sql.Stmt),
+		conn:         conn,
+		stmts:        make(map[string]*sql.Stmt),
+		readTimeout:  rt,
+		writeTimeout: wt,
 	}
 
 	if err := db.prepareStatements(); err != nil {
@@ -119,7 +128,7 @@ func (db *DB) withReadTimeout(ctx context.Context) (context.Context, context.Can
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	return context.WithTimeout(ctx, readTimeout)
+	return context.WithTimeout(ctx, db.readTimeout)
 }
 
 // withWriteTimeout creates a context with standard write timeout.
@@ -127,7 +136,7 @@ func (db *DB) withWriteTimeout(ctx context.Context) (context.Context, context.Ca
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	return context.WithTimeout(ctx, writeTimeout)
+	return context.WithTimeout(ctx, db.writeTimeout)
 }
 
 // GetPendingVenues retrieves all pending venues with complete field data

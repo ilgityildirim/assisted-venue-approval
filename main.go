@@ -49,7 +49,9 @@ func main() {
 	_ = c.Provide(func(cfg *config.Config) (*scraper.GoogleMapsScraper, error) {
 		return scraper.NewGoogleMapsScraper(cfg.GoogleMapsAPIKey)
 	}, true)
-	_ = c.Provide(func(cfg *config.Config) *scorer.AIScorer { return scorer.NewAIScorer(cfg.OpenAIAPIKey) }, true)
+	_ = c.Provide(func(cfg *config.Config) *scorer.AIScorer {
+		return scorer.NewAIScorerWithTimeout(cfg.OpenAIAPIKey, cfg.OpenAITimeout)
+	}, true)
 
 	// Processing engine (singleton)
 	_ = c.Provide(func(repo domain.Repository, uow domain.UnitOfWorkFactory, g *scraper.GoogleMapsScraper, s *scorer.AIScorer, cfg *config.Config) *processor.ProcessingEngine {
