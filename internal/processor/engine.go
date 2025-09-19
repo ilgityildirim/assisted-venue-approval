@@ -472,8 +472,10 @@ func (e *ProcessingEngine) Stop(timeout time.Duration) error {
 	return err
 }
 
-// ProcessVenues adds venues to the processing queue (legacy method)
+// ProcessVenues adds venues to the processing queue.
+// Deprecated: Use ProcessVenuesWithUsers. This legacy method constructs an anonymous user and will be removed in a future release.
 func (e *ProcessingEngine) ProcessVenues(venues []models.Venue) error {
+	log.Printf("DEPRECATED: ProcessingEngine.ProcessVenues is deprecated; use ProcessVenuesWithUsers instead")
 	// Convert venues to VenueWithUser with anonymous user
 	venuesWithUser := make([]models.VenueWithUser, len(venues))
 	for i, venue := range venues {
@@ -565,6 +567,7 @@ func (e *ProcessingEngine) GetStats() ProcessingStats {
 	return stats
 }
 
+// Deprecated: use calculatePriorityWithUser.
 // calculatePriority determines job priority based on venue characteristics (legacy method)
 func (e *ProcessingEngine) calculatePriority(venue models.Venue) int {
 	return e.calculatePriorityWithUser(venue, models.User{})

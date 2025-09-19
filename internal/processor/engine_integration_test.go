@@ -138,7 +138,7 @@ func TestProcessingEngine_EndToEnd(t *testing.T) {
 			seedVenue(t, dbtest.DB, v)
 			tc.setup(v)
 
-			if err := eng.ProcessVenues([]models.Venue{v}); err != nil {
+			if err := eng.ProcessVenuesWithUsers([]models.VenueWithUser{{Venue: v, User: models.User{}}}); err != nil {
 				t.Fatalf("queue: %v", err)
 			}
 			// wait a bit for workers
@@ -194,6 +194,6 @@ func BenchmarkProcessingEngine(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = eng.ProcessVenues([]models.Venue{venues[i]})
+		_ = eng.ProcessVenuesWithUsers([]models.VenueWithUser{{Venue: venues[i], User: models.User{}}})
 	}
 }
