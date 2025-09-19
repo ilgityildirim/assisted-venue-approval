@@ -348,149 +348,19 @@ func VenueDetailHandler(db *database.DB) http.HandlerFunc {
 			log.Printf("Error fetching cached Google data: %v", err)
 		}
 
-		// Build Combined Information per rules
-		// Treat Trusted==true as trust >= 0.8
-		isTrusted := venue.User.Trusted
-		// Recency: within last 3 months
-		lastUpdate := time.Now().AddDate(0, -3, 0)
-		var userUpdatedAt *time.Time
-		if venue.Venue.DateUpdated != nil {
-			userUpdatedAt = venue.Venue.DateUpdated
-		} else if venue.Venue.CreatedAt != nil {
-			userUpdatedAt = venue.Venue.CreatedAt
+		// Build Combined Information centrally
+		// Map boolean trusted to trust level
+		trust := 0.3
+		if venue.User.Trusted {
+			trust = 0.8
 		}
-		useUserData := false
-		if isTrusted && userUpdatedAt != nil && userUpdatedAt.After(lastUpdate) {
-			useUserData = true
+		// Ensure Google data is attached for merger
+		if googleData != nil {
+			venue.Venue.GoogleData = googleData
 		}
-
-		pick := func(userVal *string, googleVal string) (val string, source string) {
-			if useUserData && userVal != nil && strings.TrimSpace(*userVal) != "" {
-				return *userVal, "user"
-			}
-			if strings.TrimSpace(googleVal) != "" {
-				return googleVal, "google"
-			}
-			if userVal != nil {
-				return *userVal, "user"
-			}
-			return "", ""
-		}
-
-		combinedAddress, addrSource := pick(&venue.Venue.Location, func() string {
-			if googleData != nil {
-				return googleData.FormattedAddress
-			}
-			return ""
-		}())
-		combinedPhone, phoneSource := pick(venue.Venue.Phone, func() string {
-			if googleData != nil {
-				return googleData.FormattedPhone
-			}
-			return ""
-		}())
-		combinedWebsite, siteSource := pick(venue.Venue.URL, func() string {
-			if googleData != nil {
-				return googleData.Website
-			}
-			return ""
-		}())
-
-		// Opening hours representation
-		var combinedHours []string
-		hoursSource := ""
-		if useUserData && venue.Venue.OpenHours != nil && strings.TrimSpace(*venue.Venue.OpenHours) != "" {
-			combinedHours = []string{*venue.Venue.OpenHours}
-			hoursSource = "user"
-		} else if googleData != nil && googleData.OpeningHours != nil && len(googleData.OpeningHours.WeekdayText) > 0 {
-			combinedHours = googleData.OpeningHours.WeekdayText
-			hoursSource = "google"
-		} else if venue.Venue.OpenHours != nil {
-			combinedHours = []string{*venue.Venue.OpenHours}
-			hoursSource = "user"
-		}
-
-		// Do NOT auto-score via AI on page load. Only compute when explicitly requested by user action.
-		combinedScore := 0
-		combinedStatus := ""
-
-		type CombinedInfo struct {
-			Name        string
-			Address     string
-			Phone       string
-			Website     string
-			Hours       []string
-			Lat         *float64
-			Lng         *float64
-			Types       []string
-			Description string
-			Sources     map[string]string
-			Score       int
-			ScoreStatus string
-		}
-
-		// Additional combined fields per new requirements
-		// Name
-		combinedName := venue.Venue.Name
-		nameSource := "user"
-		if !useUserData && googleData != nil && strings.TrimSpace(googleData.Name) != "" {
-			combinedName = googleData.Name
-			nameSource = "google"
-		}
-		// Lat/Lng
-		var combinedLat, combinedLng *float64
-		latlngSource := ""
-		if useUserData && venue.Venue.Lat != nil && venue.Venue.Lng != nil {
-			combinedLat = venue.Venue.Lat
-			combinedLng = venue.Venue.Lng
-			latlngSource = "user"
-		} else if googleData != nil {
-			l := googleData.Geometry.Location.Lat
-			g := googleData.Geometry.Location.Lng
-			combinedLat = &l
-			combinedLng = &g
-			latlngSource = "google"
-		} else if venue.Venue.Lat != nil && venue.Venue.Lng != nil {
-			combinedLat = venue.Venue.Lat
-			combinedLng = venue.Venue.Lng
-			latlngSource = "user"
-		}
-		// Types (Google only)
-		var combinedTypes []string
-		typesSource := ""
-		if googleData != nil && len(googleData.Types) > 0 {
-			combinedTypes = googleData.Types
-			typesSource = "google"
-		}
-		// Description (user submitted AdditionalInfo)
-		descSource := ""
-		combinedDesc := ""
-		if venue.Venue.AdditionalInfo != nil && strings.TrimSpace(*venue.Venue.AdditionalInfo) != "" {
-			combinedDesc = *venue.Venue.AdditionalInfo
-			descSource = "user"
-		}
-		combined := CombinedInfo{
-			Name:        combinedName,
-			Address:     combinedAddress,
-			Phone:       combinedPhone,
-			Website:     combinedWebsite,
-			Hours:       combinedHours,
-			Lat:         combinedLat,
-			Lng:         combinedLng,
-			Types:       combinedTypes,
-			Description: combinedDesc,
-			Sources: map[string]string{
-				"name":        nameSource,
-				"address":     addrSource,
-				"phone":       phoneSource,
-				"website":     siteSource,
-				"hours":       hoursSource,
-				"latlng":      latlngSource,
-				"types":       typesSource,
-				"description": descSource,
-			},
-			Score:       combinedScore,
-			ScoreStatus: combinedStatus,
+		combined, cerr := models.GetCombinedVenueInfo(venue.Venue, venue.User, trust)
+		if cerr != nil {
+			log.Printf("combined info warning: %v", cerr)
 		}
 
 		data := struct {
@@ -498,7 +368,7 @@ func VenueDetailHandler(db *database.DB) http.HandlerFunc {
 			History            []models.ValidationHistory
 			SimilarVenues      []models.Venue
 			GoogleData         *models.GooglePlaceData
-			Combined           CombinedInfo
+			Combined           models.CombinedInfo
 			TrustPercent       int
 			LatestHist         *models.ValidationHistory
 			PrettyBreakdown    string

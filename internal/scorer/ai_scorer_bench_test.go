@@ -9,10 +9,11 @@ import (
 func BenchmarkBuildUnifiedPrompt(b *testing.B) {
 	s := NewAIScorer("test")
 	v := models.Venue{ID: 1, Name: "Test", Location: "Somewhere"}
+	u := models.User{ID: 0}
 	trust := 0.7
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		_ = s.buildUnifiedPrompt(v, trust)
+		_ = s.buildUnifiedPrompt(v, u, trust)
 	}
 }
 

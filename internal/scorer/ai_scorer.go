@@ -214,44 +214,6 @@ var (
 	mScoringDuration = metrics.Default.Histogram("venue_scoring_duration_seconds", "AI scoring duration (seconds)", []float64{0.1, 0.25, 0.5, 1, 2, 5, 10, 20, 60})
 )
 
-// calcTrustLevelFromUser derives a trust level (0.0-1.0) from submitter info, mirroring venue detail logic
-func (s *AIScorer) calcTrustLevelFromUser(user models.User) float64 {
-	// Base trust
-	trust := 0.3
-
-	// Venue admin: highest trust
-	if user.IsVenueAdmin {
-		return 1.0
-	}
-
-	// Ambassador heuristic (if fields present)
-	if user.AmbassadorLevel != nil && user.AmbassadorPoints != nil {
-		// High ranking ambassadors
-		if *user.AmbassadorLevel >= 3 || *user.AmbassadorPoints >= 1000 {
-			trust = 0.8
-		} else {
-			trust = 0.6
-		}
-	}
-
-	// Trusted member elevates baseline
-	if user.Trusted && trust < 0.7 {
-		trust = 0.7
-	}
-
-	// Contribution-based minor boosts
-	if user.Contributions > 100 {
-		trust += 0.1
-	}
-	if user.Contributions > 500 {
-		trust += 0.1
-	}
-	if trust > 1.0 {
-		trust = 1.0
-	}
-	return trust
-}
-
 func NewAIScorer(apiKey string) *AIScorer {
 	cb := circuit.New(circuit.Config{
 		Name:              "openai",
@@ -297,9 +259,9 @@ func (s *AIScorer) ScoreVenue(ctx context.Context, venue models.Venue, user mode
 	cacheKey := s.cache.generateKey(venue)
 	// Include submitter trust/user in cache key to avoid cross-user cache collisions
 	assessment := s.tc.Assess(user, venue.Location)
-	trust := assessment.Trust
-	fmt.Printf("score: id=%d trust=%.2f (%s)\n", venue.ID, trust, assessment.Authority) // debug
-	cacheKey = fmt.Sprintf("%s|trust=%.2f|uid=%d", cacheKey, trust, user.ID)
+	trustLevel := assessment.Trust
+	fmt.Printf("score: id=%d trust=%.2f (%s)\n", venue.ID, trustLevel, assessment.Authority) // debug
+	cacheKey = fmt.Sprintf("%s|trust=%.2f|uid=%d", cacheKey, trustLevel, user.ID)
 	if cached, found := s.cache.Get(cacheKey); found {
 		return &cached, nil
 	}
@@ -337,7 +299,7 @@ func (s *AIScorer) ScoreVenue(ctx context.Context, venue models.Venue, user mode
 
 	// Unified scoring regardless of Google data presence
 	t := mScoringDuration.Start()
-	result, err := s.scoreUnifiedVenue(ctx, venue, trust)
+	result, err := s.scoreUnifiedVenue(ctx, venue, user, trustLevel)
 	t.Observe()
 	if err != nil {
 		return nil, errs.NewExternal("scorer.ScoreVenue", "openai", "AI scoring failed", err)
@@ -350,8 +312,8 @@ func (s *AIScorer) ScoreVenue(ctx context.Context, venue models.Venue, user mode
 }
 
 // scoreUnifiedVenue uses a single prompt for all venues and enforces JSON response
-func (s *AIScorer) scoreUnifiedVenue(ctx context.Context, venue models.Venue, trustLevel float64) (*models.ValidationResult, error) {
-	prompt := s.buildUnifiedPrompt(venue, trustLevel)
+func (s *AIScorer) scoreUnifiedVenue(ctx context.Context, venue models.Venue, user models.User, trustLevel float64) (*models.ValidationResult, error) {
+	prompt := s.buildUnifiedPrompt(venue, user, trustLevel)
 
 	// Add per-request timeout for OpenAI call; TODO: make configurable
 	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
@@ -411,7 +373,7 @@ func (s *AIScorer) scoreUnifiedVenue(ctx context.Context, venue models.Venue, tr
 }
 
 // buildUnifiedPrompt creates a single prompt with Combined Information (if available) or Venue Information as JSON strings
-func (s *AIScorer) buildUnifiedPrompt(venue models.Venue, trustLevel float64) string {
+func (s *AIScorer) buildUnifiedPrompt(venue models.Venue, user models.User, trustLevel float64) string {
 	// Venue info
 	phone := ""
 	if venue.Phone != nil {
@@ -438,71 +400,15 @@ func (s *AIScorer) buildUnifiedPrompt(venue models.Venue, trustLevel float64) st
 		adminHoldEmailNote = *venue.AdminHoldEmailNote
 	}
 
-	// Google-related
+	// Google-related (status only; the rest comes from central combiner)
 	googleStatus := ""
-	googleTypes := []string{}
-	googleWebsite := ""
-	googlePhone := ""
-	googleAddress := ""
-	var latPtr, lngPtr *float64
 	if venue.GoogleData != nil {
 		googleStatus = venue.GoogleData.BusinessStatus
-		googleTypes = venue.GoogleData.Types
-		googleWebsite = venue.GoogleData.Website
-		googlePhone = venue.GoogleData.FormattedPhone
-		googleAddress = venue.GoogleData.FormattedAddress
-		lat := venue.GoogleData.Geometry.Location.Lat
-		lng := venue.GoogleData.Geometry.Location.Lng
-		latPtr = &lat
-		lngPtr = &lng
 	}
 
-	// Combined Info logic (lightweight adaptation of UI logic)
-	type CombinedInfo struct {
-		Name        string   `json:"name"`
-		Address     string   `json:"address"`
-		Phone       string   `json:"phone"`
-		Website     string   `json:"website"`
-		Hours       []string `json:"hours"`
-		Lat         *float64 `json:"lat"`
-		Lng         *float64 `json:"lng"`
-		Types       []string `json:"types"`
-		Description string   `json:"description"`
-	}
-
-	hours := []string{}
-	if venue.OpenHours != nil && *venue.OpenHours != "" {
-		hours = []string{*venue.OpenHours}
-	} else if venue.GoogleData != nil && venue.GoogleData.OpeningHours != nil && len(venue.GoogleData.OpeningHours.WeekdayText) > 0 {
-		hours = venue.GoogleData.OpeningHours.WeekdayText
-	}
-
-	combined := CombinedInfo{
-		Name: venue.Name,
-		Address: func() string {
-			if googleAddress != "" {
-				return googleAddress
-			}
-			return venue.Location
-		}(),
-		Phone: func() string {
-			if googlePhone != "" {
-				return googlePhone
-			}
-			return phone
-		}(),
-		Website: func() string {
-			if googleWebsite != "" {
-				return googleWebsite
-			}
-			return url
-		}(),
-		Hours:       hours,
-		Lat:         latPtr,
-		Lng:         lngPtr,
-		Types:       googleTypes,
-		Description: description,
-	}
+	// Centralized Combined Info
+	combined, _ := models.GetCombinedVenueInfo(venue, user, trustLevel)
+	googleTypes := combined.Types
 
 	combinedJSON, _ := json.Marshal(combined)
 
