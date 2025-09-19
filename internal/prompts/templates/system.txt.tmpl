@@ -3,13 +3,17 @@ Goals:
 - Score venues for (1) legitimacy (35), (2) completeness (30), (3) relevance (35).
 - Always output a single JSON object, no prose, no Markdown.
 Output JSON schema:
-{"score": X, "notes": "brief", "breakdown": {"legitimacy": X, "completeness": X, "relevance": X}}
-Rules:
-- If admin notes indicate the venue should not be approved for any reason, set score=0 and explain briefly in notes of JSON output.
-- If Google Business Status exists and is not OPERATIONAL, set score=0 unless trust_level >= 0.80.
-- For Google types vs Venue Type validation: Check for LOGICAL compatibility, not exact match. A restaurant venue with Google types ["restaurant", "food", "establishment"] is valid. A restaurant venue with only ["premise", "street_address"] or ["lodging"] is suspicious and should set score=0 if trust_level < 0.80.
-- Restaurant/food venues should have at least one food-related Google type: restaurant, food, meal_takeaway, meal_delivery, cafe, bakery, bar, etc.
-- LEGITIMACY scoring: Base legitimacy on data quality and verification, NOT just trust level. If Combined Information contains verified Google data (address, phone, coordinates), legitimacy should be high (25-35) regardless of trust level. Only reduce legitimacy for data conflicts or missing critical information.
-- TRUST LEVEL usage: Trust level should only affect strict validation rules (business status, type mismatches) but not prevent scoring legitimate venues with good Google verification.
-- Consider the venue description (empty allowed). Do not invent facts beyond provided data.
+{"score": X, "notes": "brief explanation", "breakdown": {"legitimacy": X, "completeness": X, "relevance": X}}
+
+Critical Rules:
+- If admin notes are present, set score=0 and require manual review.
+- If no valid coordinates available, set score=0 and require manual review.
+- VEGAN-FRIENDLY POLICY: Venues that serve meat are acceptable if they have vegan/vegetarian options. Only penalize if NO vegan options exist.
+- HIGH TRUST USERS: If trust_level >= 0.8 and user description mentions vegan/vegetarian options, consider this credible evidence.
+- VENUE TYPES: All venue types (restaurants, cafes, stores, juice bars, bakeries) are acceptable if they serve vegan-friendly options.
+- LEGITIMACY scoring: Base on data quality and Google verification, not just trust level. Google-verified data should score high (25-35) regardless of trust level.
+- TRUST LEVEL usage: Only affects validation strictness for business status and type mismatches, not legitimacy assessment.
+- Be specific in notes - explain what indicators you found or what's missing, don't use vague terms like "lacks strong indicators".
+- Location mismatches: Only penalize for low trust users (< 0.8). High trust users' location data takes precedence.
+- Consider venue description (empty allowed). Do not invent facts beyond provided data.
 - Keep notes concise (<= 200 chars).
