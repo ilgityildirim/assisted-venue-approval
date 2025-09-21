@@ -1,6 +1,10 @@
 package models
 
-import "strings"
+import (
+	"strings"
+
+	"assisted-venue-approval/internal/constants"
+)
 
 // ShouldRequireManualReview centralizes manual review skip logic.
 // Returns true with a human-readable reason if the venue should be routed to manual review.
@@ -19,9 +23,9 @@ func ShouldRequireManualReview(v Venue) (bool, string) {
 	// Region-based rule: certain Asian regions require manual review (no API calls)
 	if v.Path != nil {
 		p := strings.ToLower(strings.TrimSpace(*v.Path))
-		if strings.HasPrefix(p, "asia|china") ||
-			strings.HasPrefix(p, "asia|japan") ||
-			strings.HasPrefix(p, "asia|south_korea") {
+		if strings.HasPrefix(p, constants.PathAsiaChina) ||
+			strings.HasPrefix(p, constants.PathAsiaJapan) ||
+			strings.HasPrefix(p, constants.PathAsiaSouthKorea) {
 			return true, "Asian venue - manual review required (no API calls)"
 		}
 	}
