@@ -111,15 +111,27 @@ func (de *DecisionEngine) MakeDecision(ctx context.Context, venue models.Venue, 
 		FinalScore:       validationResult.Score,
 	}
 
-	authority := de.analyzeUserAuthority(venue, user)
+	assess := de.tc.Assess(user, venue.Location)
+
+	authority := &AuthorityInfo{
+		UserID:          user.ID,
+		IsVenueAdmin:    user.IsVenueAdmin,
+		IsTrustedMember: user.Trusted,
+		AuthorityLevel:  assess.Authority,
+		BonusPoints:     assess.Bonus,
+		TrustLevel:      assess.Trust,
+	}
 	result.Authority = authority
 
-	enhancedScore := de.applyAuthorityBonuses(validationResult.Score, authority)
+	enhancedScore := validationResult.Score + assess.Bonus
+	if enhancedScore > 100 {
+		enhancedScore = 100
+	}
 	result.FinalScore = enhancedScore
 	fmt.Printf("decision: id=%d score=%d\n", venue.ID, enhancedScore) // debug
 
 	specialCases := de.detectSpecialCases(venue)
-	qualityFlags := de.detectQualityFlags(venue, validationResult)
+	qualityFlags := de.detectQualityFlags(venue, validationResult, authority)
 
 	result.SpecialCaseFlags = specialCases
 	result.QualityFlags = qualityFlags
@@ -163,86 +175,6 @@ func (de *DecisionEngine) MakeDecision(ctx context.Context, venue models.Venue, 
 	}
 
 	return result
-}
-
-// analyzeUserAuthority determines the user's authority level for this venue
-func (de *DecisionEngine) analyzeUserAuthority(venue models.Venue, user models.User) *AuthorityInfo {
-	assess := de.tc.Assess(user, venue.Location)
-
-	authority := &AuthorityInfo{
-		UserID:          user.ID,
-		IsVenueAdmin:    user.IsVenueAdmin,
-		IsTrustedMember: user.Trusted,
-		AuthorityLevel:  assess.Authority,
-		BonusPoints:     assess.Bonus,
-		TrustLevel:      assess.Trust,
-	}
-
-	// Populate ambassador info for transparency/debugging in UI/logs
-	if user.AmbassadorLevel != nil || user.AmbassadorPoints != nil || user.AmbassadorRegion != nil {
-		amb := de.analyzeAmbassadorAuthority(venue, user)
-		authority.AmbassadorInfo = amb
-	}
-
-	return authority
-}
-
-// analyzeAmbassadorAuthority determines ambassador-specific authority
-func (de *DecisionEngine) analyzeAmbassadorAuthority(venue models.Venue, user models.User) *AmbassadorAuthority {
-	info := &AmbassadorAuthority{
-		Level:         user.AmbassadorLevel,
-		Points:        user.AmbassadorPoints,
-		Region:        user.AmbassadorRegion,
-		IsHighRanking: false,
-		RegionMatches: false,
-	}
-
-	// Determine if ambassador is high-ranking
-	if user.AmbassadorLevel != nil && user.AmbassadorPoints != nil {
-		level := *user.AmbassadorLevel
-		points := *user.AmbassadorPoints
-
-		// High-ranking criteria (adjust thresholds as needed)
-		info.IsHighRanking = level >= 3 || points >= 1000
-	}
-
-	// Check if ambassador region matches venue location
-	if user.AmbassadorRegion != nil && venue.Location != "" {
-		region := strings.ToLower(*user.AmbassadorRegion)
-		location := strings.ToLower(venue.Location)
-
-		// Simple region matching (can be enhanced with more sophisticated logic)
-		if strings.Contains(location, region) || strings.Contains(region, location) {
-			info.RegionMatches = true
-		}
-
-		// Check for country-level matches
-		regionCountries := []string{"korea", "korean", "china", "chinese", "japan", "japanese"}
-		for _, country := range regionCountries {
-			if strings.Contains(region, country) && strings.Contains(location, country) {
-				info.RegionMatches = true
-				break
-			}
-		}
-	}
-
-	return info
-}
-
-// applyAuthorityBonuses adds authority-based score bonuses
-func (de *DecisionEngine) applyAuthorityBonuses(baseScore int, authority *AuthorityInfo) int {
-	if !de.enableAuthorityMode {
-		return baseScore
-	}
-
-	enhancedScore := baseScore + authority.BonusPoints
-
-	// Cap score at 100
-	if enhancedScore > 100 {
-		enhancedScore = 100
-	}
-
-	return enhancedScore
 }
 
 // detectSpecialCases identifies venues requiring special handling
@@ -303,7 +235,7 @@ func (de *DecisionEngine) detectSpecialCases(venue models.Venue) []string {
 }
 
 // detectQualityFlags identifies data quality issues
-func (de *DecisionEngine) detectQualityFlags(venue models.Venue, validation *models.ValidationResult) []string {
+func (de *DecisionEngine) detectQualityFlags(venue models.Venue, validation *models.ValidationResult, authority *AuthorityInfo) []string {
 	var flags []string
 
 	// Google data availability
@@ -317,7 +249,7 @@ func (de *DecisionEngine) detectQualityFlags(venue models.Venue, validation *mod
 		}
 
 		// Distance check - only for regular users (this should rarely trigger since AI scorer catches it first)
-		if venue.ValidationDetails.DistanceMeters > 500 {
+		if venue.ValidationDetails.DistanceMeters > 500 && !authority.IsTrustedMember {
 			// This flag is mainly for cases that somehow bypass the AI scorer check
 			flags = append(flags, "location_mismatch")
 		}
@@ -376,7 +308,7 @@ func (de *DecisionEngine) determineStatus(ctx context.Context, venue models.Venu
 			}
 		}
 
-		if authority.AuthorityLevel == "high_ambassador" && authority.AmbassadorInfo.RegionMatches && de.hasCompleteCriticalData(ctx, venue) {
+		if authority.AuthorityLevel == "high_ambassador" && de.hasCompleteCriticalData(ctx, venue) {
 			return DecisionOutcome{
 				Status: "approved",
 				Reason: fmt.Sprintf("Auto-approved: High-ranking regional ambassador with complete data (score: %d)", score),

@@ -73,9 +73,10 @@
                     </div>
                     <div style="margin-top:10px;">
                         <label for="fb-comment" style="display:block; color:#666; margin-bottom:6px;">Optional comment</label>
-                        <textarea id="fb-comment" rows="2" style="width:100%; padding:10px; border:1px solid #ddd; border-radius:4px; resize:vertical;" placeholder="Write your feedback here; both right and / or wrong things"></textarea>
+                        <textarea id="fb-comment" rows="5" style="width:100%; padding:10px; border:1px solid #ddd; border-radius:4px; resize:vertical;" placeholder="Write your feedback here; both right and / or wrong things"></textarea>
                     </div>
                     <div id="fb-status" style="margin-top:10px; display:none;"></div>
+                    <ul id="fb-list" style="list-style:none; padding:0; margin:0; gap:0.75rem;"></ul>
                 </div>
                 {{end}}
                 
@@ -129,14 +130,6 @@
                             <div class="field-label">Category</div>
                             <div class="field-value">{{if .CategoryLabel}}{{.CategoryLabel}}{{else}}N/A{{end}}</div>
                         </div>
-                        {{if .TypeMismatchAlert}}
-                            <div class="field" style="grid-column: 1 / -1;">
-                                <div class="field-label">⚠️ Classification Warning</div>
-                                <div class="field-value" style="background: #fff3cd; padding: 12px; border-radius: 5px; color: #856404; border-left: 4px solid #ffc107;">
-                                    <strong>Type Mismatch Detected:</strong> The venue's classification may not align with Google's business types. This may indicate data quality issues.
-                                </div>
-                            </div>
-                        {{end}}
                         <div class="field">
                             <div class="field-label">Location (Lat, Lng) <span style="color:#999; font-weight:normal">({{index .Combined.Sources "latlng"}})</span></div>
                             <div class="field-value">{{if and .Combined.Lat .Combined.Lng}}{{fmtFloat .Combined.Lat}} , {{fmtFloat .Combined.Lng}}{{else}}N/A{{end}}</div>
@@ -146,6 +139,14 @@
                             <div class="field-label">Types <span style="color:#999; font-weight:normal">({{index .Combined.Sources "types"}})</span></div>
                             <div class="field-value">{{range .Combined.Types}}<code style="background:#eef; padding:2px 6px; border-radius:3px; margin-right:4px; display:inline-block;">{{.}}</code>{{end}}</div>
                         </div>
+                        {{end}}
+                        {{if .TypeMismatchAlert}}
+                            <div class="field" style="grid-column: 1 / -1;">
+                                <div class="field-label">⚠️ Classification Warning</div>
+                                <div class="field-value" style="background: #fff3cd; padding: 12px; border-radius: 5px; color: #856404; border-left: 4px solid #ffc107;">
+                                    <strong>Type Mismatch Detected:</strong> The venue's classification may not align with Google's business types. This may indicate data quality issues.
+                                </div>
+                            </div>
                         {{end}}
                         {{if .Combined.Description}}
                         <div class="field" style="grid-column: 1 / -1;">
@@ -616,13 +617,17 @@
         function submitFeedback(type) {
             const pv = document.getElementById('prompt_version').value || '';
             const cmt = document.getElementById('fb-comment').value || '';
-            const fd = new FormData();
+            const fd = new URLSearchParams();
             fd.append('feedback_type', type);
             if (pv) fd.append('prompt_version', pv);
             if (cmt) fd.append('comment', cmt);
             const url = '/venues/{{.Venue.Venue.ID}}/feedback';
             setFBStatus('Submitting...', true);
-            fetch(url, { method: 'POST', body: fd })
+            fetch(url, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+              body: fd.toString(),
+            })
               .then(async (res) => {
                 if (res.status === 409) {
                   setFBStatus('Thanks! Feedback already recorded for this session.', true);
@@ -652,6 +657,28 @@
               .then(d => {
                 document.getElementById('fb-up-count').textContent = d.thumbs_up || 0;
                 document.getElementById('fb-down-count').textContent = d.thumbs_down || 0;
+                // remove all the elements from the list
+                const ul = document.getElementById('fb-list');
+                while (ul.firstChild) {
+                  ul.removeChild(ul.firstChild);
+                }
+                d.items.forEach((it, idx) => {
+                  const li = document.createElement('li');
+                  li.style.padding = '8px 0';
+                  li.style.borderBottom = idx === d.items.length - 1 ? '' : '1px solid #ccc';
+
+                  const dt = new Date(it.created_at);
+                  const feedbackType = it.feedback_type === 'thumbs_down' ? '👎' : '👍';
+                  li.textContent = `[${dt.toLocaleDateString()} ${dt.toLocaleTimeString()}] ${feedbackType}${it.prompt_version ? ', v' + it.prompt_version : ''} -- ${it.comment || ''}`;
+
+                  ul.appendChild(li);
+                });
+                if (d.items.length === 0) {
+                  const li = document.createElement('li');
+                  li.style.marginBottom = '8px';
+                  li.textContent = 'No feedback yet.';
+                  ul.appendChild(li);
+                }
               }).catch(() => {});
         }
         document.addEventListener('DOMContentLoaded', refreshFeedback);

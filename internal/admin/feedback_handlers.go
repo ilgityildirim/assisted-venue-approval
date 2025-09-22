@@ -3,7 +3,6 @@ package admin
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"net"
 	"net/http"
 	"strconv"
@@ -56,22 +55,22 @@ func SubmitFeedbackHandler(db *database.DB) http.HandlerFunc {
 		ip := clientIP(r)
 		ipb := models.IPToBytes(ip)
 
-		// Prevent multiple submissions per venue/prompt_version from same IP
-		if ok, err := db.HasVenueFeedbackFromIPCtx(r.Context(), id, ipb, pv); err != nil {
-			log.Printf("feedback dup check failed: %v", err)
-		} else if ok {
-			w.WriteHeader(http.StatusConflict)
-			w.Header().Set("Content-Type", "application/json")
-			_ = json.NewEncoder(w).Encode(map[string]any{"status": "duplicate"})
-			return
-		}
+		//// Prevent multiple submissions per venue/prompt_version from same IP
+		//if ok, err := db.HasVenueFeedbackFromIPCtx(r.Context(), id, ipb, pv); err != nil {
+		//    log.Printf("feedback dup check failed: %v", err)
+		//} else if ok {
+		//    w.WriteHeader(http.StatusConflict)
+		//    w.Header().Set("Content-Type", "application/json")
+		//    _ = json.NewEncoder(w).Encode(map[string]any{"status": "duplicate"})
+		//    return
+		//}
 
 		rec := &models.EditorFeedback{VenueID: id, PromptVersion: pv, FeedbackType: ftype, Comment: cmt, IP: ipb}
 		if err := rec.Validate(); err != nil {
 			http.Error(w, fmt.Sprintf("validation error: %v", err), http.StatusBadRequest)
 			return
 		}
-		if err := db.CreateEditorFeedbackCtx(r.Context(), rec); err != nil {
+		if err := db.UpsertEditorFeedbackCtx(r.Context(), rec); err != nil {
 			http.Error(w, fmt.Sprintf("failed to save feedback: %v", err), http.StatusInternalServerError)
 			return
 		}

@@ -57,7 +57,7 @@ func ShouldRequireManualReviewForLocation(v Venue, u User, trustLevel float64) (
 	}
 
 	// For regular users, check distance if Google business is operational
-	if v.ValidationDetails.DistanceMeters > 500 {
+	if v.ValidationDetails.DistanceMeters > 500 && !u.Trusted {
 		return true, fmt.Sprintf("Location mismatch detected: %.0fm from Google location", v.ValidationDetails.DistanceMeters)
 	}
 

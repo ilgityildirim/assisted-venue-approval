@@ -208,7 +208,8 @@ func (db *DB) GetPendingVenuesWithUser() ([]models.VenueWithUser, error) {
         v.request_vegan_decal_at, v.request_excellent_decal_at, v.source,
         m.username, m.email as user_email, m.trusted, m.contributions,
         CASE WHEN va.venue_id IS NOT NULL THEN 1 ELSE 0 END as is_venue_admin,
-        a.level as ambassador_level, a.points as ambassador_points, a.path as ambassador_region
+        a.level as ambassador_level, a.points as ambassador_points, a.path as ambassador_region,
+        (SELECT COUNT(*) FROM venues v2 WHERE v2.user_id = m.id AND v2.active = 1) as approved_venue_count
         FROM venues v
         LEFT JOIN members m ON v.user_id = m.id
         LEFT JOIN venue_admin va ON v.id = va.venue_id AND v.user_id = va.user_id
@@ -234,6 +235,7 @@ func (db *DB) GetPendingVenuesWithUser() ([]models.VenueWithUser, error) {
 		var isVenueAdmin sql.NullInt64
 		var ambassadorLevel, ambassadorPoints sql.NullInt64
 		var ambassadorRegion sql.NullString
+		var approvedVenueCount sql.NullInt64
 
 		err := rows.Scan(
 			// Venue fields
@@ -252,7 +254,7 @@ func (db *DB) GetPendingVenuesWithUser() ([]models.VenueWithUser, error) {
 			// User fields (nullable)
 			&username, &email, &trusted, &contributions,
 			&isVenueAdmin, &ambassadorLevel, &ambassadorPoints,
-			&ambassadorRegion,
+			&ambassadorRegion, &approvedVenueCount,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan venue with user row: %w", err)
@@ -279,17 +281,22 @@ func (db *DB) GetPendingVenuesWithUser() ([]models.VenueWithUser, error) {
 		// Handle venue admin and ambassador data
 		if isVenueAdmin.Valid {
 			vu.IsVenueAdmin = isVenueAdmin.Int64 > 0
+			vu.User.IsVenueAdmin = isVenueAdmin.Int64 > 0
 		}
 		if ambassadorLevel.Valid {
 			level := int(ambassadorLevel.Int64)
-			user.AmbassadorLevel = &level
+			vu.User.AmbassadorLevel = &level
 		}
 		if ambassadorPoints.Valid {
 			points := int(ambassadorPoints.Int64)
-			user.AmbassadorPoints = &points
+			vu.User.AmbassadorPoints = &points
 		}
 		if ambassadorRegion.Valid {
-			user.AmbassadorRegion = &ambassadorRegion.String
+			vu.User.AmbassadorRegion = &ambassadorRegion.String
+		}
+		if approvedVenueCount.Valid {
+			count := int(approvedVenueCount.Int64)
+			vu.User.ApprovedVenueCount = &count
 		}
 
 		venues = append(venues, vu)
@@ -721,15 +728,16 @@ func (db *DB) GetVenueWithUserByID(venueID int64) (*models.VenueWithUser, error)
 	query := `SELECT v.id, v.path, v.entrytype, v.name, v.url, v.fburl, v.instagram_url, 
         v.location, v.zipcode, v.phone, v.other_food_type, v.price, v.additionalinfo, 
         v.vdetails, v.openhours, v.openhours_note, v.timezone, v.hash, v.email, 
-        v.ownername, v.sentby, v.user_id, v.active, v.vegonly, v.vegan, v.sponsor_level, 
-        v.crossstreet, v.lat, v.lng, v.created_at, v.date_added, v.date_updated, 
-        v.admin_last_update, v.admin_note, v.admin_hold, v.admin_hold_email_note, 
-        v.updated_by_id, v.made_active_by_id, v.made_active_at, v.show_premium, 
-        v.category, v.pretty_url, v.edit_lock, v.request_vegan_decal_at, 
-        v.request_excellent_decal_at, v.source,
-        m.id as member_id, m.username, m.trusted,
-        va.venue_id IS NOT NULL as is_venue_admin,
-        a.level as ambassador_level, a.points as ambassador_points, a.path as ambassador_path
+        v.ownername, v.sentby, v.user_id, v.active, v.vegonly, v.vegan, 
+        v.sponsor_level, v.crossstreet, v.lat, v.lng, v.created_at, v.date_added, 
+        v.date_updated, v.admin_last_update, v.admin_note, v.admin_hold, 
+        v.admin_hold_email_note, v.updated_by_id, v.made_active_by_id, 
+        v.made_active_at, v.show_premium, v.category, v.pretty_url, v.edit_lock, 
+        v.request_vegan_decal_at, v.request_excellent_decal_at, v.source,
+        m.id as member_id, m.username, m.email as user_email, m.trusted, m.contributions,
+        CASE WHEN va.venue_id IS NOT NULL THEN 1 ELSE 0 END as is_venue_admin,
+        a.level as ambassador_level, a.points as ambassador_points, a.path as ambassador_region,
+        (SELECT COUNT(*) FROM venues v2 WHERE v2.user_id = m.id AND v2.active = 1) as approved_venue_count
         FROM venues v 
         JOIN members m ON v.user_id = m.id 
         LEFT JOIN venue_admin va ON v.id = va.venue_id AND m.id = va.user_id
@@ -739,10 +747,11 @@ func (db *DB) GetVenueWithUserByID(venueID int64) (*models.VenueWithUser, error)
 	var venueWithUser models.VenueWithUser
 	var venue models.Venue
 	var user models.User
-	var isVenueAdmin bool
+	var isVenueAdmin sql.NullInt64
 	var ambassadorLevel, ambassadorPoints sql.NullInt64
-	var ambassadorPath sql.NullString
 	var trustedInt int
+	var ambassadorRegion sql.NullString
+	var approvedVenueCount sql.NullInt64
 
 	err := db.conn.QueryRow(query, venueID).Scan(
 		&venue.ID, &venue.Path, &venue.EntryType, &venue.Name, &venue.URL,
@@ -758,9 +767,9 @@ func (db *DB) GetVenueWithUserByID(venueID int64) (*models.VenueWithUser, error)
 		&venue.ShowPremium, &venue.Category, &venue.PrettyUrl, &venue.EditLock,
 		&venue.RequestVeganDecalAt, &venue.RequestExcellentDecalAt, &venue.Source,
 		// User fields
-		&user.ID, &user.Username, &trustedInt,
+		&user.ID, &user.Username, &user.Email, &trustedInt, &user.Contributions,
 		// Authority fields
-		&isVenueAdmin, &ambassadorLevel, &ambassadorPoints, &ambassadorPath,
+		&isVenueAdmin, &ambassadorLevel, &ambassadorPoints, &ambassadorRegion, &approvedVenueCount,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get venue with user by ID: %w", err)
@@ -768,19 +777,29 @@ func (db *DB) GetVenueWithUserByID(venueID int64) (*models.VenueWithUser, error)
 
 	user.Trusted = trustedInt > 0 // Convert int to bool
 	venueWithUser.Venue = venue
-	venueWithUser.User = user
-	venueWithUser.IsVenueAdmin = isVenueAdmin
+
+	if isVenueAdmin.Valid {
+		venueWithUser.IsVenueAdmin = isVenueAdmin.Int64 > 0
+		user.IsVenueAdmin = isVenueAdmin.Int64 > 0
+	}
 
 	if ambassadorLevel.Valid {
-		venueWithUser.AmbassadorLevel = &ambassadorLevel.Int64
+		level := int(ambassadorLevel.Int64)
+		user.AmbassadorLevel = &level
 	}
 	if ambassadorPoints.Valid {
-		venueWithUser.AmbassadorPoints = &ambassadorPoints.Int64
+		points := int(ambassadorPoints.Int64)
+		user.AmbassadorPoints = &points
 	}
-	if ambassadorPath.Valid {
-		venueWithUser.AmbassadorPath = &ambassadorPath.String
+	if ambassadorRegion.Valid {
+		user.AmbassadorRegion = &ambassadorRegion.String
+	}
+	if approvedVenueCount.Valid {
+		count := int(approvedVenueCount.Int64)
+		user.ApprovedVenueCount = &count
 	}
 
+	venueWithUser.User = user
 	return &venueWithUser, nil
 }
 
@@ -1511,17 +1530,25 @@ func (db *DB) GetVenueWithUserByIDCtx(ctx context.Context, venueID int64) (*mode
         v.admin_hold_email_note, v.updated_by_id, v.made_active_by_id,
         v.made_active_at, v.show_premium, v.category, v.pretty_url, v.edit_lock,
         v.request_vegan_decal_at, v.request_excellent_decal_at, v.source,
-        m.id as member_id, m.username, m.email as user_email, m.trusted, m.contributions
+        m.username, m.email as user_email, m.trusted, m.contributions,
+        CASE WHEN va.venue_id IS NOT NULL THEN 1 ELSE 0 END as is_venue_admin,
+        a.level as ambassador_level, a.points as ambassador_points, a.path as ambassador_region,
+        (SELECT COUNT(*) FROM venues v2 WHERE v2.user_id = m.id AND v2.active = 1) as approved_venue_count
         FROM venues v
         LEFT JOIN members m ON v.user_id = m.id
+        LEFT JOIN venue_admin va ON v.id = va.venue_id AND v.user_id = va.user_id
+        LEFT JOIN ambassadors a ON v.user_id = a.user_id
         WHERE v.id = ?`
 	row := db.conn.QueryRowContext(ctx, query, venueID)
 	var vu models.VenueWithUser
 	var venue models.Venue
 	var user models.User
-	var memberID sql.NullInt64
 	var username, email sql.NullString
 	var trusted, contributions sql.NullInt64
+	var isVenueAdmin sql.NullInt64
+	var ambassadorLevel, ambassadorPoints sql.NullInt64
+	var ambassadorRegion sql.NullString
+	var approvedVenueCount sql.NullInt64
 	if err := row.Scan(
 		&venue.ID, &venue.Path, &venue.EntryType, &venue.Name, &venue.URL,
 		&venue.FBUrl, &venue.InstagramUrl, &venue.Location, &venue.Zipcode,
@@ -1535,12 +1562,10 @@ func (db *DB) GetVenueWithUserByIDCtx(ctx context.Context, venueID int64) (*mode
 		&venue.UpdatedByID, &venue.MadeActiveByID, &venue.MadeActiveAt,
 		&venue.ShowPremium, &venue.Category, &venue.PrettyUrl, &venue.EditLock,
 		&venue.RequestVeganDecalAt, &venue.RequestExcellentDecalAt, &venue.Source,
-		&memberID, &username, &email, &trusted, &contributions,
+		&username, &email, &trusted, &contributions,
+		&isVenueAdmin, &ambassadorLevel, &ambassadorPoints, &ambassadorRegion, &approvedVenueCount,
 	); err != nil {
 		return nil, fmt.Errorf("failed to scan venue with user row: %w", err)
-	}
-	if memberID.Valid {
-		user.ID = uint(memberID.Int64)
 	}
 	if username.Valid {
 		user.Username = username.String
@@ -1554,8 +1579,28 @@ func (db *DB) GetVenueWithUserByIDCtx(ctx context.Context, venueID int64) (*mode
 	if contributions.Valid {
 		user.Contributions = int(contributions.Int64)
 	}
+	user.ID = venue.UserID
 	vu.Venue = venue
 	vu.User = user
+	if isVenueAdmin.Valid {
+		vu.IsVenueAdmin = isVenueAdmin.Int64 > 0
+		vu.User.IsVenueAdmin = isVenueAdmin.Int64 > 0
+	}
+	if ambassadorLevel.Valid {
+		level := int(ambassadorLevel.Int64)
+		vu.User.AmbassadorLevel = &level
+	}
+	if ambassadorPoints.Valid {
+		points := int(ambassadorPoints.Int64)
+		vu.User.AmbassadorPoints = &points
+	}
+	if ambassadorRegion.Valid {
+		vu.User.AmbassadorRegion = &ambassadorRegion.String
+	}
+	if approvedVenueCount.Valid {
+		count := int(approvedVenueCount.Int64)
+		vu.User.ApprovedVenueCount = &count
+	}
 	return &vu, nil
 }
 
@@ -1852,7 +1897,7 @@ func (db *DB) CreateEditorFeedbackCtx(ctx context.Context, f *models.EditorFeedb
 	}
 	ctx, cancel := db.withWriteTimeout(ctx)
 	defer cancel()
-	q := `INSERT INTO editor_feedback (venue_id, prompt_version, feedback_type, comment, ip, created_at)
+	q := `INSERT INTO venue_validation_editor_feedback (venue_id, prompt_version, feedback_type, comment, ip, created_at)
 	      VALUES (?, ?, ?, ?, ?, NOW())`
 	res, err := db.conn.ExecContext(ctx, q, f.VenueID, f.PromptVersion, string(f.FeedbackType), f.Comment, f.IP)
 	if err != nil {
@@ -1863,11 +1908,67 @@ func (db *DB) CreateEditorFeedbackCtx(ctx context.Context, f *models.EditorFeedb
 		f.ID = id
 	}
 	// Best effort fetch created_at
-	row := db.conn.QueryRowContext(ctx, "SELECT created_at FROM editor_feedback WHERE id = ?", f.ID)
+	row := db.conn.QueryRowContext(ctx, "SELECT created_at FROM venue_validation_editor_feedback WHERE id = ?", f.ID)
 	var ts time.Time
 	if err := row.Scan(&ts); err == nil {
 		f.CreatedAt = ts
 	}
+	return nil
+}
+
+func (db *DB) UpsertEditorFeedbackCtx(ctx context.Context, f *models.EditorFeedback) error {
+	if f == nil {
+		return errs.NewDB("database.UpsertEditorFeedbackCtx", "nil feedback", nil)
+	}
+	ctx, cancel := db.withWriteTimeout(ctx)
+	defer cancel()
+
+	// TODO: RPoC add UNIQUE(venue_id, ip, prompt_version) and switch to real UPSERT, too tired now to deal with migrations on prod again!
+	var existingID int64
+	var row *sql.Row
+	if f.PromptVersion == nil {
+		q := `SELECT id FROM venue_validation_editor_feedback WHERE venue_id = ? AND ip = ? AND prompt_version IS NULL LIMIT 1`
+		row = db.conn.QueryRowContext(ctx, q, f.VenueID, f.IP)
+	} else {
+		q := `SELECT id FROM venue_validation_editor_feedback WHERE venue_id = ? AND ip = ? AND prompt_version = ? LIMIT 1`
+		row = db.conn.QueryRowContext(ctx, q, f.VenueID, f.IP, *f.PromptVersion)
+	}
+
+	switch err := row.Scan(&existingID); err {
+	case sql.ErrNoRows:
+		// Insert new
+		q := `INSERT INTO venue_validation_editor_feedback (venue_id, prompt_version, feedback_type, comment, ip, created_at)
+              VALUES (?, ?, ?, ?, ?, NOW())`
+		res, err := db.conn.ExecContext(ctx, q,
+			f.VenueID, f.PromptVersion, string(f.FeedbackType), f.Comment, f.IP,
+		)
+		if err != nil {
+			return errs.NewDB("database.UpsertEditorFeedbackCtx", "insert failed", err)
+		}
+		id, _ := res.LastInsertId()
+		f.ID = id
+	case nil:
+		// Update existing
+		f.ID = existingID
+		q := `UPDATE venue_validation_editor_feedback
+              SET feedback_type = ?, comment = ?, ip = ?, created_at = NOW()
+              WHERE id = ?`
+		if _, err := db.conn.ExecContext(ctx, q,
+			string(f.FeedbackType), f.Comment, f.IP, f.ID,
+		); err != nil {
+			return errs.NewDB("database.UpsertEditorFeedbackCtx", "update failed", err)
+		}
+	default:
+		return errs.NewDB("database.UpsertEditorFeedbackCtx", "lookup failed", err)
+	}
+
+	// Best effort fetch created_at
+	row = db.conn.QueryRowContext(ctx, "SELECT created_at FROM venue_validation_editor_feedback WHERE id = ?", f.ID)
+	var ts time.Time
+	if err := row.Scan(&ts); err == nil {
+		f.CreatedAt = ts
+	}
+
 	return nil
 }
 
@@ -1877,7 +1978,7 @@ func (db *DB) HasVenueFeedbackFromIPCtx(ctx context.Context, venueID int64, ip [
 	defer cancel()
 	var exists int
 	if promptVersion == nil {
-		q := `SELECT 1 FROM editor_feedback WHERE venue_id = ? AND ip = ? AND prompt_version IS NULL LIMIT 1`
+		q := `SELECT 1 FROM venue_validation_editor_feedback WHERE venue_id = ? AND ip = ? AND prompt_version IS NULL LIMIT 1`
 		row := db.conn.QueryRowContext(ctx, q, venueID, ip)
 		if err := row.Scan(&exists); err != nil {
 			if err == sql.ErrNoRows {
@@ -1887,7 +1988,7 @@ func (db *DB) HasVenueFeedbackFromIPCtx(ctx context.Context, venueID int64, ip [
 		}
 		return true, nil
 	}
-	q := `SELECT 1 FROM editor_feedback WHERE venue_id = ? AND ip = ? AND prompt_version = ? LIMIT 1`
+	q := `SELECT 1 FROM venue_validation_editor_feedback WHERE venue_id = ? AND ip = ? AND prompt_version = ? LIMIT 1`
 	row := db.conn.QueryRowContext(ctx, q, venueID, ip, *promptVersion)
 	if err := row.Scan(&exists); err != nil {
 		if err == sql.ErrNoRows {
@@ -1906,7 +2007,7 @@ func (db *DB) GetVenueFeedbackCtx(ctx context.Context, venueID int64, limit int)
 		limit = 100
 	}
 	q := `SELECT id, venue_id, prompt_version, feedback_type, comment, ip, created_at
-	      FROM editor_feedback WHERE venue_id = ? ORDER BY created_at DESC LIMIT ?`
+	      FROM venue_validation_editor_feedback WHERE venue_id = ? ORDER BY created_at DESC LIMIT ?`
 	rows, err := db.conn.QueryContext(ctx, q, venueID, limit)
 	if err != nil {
 		return nil, 0, 0, errs.NewDB("database.GetVenueFeedbackCtx", "query failed", err)
@@ -1929,7 +2030,7 @@ func (db *DB) GetVenueFeedbackCtx(ctx context.Context, venueID int64, limit int)
 	var up, down int
 	q2 := `SELECT SUM(CASE WHEN feedback_type='thumbs_up' THEN 1 ELSE 0 END),
 	              SUM(CASE WHEN feedback_type='thumbs_down' THEN 1 ELSE 0 END)
-	       FROM editor_feedback WHERE venue_id = ?`
+	       FROM venue_validation_editor_feedback WHERE venue_id = ?`
 	row := db.conn.QueryRowContext(ctx, q2, venueID)
 	if err := row.Scan(&up, &down); err != nil {
 		return list, 0, 0, nil // non-fatal
@@ -1953,7 +2054,7 @@ func (db *DB) GetFeedbackStatsCtx(ctx context.Context, promptVersion *string) (*
 		SUM(CASE WHEN feedback_type='thumbs_up' THEN 1 ELSE 0 END) AS up,
 		SUM(CASE WHEN feedback_type='thumbs_down' THEN 1 ELSE 0 END) AS down,
 		COUNT(*) AS total
-		FROM editor_feedback %s`, cond)
+		FROM venue_validation_editor_feedback %s`, cond)
 	row := db.conn.QueryRowContext(ctx, q, args...)
 	if err := row.Scan(&stats.ThumbsUp, &stats.ThumbsDown, &stats.Total); err != nil {
 		if err == sql.ErrNoRows {
@@ -1965,7 +2066,7 @@ func (db *DB) GetFeedbackStatsCtx(ctx context.Context, promptVersion *string) (*
 	qd := fmt.Sprintf(`SELECT DATE(created_at) as d,
 		SUM(CASE WHEN feedback_type='thumbs_up' THEN 1 ELSE 0 END) AS up,
 		SUM(CASE WHEN feedback_type='thumbs_down' THEN 1 ELSE 0 END) AS down
-		FROM editor_feedback %s
+		FROM venue_validation_editor_feedback %s
 		GROUP BY d ORDER BY d DESC LIMIT 30`, cond)
 	rows, err := db.conn.QueryContext(ctx, qd, args...)
 	if err == nil {
@@ -1982,7 +2083,7 @@ func (db *DB) GetFeedbackStatsCtx(ctx context.Context, promptVersion *string) (*
 	qv := `SELECT COALESCE(prompt_version, '') as pv,
 		SUM(CASE WHEN feedback_type='thumbs_up' THEN 1 ELSE 0 END) AS up,
 		SUM(CASE WHEN feedback_type='thumbs_down' THEN 1 ELSE 0 END) AS down
-		FROM editor_feedback GROUP BY pv ORDER BY pv`
+		FROM venue_validation_editor_feedback GROUP BY pv ORDER BY pv`
 	rows2, err := db.conn.QueryContext(ctx, qv)
 	if err == nil {
 		defer rows2.Close()

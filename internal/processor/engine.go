@@ -548,21 +548,13 @@ func (e *ProcessingEngine) calculatePriorityWithUser(venue models.Venue, user mo
 	priority := 0
 
 	// Highest priority for venue owners/admins (fast-track approval)
-	if user.ID > 0 && (user.Trusted || isVenueAdmin(user, venue)) {
+	if user.ID > 0 && (user.Trusted || (user.IsVenueAdmin || user.IsVenueOwner)) {
 		priority += 1000
 	}
 
 	// High priority for ambassadors
-	if hasAmbassadorLevel(user) {
+	if user.AmbassadorLevel != nil && *user.AmbassadorLevel > 0 {
 		priority += 500
-	}
-
-	// Higher priority for Korean/Chinese venues (special handling required)
-	if venue.Location != "" {
-		location := venue.Location
-		if containsAny(location, []string{"korea", "korean", "china", "chinese", "seoul", "beijing", "shanghai"}) {
-			priority += 100
-		}
 	}
 
 	// Higher priority for venues with more complete data
@@ -988,16 +980,4 @@ func containsAny(s string, substrings []string) bool {
 		}
 	}
 	return false
-}
-
-// isVenueAdmin checks if a user is an admin for a specific venue
-func isVenueAdmin(user models.User, venue models.Venue) bool {
-	// This would typically check a venue_admin table
-	// For now, we'll use a simple heuristic based on trusted status
-	return user.Trusted
-}
-
-// hasAmbassadorLevel checks if a user has ambassador privileges
-func hasAmbassadorLevel(user models.User) bool {
-	return user.ID > 0 && user.Trusted // Simplified check
 }

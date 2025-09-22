@@ -149,6 +149,8 @@ func (c *Calculator) Assess(user models.User, venueLocation string) Assessment {
 		approvedCount = *user.ApprovedVenueCount
 	}
 	trust = c.applyApprovedVenueBoosts(trust, approvedCount)
+	fmt.Printf("user ID: %d | Location: %s\n", user.ID, venueLocation)
+	fmt.Printf("user is regular: trust=%.2f, contrib=%d, approved=%d\n", trust, user.Contributions, approvedCount)
 	return Assessment{
 		Trust:     trust,
 		Authority: "regular",

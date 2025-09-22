@@ -314,7 +314,6 @@ func (s *AIScorer) ScoreVenue(ctx context.Context, venue models.Venue, user mode
 	// Include submitter trust/user in cache key to avoid cross-user cache collisions
 	assessment := s.tc.Assess(user, venue.Location)
 	trustLevel := assessment.Trust
-	fmt.Printf("score: id=%d trust=%.2f (%s)\n", venue.ID, trustLevel, assessment.Authority) // debug
 	cacheKey = fmt.Sprintf("%s|trust=%.2f|uid=%d", cacheKey, trustLevel, user.ID)
 	if cached, found := s.cache.Get(cacheKey); found {
 		return &cached, nil
