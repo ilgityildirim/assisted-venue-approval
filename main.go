@@ -163,6 +163,8 @@ func main() {
 	router.HandleFunc("/validate", app.validateHandler).Methods("POST")
 	router.HandleFunc("/validate/batch", app.validateBatchHandler).Methods("POST")
 	router.HandleFunc("/api/stats", admin.APIStatsHandler(db, eng)).Methods("GET")
+	// Feedback analytics
+	router.HandleFunc("/api/feedback/stats", admin.APIFeedbackStatsHandler(db)).Methods("GET")
 
 	router.HandleFunc("/venues/pending", admin.PendingVenuesHandler(db)).Methods("GET")
 	router.HandleFunc("/venues/manual-review", admin.ManualReviewHandler(db)).Methods("GET")
@@ -170,6 +172,9 @@ func main() {
 	router.HandleFunc("/venues/{id}/approve", admin.ApproveVenueHandler(db)).Methods("POST")
 	router.HandleFunc("/venues/{id}/reject", admin.RejectVenueHandler(db)).Methods("POST")
 	router.HandleFunc("/venues/{id}/validate", app.validateSingleHandler).Methods("POST")
+	// Editor feedback submit/list
+	router.HandleFunc("/venues/{id}/feedback", admin.SubmitFeedbackHandler(db)).Methods("POST")
+	router.HandleFunc("/venues/{id}/feedback", admin.VenueFeedbackHandler(db)).Methods("GET")
 
 	router.HandleFunc("/batch-operation", admin.BatchOperationHandler(db)).Methods("POST")
 	router.HandleFunc("/validation/history", admin.ValidationHistoryHandler(db)).Methods("GET")

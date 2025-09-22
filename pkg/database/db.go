@@ -1842,3 +1842,160 @@ func (db *DB) SaveValidationResultWithGoogleDataTx(ctx context.Context, tx *sql.
 	}
 	return nil
 }
+
+// --- Editor Feedback operations ---
+
+// CreateEditorFeedbackCtx inserts a new feedback row.
+func (db *DB) CreateEditorFeedbackCtx(ctx context.Context, f *models.EditorFeedback) error {
+	if f == nil {
+		return errs.NewDB("database.CreateEditorFeedbackCtx", "nil feedback", nil)
+	}
+	ctx, cancel := db.withWriteTimeout(ctx)
+	defer cancel()
+	q := `INSERT INTO editor_feedback (venue_id, prompt_version, feedback_type, comment, ip, created_at)
+	      VALUES (?, ?, ?, ?, ?, NOW())`
+	res, err := db.conn.ExecContext(ctx, q, f.VenueID, f.PromptVersion, string(f.FeedbackType), f.Comment, f.IP)
+	if err != nil {
+		return errs.NewDB("database.CreateEditorFeedbackCtx", "insert failed", err)
+	}
+	id, err := res.LastInsertId()
+	if err == nil {
+		f.ID = id
+	}
+	// Best effort fetch created_at
+	row := db.conn.QueryRowContext(ctx, "SELECT created_at FROM editor_feedback WHERE id = ?", f.ID)
+	var ts time.Time
+	if err := row.Scan(&ts); err == nil {
+		f.CreatedAt = ts
+	}
+	return nil
+}
+
+// HasVenueFeedbackFromIPCtx returns true if a feedback exists from the same IP for the venue and prompt_version (nullable).
+func (db *DB) HasVenueFeedbackFromIPCtx(ctx context.Context, venueID int64, ip []byte, promptVersion *string) (bool, error) {
+	ctx, cancel := db.withReadTimeout(ctx)
+	defer cancel()
+	var exists int
+	if promptVersion == nil {
+		q := `SELECT 1 FROM editor_feedback WHERE venue_id = ? AND ip = ? AND prompt_version IS NULL LIMIT 1`
+		row := db.conn.QueryRowContext(ctx, q, venueID, ip)
+		if err := row.Scan(&exists); err != nil {
+			if err == sql.ErrNoRows {
+				return false, nil
+			}
+			return false, errs.NewDB("database.HasVenueFeedbackFromIPCtx", "query failed", err)
+		}
+		return true, nil
+	}
+	q := `SELECT 1 FROM editor_feedback WHERE venue_id = ? AND ip = ? AND prompt_version = ? LIMIT 1`
+	row := db.conn.QueryRowContext(ctx, q, venueID, ip, *promptVersion)
+	if err := row.Scan(&exists); err != nil {
+		if err == sql.ErrNoRows {
+			return false, nil
+		}
+		return false, errs.NewDB("database.HasVenueFeedbackFromIPCtx", "query failed", err)
+	}
+	return true, nil
+}
+
+// GetVenueFeedbackCtx returns feedback list for a venue and simple counts.
+func (db *DB) GetVenueFeedbackCtx(ctx context.Context, venueID int64, limit int) ([]models.EditorFeedback, int, int, error) {
+	ctx, cancel := db.withReadTimeout(ctx)
+	defer cancel()
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	q := `SELECT id, venue_id, prompt_version, feedback_type, comment, ip, created_at
+	      FROM editor_feedback WHERE venue_id = ? ORDER BY created_at DESC LIMIT ?`
+	rows, err := db.conn.QueryContext(ctx, q, venueID, limit)
+	if err != nil {
+		return nil, 0, 0, errs.NewDB("database.GetVenueFeedbackCtx", "query failed", err)
+	}
+	defer rows.Close()
+	list := make([]models.EditorFeedback, 0, limit)
+	for rows.Next() {
+		var e models.EditorFeedback
+		var ft string
+		if err := rows.Scan(&e.ID, &e.VenueID, &e.PromptVersion, &ft, &e.Comment, &e.IP, &e.CreatedAt); err != nil {
+			return nil, 0, 0, errs.NewDB("database.GetVenueFeedbackCtx", "scan failed", err)
+		}
+		e.FeedbackType = models.FeedbackType(ft)
+		list = append(list, e)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, 0, errs.NewDB("database.GetVenueFeedbackCtx", "rows error", err)
+	}
+	// counts
+	var up, down int
+	q2 := `SELECT SUM(CASE WHEN feedback_type='thumbs_up' THEN 1 ELSE 0 END),
+	              SUM(CASE WHEN feedback_type='thumbs_down' THEN 1 ELSE 0 END)
+	       FROM editor_feedback WHERE venue_id = ?`
+	row := db.conn.QueryRowContext(ctx, q2, venueID)
+	if err := row.Scan(&up, &down); err != nil {
+		return list, 0, 0, nil // non-fatal
+	}
+	return list, up, down, nil
+}
+
+// GetFeedbackStatsCtx returns aggregate stats, optionally filtered by promptVersion.
+func (db *DB) GetFeedbackStatsCtx(ctx context.Context, promptVersion *string) (*models.FeedbackStats, error) {
+	ctx, cancel := db.withReadTimeout(ctx)
+	defer cancel()
+	cond := ""
+	var args []any
+	if promptVersion != nil {
+		cond = "WHERE prompt_version = ?"
+		args = append(args, *promptVersion)
+	}
+	stats := &models.FeedbackStats{ByVersion: make(map[string]struct{ Up, Down int })}
+	// totals
+	q := fmt.Sprintf(`SELECT 
+		SUM(CASE WHEN feedback_type='thumbs_up' THEN 1 ELSE 0 END) AS up,
+		SUM(CASE WHEN feedback_type='thumbs_down' THEN 1 ELSE 0 END) AS down,
+		COUNT(*) AS total
+		FROM editor_feedback %s`, cond)
+	row := db.conn.QueryRowContext(ctx, q, args...)
+	if err := row.Scan(&stats.ThumbsUp, &stats.ThumbsDown, &stats.Total); err != nil {
+		if err == sql.ErrNoRows {
+			return stats, nil
+		}
+		return nil, errs.NewDB("database.GetFeedbackStatsCtx", "totals query failed", err)
+	}
+	// daily (last 30 days)
+	qd := fmt.Sprintf(`SELECT DATE(created_at) as d,
+		SUM(CASE WHEN feedback_type='thumbs_up' THEN 1 ELSE 0 END) AS up,
+		SUM(CASE WHEN feedback_type='thumbs_down' THEN 1 ELSE 0 END) AS down
+		FROM editor_feedback %s
+		GROUP BY d ORDER BY d DESC LIMIT 30`, cond)
+	rows, err := db.conn.QueryContext(ctx, qd, args...)
+	if err == nil {
+		defer rows.Close()
+		for rows.Next() {
+			var d time.Time
+			var up, down int
+			if err := rows.Scan(&d, &up, &down); err == nil {
+				stats.Daily = append(stats.Daily, models.DailyCount{Date: d.Format("2006-01-02"), ThumbsUp: up, ThumbsDown: down})
+			}
+		}
+	}
+	// by version
+	qv := `SELECT COALESCE(prompt_version, '') as pv,
+		SUM(CASE WHEN feedback_type='thumbs_up' THEN 1 ELSE 0 END) AS up,
+		SUM(CASE WHEN feedback_type='thumbs_down' THEN 1 ELSE 0 END) AS down
+		FROM editor_feedback GROUP BY pv ORDER BY pv`
+	rows2, err := db.conn.QueryContext(ctx, qv)
+	if err == nil {
+		defer rows2.Close()
+		for rows2.Next() {
+			var pv string
+			var up, down int
+			if err := rows2.Scan(&pv, &up, &down); err == nil {
+				if pv == "" {
+					pv = "(unknown)"
+				}
+				stats.ByVersion[pv] = struct{ Up, Down int }{Up: up, Down: down}
+			}
+		}
+	}
+	return stats, nil
+}

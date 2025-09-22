@@ -39,7 +39,15 @@ type UserRepository interface {
 }
 
 // Repository aggregates the repos commonly required by services.
+type FeedbackRepository interface {
+	CreateFeedbackCtx(ctx context.Context, f *models.EditorFeedback) error
+	GetFeedbackByVenueCtx(ctx context.Context, venueID int64, limit int) ([]models.EditorFeedback, int, int, error)
+	GetFeedbackStatsCtx(ctx context.Context, promptVersion *string) (*models.FeedbackStats, error)
+}
+
+// Repository aggregates the repos commonly required by services.
 type Repository interface {
 	VenueRepository
 	ValidationRepository
+	FeedbackRepository
 }

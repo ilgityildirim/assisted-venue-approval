@@ -1,1 +1,10 @@
-/* Placeholder for static assets */
+/* Basic styles for feedback UI */
+.feedback-section { }
+.feedback-buttons { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+.feedback-buttons .btn { transition: transform .05s ease-in-out; }
+.feedback-buttons .btn:active { transform: scale(0.98); }
+.feedback-summary { color:#555; margin: 10px 0; }
+.feedback-submitted { opacity: 0.6; cursor: not-allowed; }
+@media (max-width: 600px) {
+  .feedback-buttons { gap:8px; }
+}

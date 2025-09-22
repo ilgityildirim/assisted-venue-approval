@@ -504,6 +504,24 @@
             
             <!-- Sidebar removed per requirements; Similar Venues removed -->
         </div>
+
+        <!-- Editor Feedback -->
+        <div class="section" id="feedback-section">
+            <h2>Editor Feedback</h2>
+            <div id="feedback-summary" style="margin: 10px 0; color:#555;">
+                <span id="fb-up-count">0</span> 👍 · <span id="fb-down-count">0</span> 👎
+            </div>
+            <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                <button class="btn" id="btn-thumbs-up" onclick="submitFeedback('thumbs_up')">👍 Thumbs Up</button>
+                <button class="btn btn-danger" id="btn-thumbs-down" onclick="submitFeedback('thumbs_down')">👎 Thumbs Down</button>
+                <input type="hidden" id="prompt_version" value="{{if .LatestHist}}{{if .LatestHist.PromptVersion}}{{.LatestHist.PromptVersion}}{{end}}{{end}}" />
+            </div>
+            <div style="margin-top:10px;">
+                <label for="fb-comment" style="display:block; color:#666; margin-bottom:6px;">Optional comment</label>
+                <textarea id="fb-comment" rows="2" style="width:100%; padding:10px; border:1px solid #ddd; border-radius:4px; resize:vertical;" placeholder="Tell us what's right or wrong"></textarea>
+            </div>
+            <div id="fb-status" style="margin-top:10px; display:none;"></div>
+        </div>
     </div>
     
     <script>
@@ -570,6 +588,63 @@
                 alert('Error updating venue status');
             });
         }
+        // --- Feedback UI ---
+        function setFBStatus(msg, ok) {
+            const el = document.getElementById('fb-status');
+            el.style.display = 'block';
+            el.style.color = ok ? '#2e7d32' : '#c62828';
+            el.textContent = msg;
+        }
+        function disableFBButtons() {
+            document.getElementById('btn-thumbs-up').disabled = true;
+            document.getElementById('btn-thumbs-down').disabled = true;
+            document.getElementById('btn-thumbs-up').style.opacity = 0.6;
+            document.getElementById('btn-thumbs-down').style.opacity = 0.6;
+            document.getElementById('btn-thumbs-up').style.cursor = 'not-allowed';
+            document.getElementById('btn-thumbs-down').style.cursor = 'not-allowed';
+        }
+        function submitFeedback(type) {
+            const pv = document.getElementById('prompt_version').value || '';
+            const cmt = document.getElementById('fb-comment').value || '';
+            const fd = new FormData();
+            fd.append('feedback_type', type);
+            if (pv) fd.append('prompt_version', pv);
+            if (cmt) fd.append('comment', cmt);
+            const url = '/venues/{{.Venue.Venue.ID}}/feedback';
+            setFBStatus('Submitting...', true);
+            fetch(url, { method: 'POST', body: fd })
+              .then(async (res) => {
+                if (res.status === 409) {
+                  setFBStatus('Thanks! Feedback already recorded for this session.', true);
+                  disableFBButtons();
+                  refreshFeedback();
+                  return;
+                }
+                if (!res.ok) {
+                  const t = await res.text();
+                  throw new Error(t || 'submission failed');
+                }
+                return res.json().catch(() => ({}));
+              })
+              .then(() => {
+                setFBStatus('Thanks for your feedback!', true);
+                disableFBButtons();
+                refreshFeedback();
+              })
+              .catch(err => {
+                console.error('feedback error', err);
+                setFBStatus('Failed to submit feedback', false);
+              });
+        }
+        function refreshFeedback() {
+            fetch('/venues/{{.Venue.Venue.ID}}/feedback')
+              .then(r => r.ok ? r.json() : { thumbs_up: 0, thumbs_down: 0 })
+              .then(d => {
+                document.getElementById('fb-up-count').textContent = d.thumbs_up || 0;
+                document.getElementById('fb-down-count').textContent = d.thumbs_down || 0;
+              }).catch(() => {});
+        }
+        document.addEventListener('DOMContentLoaded', refreshFeedback);
     </script>
 </body>
 </html>

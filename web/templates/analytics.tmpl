@@ -170,6 +170,32 @@
             </div>
         </div>
         {{end}}
+
+        <div class="section">
+            <h2>Editor Feedback</h2>
+            <div style="margin-bottom:10px; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                <input id="pv-filter" placeholder="prompt_version (optional)" style="padding:8px; border:1px solid #ddd; border-radius:4px;">
+                <button onclick="loadFBStats()" class="nav a" style="padding:8px 12px; background:#3498db; color:#fff; border:none; border-radius:4px; cursor:pointer;">Load</button>
+            </div>
+            <div class="metrics-grid">
+                <div class="metric-card">
+                    <div class="metric-title">👍 Thumbs Up</div>
+                    <div class="metric-value" id="fb-up">0</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-title">👎 Thumbs Down</div>
+                    <div class="metric-value" id="fb-down">0</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-title">Total Feedback</div>
+                    <div class="metric-value" id="fb-total">0</div>
+                </div>
+            </div>
+            <div class="section" style="margin-top:15px;">
+                <div class="metric-title" style="margin-bottom:8px;">By Prompt Version</div>
+                <div id="fb-by-version" style="font-family:monospace; white-space:pre-wrap; color:#444;">—</div>
+            </div>
+        </div>
     </div>
     
     <script>
@@ -177,6 +203,24 @@
         setInterval(function() {
             location.reload();
         }, 60000);
+        function loadFBStats() {
+            var pv = document.getElementById('pv-filter').value.trim();
+            var url = '/api/feedback/stats' + (pv ? ('?prompt_version=' + encodeURIComponent(pv)) : '');
+            fetch(url).then(r => r.json()).then(d => {
+                document.getElementById('fb-up').textContent = d.thumbs_up || 0;
+                document.getElementById('fb-down').textContent = d.thumbs_down || 0;
+                document.getElementById('fb-total').textContent = d.total || 0;
+                var lines = [];
+                if (d.by_version) {
+                    for (var k in d.by_version) {
+                        var v = d.by_version[k];
+                        lines.push(k + ': ' + (v.Up || v.up || 0) + ' up / ' + (v.Down || v.down || 0) + ' down');
+                    }
+                }
+                document.getElementById('fb-by-version').textContent = lines.length ? lines.join('\n') : '—';
+            }).catch(() => {});
+        }
+        document.addEventListener('DOMContentLoaded', loadFBStats);
     </script>
 </body>
 </html>
