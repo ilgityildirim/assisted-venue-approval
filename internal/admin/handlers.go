@@ -12,6 +12,7 @@ import (
 	"assisted-venue-approval/internal/domain"
 	"assisted-venue-approval/internal/models"
 	"assisted-venue-approval/internal/processor"
+	"assisted-venue-approval/internal/trust"
 	"assisted-venue-approval/pkg/database"
 	"assisted-venue-approval/pkg/events"
 	"assisted-venue-approval/pkg/metrics"
@@ -349,16 +350,17 @@ func VenueDetailHandler(db *database.DB) http.HandlerFunc {
 		}
 
 		// Build Combined Information centrally
-		// Map boolean trusted to trust level
-		trust := 0.3
-		if venue.User.Trusted {
-			trust = 0.8
-		}
+		// Use centralized trust calculator
+		tc := trust.NewDefault()
+		// Get venue location for ambassador region matching (use venue's location field)
+		venueLocation := venue.Venue.Location
+		assessment := tc.Assess(venue.User, venueLocation)
+
 		// Ensure Google data is attached for merger
 		if googleData != nil {
 			venue.Venue.GoogleData = googleData
 		}
-		combined, cerr := models.GetCombinedVenueInfo(venue.Venue, venue.User, trust)
+		combined, cerr := models.GetCombinedVenueInfo(venue.Venue, venue.User, assessment.Trust)
 		if cerr != nil {
 			log.Printf("combined info warning: %v", cerr)
 		}
@@ -370,6 +372,8 @@ func VenueDetailHandler(db *database.DB) http.HandlerFunc {
 			GoogleData         *models.GooglePlaceData
 			Combined           models.CombinedInfo
 			TrustPercent       int
+			TrustAuthority     string
+			TrustReason        string
 			LatestHist         *models.ValidationHistory
 			PrettyBreakdown    string
 			AIReviewNote       string
@@ -384,17 +388,14 @@ func VenueDetailHandler(db *database.DB) http.HandlerFunc {
 			CategoryLabel     string
 			TypeMismatchAlert bool
 		}{
-			Venue:         *venue,
-			History:       history,
-			SimilarVenues: similarVenues,
-			GoogleData:    googleData,
-			Combined:      combined,
-			TrustPercent: func() int {
-				if venue.User.Trusted {
-					return 80
-				}
-				return 30
-			}(),
+			Venue:          *venue,
+			History:        history,
+			SimilarVenues:  similarVenues,
+			GoogleData:     googleData,
+			Combined:       combined,
+			TrustPercent:   int(assessment.Trust * 100),
+			TrustAuthority: assessment.Authority,
+			TrustReason:    assessment.Reason,
 			// NEW: Add classification data from combined info
 			VenueTypeLabel:    combined.VenueType,
 			VeganStatusLabel:  combined.VeganStatus,
