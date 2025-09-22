@@ -211,6 +211,21 @@ type AIScorer struct {
 	timeout     time.Duration
 }
 
+// generatePromptVersion builds a compact version string based on template names used.
+// If name has no explicit @version suffix, we treat it as v1.
+func (s *AIScorer) generatePromptVersion(systemName, userName string) string {
+	mk := func(n string) string {
+		if n == "" {
+			return "unknown@v1"
+		}
+		if strings.Contains(n, "@") {
+			return n
+		}
+		return n + "@v1"
+	}
+	return mk(systemName) + "+" + mk(userName)
+}
+
 // metrics
 var (
 	mScoringDuration = metrics.Default.Histogram("venue_scoring_duration_seconds", "AI scoring duration (seconds)", []float64{0.1, 0.25, 0.5, 1, 2, 5, 10, 20, 60})
@@ -313,12 +328,14 @@ func (s *AIScorer) ScoreVenue(ctx context.Context, venue models.Venue, user mode
 		} else if strings.Contains(reason, "Asian") {
 			key = "asian_venue_block"
 		}
+		pv := s.generatePromptVersion("system", "unified_user")
 		return &models.ValidationResult{
 			VenueID:        venue.ID,
 			Score:          0,
 			Status:         "manual_review",
 			Notes:          reason,
 			ScoreBreakdown: map[string]int{key: 0},
+			PromptVersion:  &pv,
 		}, nil
 	}
 
@@ -338,17 +355,22 @@ func (s *AIScorer) ScoreVenue(ctx context.Context, venue models.Venue, user mode
 
 // scoreUnifiedVenue uses a single prompt for all venues and enforces JSON response
 func (s *AIScorer) scoreUnifiedVenue(ctx context.Context, venue models.Venue, user models.User, trustLevel float64) (*models.ValidationResult, error) {
+	userName := "unified_user"
+	systemName := "system"
 	userPrompt := s.buildUnifiedPrompt(venue, user, trustLevel)
 	sysPrompt := s.getSystemPrompt()
+	pv := s.generatePromptVersion(systemName, userName)
 
 	// If either prompt is missing/empty, skip API call and require manual review
 	if strings.TrimSpace(userPrompt) == "" || strings.TrimSpace(sysPrompt) == "" {
+		pvMissing := "missing_templates@v1"
 		return &models.ValidationResult{
 			VenueID:        venue.ID,
 			Score:          0,
 			Status:         "manual_review",
 			Notes:          "Missing prompt templates - manual review required",
 			ScoreBreakdown: map[string]int{"missing_prompts": 0},
+			PromptVersion:  &pvMissing,
 		}, nil
 	}
 
@@ -393,6 +415,7 @@ func (s *AIScorer) scoreUnifiedVenue(ctx context.Context, venue models.Venue, us
 			Notes:          "AI unavailable - manual review",
 			ScoreBreakdown: map[string]int{"legitimacy": 15, "completeness": 15, "relevance": 20},
 		}
+		fb.PromptVersion = &pv
 		return &fb, nil
 	}
 
@@ -404,8 +427,10 @@ func (s *AIScorer) scoreUnifiedVenue(ctx context.Context, venue models.Venue, us
 	if perr != nil {
 		// Fallback parsing if structured parsing fails
 		fallback := s.parseResponseFallback(resp.Choices[0].Message.Content, venue.ID)
+		fallback.PromptVersion = &pv
 		return &fallback, nil
 	}
+	result.PromptVersion = &pv
 	return &result, nil
 }
 

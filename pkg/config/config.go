@@ -51,7 +51,17 @@ type Config struct {
 	AlertSampleEvery time.Duration // sampling interval
 
 	// Prompts templates overrides
-	PromptsTemplatesDir string // path to external templates dir; empty = use embedded only
+	PromptDir string // path to external templates dir; empty = use embedded only
+
+	// New AI and prompt management knobs
+	OpenAIModel                 string
+	OpenAITemperature           float64
+	OpenAIMaxTokens             int
+	OpenAIRequestTimeoutSeconds int
+	OpenAIMaxBatchSize          int
+	PromptStableOnly            bool
+	PromptWeights               string
+	ConfigReloadIntervalSeconds int
 }
 
 func Load() *Config {
@@ -87,10 +97,24 @@ func Load() *Config {
 	alertGCPauseMs, _ := strconv.ParseFloat(getEnv("ALERT_GC_PAUSE_MS", "200"), 64)
 	alertSampleEverySec, _ := strconv.Atoi(getEnv("ALERT_SAMPLE_EVERY_SEC", "5"))
 
-	// Timeouts (use Go duration strings like "8s", "500ms")
+	// Timeouts
 	dbReadTO, _ := time.ParseDuration(getEnv("DB_READ_TIMEOUT", "8s"))
 	dbWriteTO, _ := time.ParseDuration(getEnv("DB_WRITE_TIMEOUT", "6s"))
-	openaiTO, _ := time.ParseDuration(getEnv("OPENAI_TIMEOUT", "60s"))
+
+	// New OpenAI config
+	openAIModel := getEnv("OPENAI_MODEL", "gpt-4o-mini")
+	openAITemp, _ := strconv.ParseFloat(getEnv("OPENAI_TEMPERATURE", "0.1"), 64)
+	openAIMaxTokens, _ := strconv.Atoi(getEnv("OPENAI_MAX_TOKENS", "250"))
+	openAIReqTimeoutSec, _ := strconv.Atoi(getEnv("OPENAI_REQUEST_TIMEOUT_SECONDS", "60"))
+	openAIMaxBatchSize, _ := strconv.Atoi(getEnv("OPENAI_MAX_BATCH_SIZE", "5"))
+
+	// Prompts
+	promptDir := getEnv("PROMPT_DIR", "./prompts")
+	promptStableOnly, _ := strconv.ParseBool(getEnv("PROMPT_STABLE_ONLY", "false"))
+	promptWeights := getEnv("PROMPT_WEIGHTS", "")
+
+	// Config reload
+	reloadIntSec, _ := strconv.Atoi(getEnv("CONFIG_RELOAD_INTERVAL_SECONDS", "2"))
 
 	return &Config{
 		DatabaseURL:       getEnv("DATABASE_URL", ""),
@@ -105,7 +129,7 @@ func Load() *Config {
 		DBConnMaxIdleTime: dbConnMaxIdleTime,
 		DBReadTimeout:     dbReadTO,
 		DBWriteTimeout:    dbWriteTO,
-		OpenAITimeout:     openaiTO,
+		OpenAITimeout:     time.Duration(openAIReqTimeoutSec) * time.Second,
 
 		// Monitoring and logging settings
 		LogLevel:          getEnv("LOG_LEVEL", "info"),
@@ -132,8 +156,16 @@ func Load() *Config {
 		AlertGCPauseMs:   alertGCPauseMs,
 		AlertSampleEvery: time.Duration(alertSampleEverySec) * time.Second,
 
-		// Prompts templates overrides
-		PromptsTemplatesDir: getEnv("PROMPTS_TEMPLATES_DIR", ""),
+		// Prompts templates overrides and new knobs
+		PromptDir:                   promptDir,
+		OpenAIModel:                 openAIModel,
+		OpenAITemperature:           openAITemp,
+		OpenAIMaxTokens:             openAIMaxTokens,
+		OpenAIRequestTimeoutSeconds: openAIReqTimeoutSec,
+		OpenAIMaxBatchSize:          openAIMaxBatchSize,
+		PromptStableOnly:            promptStableOnly,
+		PromptWeights:               promptWeights,
+		ConfigReloadIntervalSeconds: reloadIntSec,
 	}
 }
 

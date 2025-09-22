@@ -47,6 +47,7 @@ services:
     ports:
       - "8080:8080"   # Main application
       - "8081:8081"   # Health checks
+      - "6060:6060"   # Health checks
     
     volumes:
       # Mount the project directory for live development

@@ -52,7 +52,7 @@ func main() {
 	}, true)
 	// Prompts manager with optional external overrides
 	_ = c.Provide(func(cfg *config.Config) (*prompts.Manager, error) {
-		return prompts.NewManager(cfg.PromptsTemplatesDir)
+		return prompts.NewManager(cfg.PromptDir)
 	}, true)
 	_ = c.Provide(func(cfg *config.Config, pm *prompts.Manager) *scorer.AIScorer {
 		return scorer.NewAIScorerWithTimeoutAndPrompts(cfg.OpenAIAPIKey, cfg.OpenAITimeout, pm)
@@ -114,7 +114,7 @@ func main() {
 	app := &App{db: db, config: cfg, engine: eng}
 
 	// Start config watcher for hot-reload (applies worker count and approval threshold)
-	cw := config.NewWatcher(2 * time.Second)
+	cw := config.NewWatcher(time.Duration(cfg.ConfigReloadIntervalSeconds) * time.Second)
 	cw.Start()
 	chgCh := cw.Subscribe()
 	go func() {
@@ -190,7 +190,18 @@ func main() {
 		}
 		// Keep lightweight JSON metrics for humans at /metrics.json (non-Prometheus)
 		if cfg.MetricsEnabled && metrics != nil && cfg.MetricsPath != "/metrics.json" {
-			mux.Handle("/metrics.json", monitoring.MetricsHandler(metrics))
+			mux.Handle("/metrics.json", monitoring.MetricsHandlerWithCosts(metrics, func() (monitoring.CostMetrics, error) {
+				st := eng.GetStats()
+				var cpv float64
+				if st.CompletedJobs > 0 {
+					cpv = st.TotalCostUSD / float64(st.CompletedJobs)
+				}
+				return monitoring.CostMetrics{
+					TotalCostUSD: st.TotalCostUSD,
+					TotalVenues:  st.CompletedJobs,
+					CostPerVenue: cpv,
+				}, nil
+			}))
 		}
 		adminServer = &http.Server{Addr: ":" + cfg.ProfilingPort, Handler: mux}
 		go func() {

@@ -232,3 +232,55 @@ func StartRuntimeMonitor(ctx context.Context, cfg *config.Config, m *Metrics, lo
 		}
 	}
 }
+
+// CostMetrics contains optional business cost metrics to expose alongside runtime metrics.
+// Values are computed by the application and provided via a callback.
+// Note: We intentionally keep field names generic here; JSON keys are added in snake_case.
+type CostMetrics struct {
+	TotalCostUSD float64
+	TotalVenues  int64
+	CostPerVenue float64
+}
+
+// MetricsHandlerWithCosts exposes the same metrics as MetricsHandler and, if provided,
+// augments the JSON payload with cost metrics that are more Prometheus-friendly.
+// It keeps the original field names for existing metrics and adds:
+// - total_cost_usd
+// - total_venues_processed
+// - cost_per_venue_usd
+func MetricsHandlerWithCosts(m *Metrics, costProvider func() (CostMetrics, error)) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		var ms runtime.MemStats
+		runtime.ReadMemStats(&ms)
+		count, avg, p50, p95 := m.Snapshot()
+
+		resp := map[string]interface{}{
+			"time":             time.Now().Format(time.RFC3339),
+			"requests_total":   count,
+			"duration_ms_avg":  avg,
+			"duration_ms_p50":  p50,
+			"duration_ms_p95":  p95,
+			"goroutines":       runtime.NumGoroutine(),
+			"mem_alloc_bytes":  ms.Alloc,
+			"heap_inuse_bytes": ms.HeapInuse,
+			"gc_num":           ms.NumGC,
+		}
+
+		// Add cost metrics if provider is present
+		if costProvider != nil {
+			if cm, err := costProvider(); err == nil {
+				resp["total_cost_usd"] = cm.TotalCostUSD
+				resp["total_venues_processed"] = cm.TotalVenues
+				resp["cost_per_venue_usd"] = cm.CostPerVenue
+			} else {
+				// Keep fields present for stability, even if provider errors
+				resp["total_cost_usd"] = 0.0
+				resp["total_venues_processed"] = int64(0)
+				resp["cost_per_venue_usd"] = 0.0
+			}
+		}
+
+		_ = json.NewEncoder(w).Encode(resp)
+	})
+}
