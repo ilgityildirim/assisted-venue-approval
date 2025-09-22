@@ -231,7 +231,7 @@ func NewAIScorerWithTimeout(apiKey string, timeout time.Duration) *AIScorer {
 		SlowCallThreshold: constants.AIScorerSlowCallThreshold,
 		SlowCallRate:      constants.OpenAICircuitSlowCallRate,
 	}, nil)
-	pm, err := prompts.NewManager()
+	pm, err := prompts.NewManager("")
 	if err != nil {
 		// Keep running, but log a message; we'll fallback to inline prompts
 		fmt.Printf("prompts: init failed: %v\n", err)
@@ -246,6 +246,29 @@ func NewAIScorerWithTimeout(apiKey string, timeout time.Duration) *AIScorer {
 		pm:      pm,
 		tc:      trust.NewDefault(),
 		timeout: timeout,
+	}
+}
+
+// NewAIScorerWithTimeoutAndPrompts allows injecting a preconfigured prompts manager (e.g., with external templates dir)
+func NewAIScorerWithTimeoutAndPrompts(apiKey string, timeout time.Duration, pm *prompts.Manager) *AIScorer {
+	cb := circuit.New(circuit.Config{
+		Name:              "openai",
+		OperationTimeout:  constants.AIScorerOperationTimeout,
+		OpenFor:           constants.AIScorerOpenFor,
+		MaxConsecFailures: 2,
+		WindowSize:        10,
+		FailureRate:       constants.OpenAICircuitFailureRate,
+		SlowCallThreshold: constants.AIScorerSlowCallThreshold,
+		SlowCallRate:      constants.OpenAICircuitSlowCallRate,
+	}, nil)
+	return &AIScorer{
+		client:      openai.NewClient(apiKey),
+		costTracker: &CostTracker{startTime: time.Now()},
+		cache:       NewVenueCache(),
+		cb:          cb,
+		pm:          pm,
+		tc:          trust.NewDefault(),
+		timeout:     timeout,
 	}
 }
 
@@ -315,7 +338,19 @@ func (s *AIScorer) ScoreVenue(ctx context.Context, venue models.Venue, user mode
 
 // scoreUnifiedVenue uses a single prompt for all venues and enforces JSON response
 func (s *AIScorer) scoreUnifiedVenue(ctx context.Context, venue models.Venue, user models.User, trustLevel float64) (*models.ValidationResult, error) {
-	prompt := s.buildUnifiedPrompt(venue, user, trustLevel)
+	userPrompt := s.buildUnifiedPrompt(venue, user, trustLevel)
+	sysPrompt := s.getSystemPrompt()
+
+	// If either prompt is missing/empty, skip API call and require manual review
+	if strings.TrimSpace(userPrompt) == "" || strings.TrimSpace(sysPrompt) == "" {
+		return &models.ValidationResult{
+			VenueID:        venue.ID,
+			Score:          0,
+			Status:         "manual_review",
+			Notes:          "Missing prompt templates - manual review required",
+			ScoreBreakdown: map[string]int{"missing_prompts": 0},
+		}, nil
+	}
 
 	// Add per-request timeout for OpenAI call (configurable)
 	ctx, cancel := context.WithTimeout(ctx, s.timeout)
@@ -331,8 +366,8 @@ func (s *AIScorer) scoreUnifiedVenue(ctx context.Context, venue models.Venue, us
 	opReq := openai.ChatCompletionRequest{
 		Model: openai.GPT4oMini,
 		Messages: []openai.ChatCompletionMessage{
-			{Role: openai.ChatMessageRoleSystem, Content: s.getSystemPrompt()},
-			{Role: openai.ChatMessageRoleUser, Content: prompt},
+			{Role: openai.ChatMessageRoleSystem, Content: sysPrompt},
+			{Role: openai.ChatMessageRoleUser, Content: userPrompt},
 		},
 		Temperature:    0.1,
 		MaxTokens:      250,
@@ -500,45 +535,7 @@ func (s *AIScorer) buildUnifiedPrompt(venue models.Venue, user models.User, trus
 			fmt.Printf("prompts: render unified_user failed: %v\n", err)
 		}
 	}
-
-	return fmt.Sprintf(`You must score the venue and reply with JSON only.
-
-Data:
-- Combined Information (JSON): %s
-- Venue Information Data (JSON): %s
-- Admin Note: %s
-- Admin Hold Email Note: %s
-- Google Business Status: %s
-- Google Types: %v
-- Venue Type Indicators: {"vegonly": %d, "vegan": %d, "category": %d}
-- Trust Level (0.0-1.0): %.2f
-
-Instructions:
-- Always produce a single JSON object: {"score": X, "notes": "brief", "breakdown": {"legitimacy": X, "completeness": X, "relevance": X}}
-- Score range: 0-100. Keep notes concise.
-- If admin_note or admin_hold_email_note indicates this venue should not be approved for ANY reason, set score=0 and explain briefly in notes (manual review).
-- If Google business_status is provided and is not OPERATIONAL, set score=0 unless trust_level >= 0.80, and note why using notes.
-- For type validation: Check if Google types are LOGICALLY compatible with food venues. Food venues should have at least one food-related type (restaurant, food, meal_takeaway, meal_delivery, cafe, bakery, bar, establishment, point_of_interest). Types like ["premise", "street_address"] alone or ["lodging", "travel_agency"] suggest non-food business. Only set score=0 for clear mismatches when trust_level < 0.80.
-- Venue Type indicators (vegonly/vegan/category) suggest this should be a food-related venue.
-- LEGITIMACY (35 points): Score based on data verification and completeness. If venue has Google-verified data (formatted address, coordinates, phone, business status), award 25-35 points regardless of trust_level. Trust level is for validation rules only, not legitimacy assessment. Missing or unverified data reduces legitimacy points.
-- COMPLETENESS (30 points): Award points for available fields (name, address, phone, website, hours, coordinates).
-- RELEVANCE (35 points): Assess how well this fits HappyCow directory (vegan/vegetarian focus).
-- Use Combined Information if present; otherwise rely on Venue Information Data.
-- TRUST LEVEL usage: Trust level should only affect strict validation rules (business status, type mismatches) but not prevent scoring legitimate venues with good Google verification.
-- Consider venue description (can be empty) in relevance.
-- Allocate points roughly: legitimacy 35, completeness 30, relevance 35.
-- Respond with JSON only, no extra text.`,
-		string(combinedJSON),
-		string(venueJSON),
-		escapeForPrompt(adminNote),
-		escapeForPrompt(adminHoldEmailNote),
-		googleStatus,
-		googleTypes,
-		venue.VegOnly,
-		venue.Vegan,
-		venue.Category,
-		trustLevel,
-	)
+	return ""
 }
 
 // escapeForPrompt ensures multi-line strings are safe in the prompt context
@@ -556,21 +553,7 @@ func (s *AIScorer) getSystemPrompt() string {
 			fmt.Printf("prompts: render system failed: %v\n", err)
 		}
 	}
-	return `System role: You are an expert venue data validator for HappyCow (vegan/vegetarian directory).
-Goals:
-- Score venues for (1) legitimacy (35), (2) completeness (30), (3) relevance (35).
-- Always output a single JSON object, no prose, no Markdown.
-Output JSON schema:
-{"score": X, "notes": "brief", "breakdown": {"legitimacy": X, "completeness": X, "relevance": X}}
-Rules:
-- If admin notes indicate the venue should not be approved for any reason, set score=0 and explain briefly in notes of JSON output.
-- If Google Business Status exists and is not OPERATIONAL, set score=0 unless trust_level >= 0.80.
-- For Google types vs Venue Type validation: Check for LOGICAL compatibility, not exact match. A restaurant venue with Google types ["restaurant", "food", "establishment"] is valid. A restaurant venue with only ["premise", "street_address"] or ["lodging"] is suspicious and should set score=0 if trust_level < 0.80.
-- Restaurant/food venues should have at least one food-related Google type: restaurant, food, meal_takeaway, meal_delivery, cafe, bakery, bar, etc.
-- LEGITIMACY scoring: Base legitimacy on data quality and verification, NOT just trust level. If Combined Information contains verified Google data (address, phone, coordinates), legitimacy should be high (25-35) regardless of trust level. Only reduce legitimacy for data conflicts or missing critical information.
-- TRUST LEVEL usage: Trust level should only affect strict validation rules (business status, type mismatches) but not prevent scoring legitimate venues with good Google verification.
-- Consider the venue description (empty allowed). Do not invent facts beyond provided data.
-- Keep notes concise (<= 200 chars).`
+	return ""
 }
 
 // Enhanced parsing functions with validation

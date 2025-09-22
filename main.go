@@ -21,6 +21,7 @@ import (
 	"assisted-venue-approval/internal/infrastructure/repository"
 	"assisted-venue-approval/internal/models"
 	"assisted-venue-approval/internal/processor"
+	"assisted-venue-approval/internal/prompts"
 	"assisted-venue-approval/internal/scorer"
 	"assisted-venue-approval/internal/scraper"
 	"assisted-venue-approval/pkg/config"
@@ -49,8 +50,12 @@ func main() {
 	_ = c.Provide(func(cfg *config.Config) (*scraper.GoogleMapsScraper, error) {
 		return scraper.NewGoogleMapsScraper(cfg.GoogleMapsAPIKey)
 	}, true)
-	_ = c.Provide(func(cfg *config.Config) *scorer.AIScorer {
-		return scorer.NewAIScorerWithTimeout(cfg.OpenAIAPIKey, cfg.OpenAITimeout)
+	// Prompts manager with optional external overrides
+	_ = c.Provide(func(cfg *config.Config) (*prompts.Manager, error) {
+		return prompts.NewManager(cfg.PromptsTemplatesDir)
+	}, true)
+	_ = c.Provide(func(cfg *config.Config, pm *prompts.Manager) *scorer.AIScorer {
+		return scorer.NewAIScorerWithTimeoutAndPrompts(cfg.OpenAIAPIKey, cfg.OpenAITimeout, pm)
 	}, true)
 
 	// Processing engine (singleton)

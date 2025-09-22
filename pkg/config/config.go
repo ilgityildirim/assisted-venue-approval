@@ -49,6 +49,9 @@ type Config struct {
 	AlertMemAllocMB  float64       // trigger when Alloc exceeds this (MB)
 	AlertGCPauseMs   float64       // trigger when last GC pause exceeds this (ms)
 	AlertSampleEvery time.Duration // sampling interval
+
+	// Prompts templates overrides
+	PromptsTemplatesDir string // path to external templates dir; empty = use embedded only
 }
 
 func Load() *Config {
@@ -128,6 +131,9 @@ func Load() *Config {
 		AlertMemAllocMB:  alertMemAllocMB,
 		AlertGCPauseMs:   alertGCPauseMs,
 		AlertSampleEvery: time.Duration(alertSampleEverySec) * time.Second,
+
+		// Prompts templates overrides
+		PromptsTemplatesDir: getEnv("PROMPTS_TEMPLATES_DIR", ""),
 	}
 }
 
