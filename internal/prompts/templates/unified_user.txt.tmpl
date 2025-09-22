@@ -9,39 +9,51 @@ CONTEXT:
 {{- if .AdminHoldEmailNote}} | Hold Note: {{.AdminHoldEmailNote}}{{end}}
 - Venue Owner Submission: {{.IsVenueOwner}}
 
-VALIDATION CHECKS:
-{{- if .LocationValidation}}
-    {{.LocationValidation}}
-{{- end}}
-- Google Business Status: {{if .GoogleStatus}}{{.GoogleStatus}}{{else}}Not Available{{end}}
+VENUE CLASSIFICATION ANALYSIS:
+- HappyCow Venue Type: {{.VenueType}}
+- HappyCow Vegan Status: {{.VeganStatus}}
+- HappyCow Category: {{if .Category}}{{.Category}}{{else}}Uncategorized{{end}}
 - Google Place Types: {{.GoogleTypes}}
-- Venue Categories: Veg-only={{.VegOnly}}, Vegan={{.Vegan}}, Category={{.Category}}
+{{if .TypeMismatch}}- ⚠️ CLASSIFICATION MISMATCH DETECTED: User classification may not align with Google business types{{end}}
+
+MISMATCH HANDLING:
+{{if .TypeMismatch}}
+    {{if ge .TrustLevel 0.8}}- HIGH TRUST/OWNER: Ignore classification mismatch for scoring{{else}}- REGULAR USER: Classification mismatch requires manual review - reduce score to manual review range{{end}}
+{{end}}
 
 SCORING INSTRUCTIONS:
 IMMEDIATE MANUAL REVIEW (score=0) if:
 - No coordinates available (null/missing)
 - Admin hold notes present
+{{if and .TypeMismatch (lt .TrustLevel 0.8)}}- Classification mismatch detected for regular user submission{{end}}
 
 SCORING BREAKDOWN:
 • LEGITIMACY (35pts): Google verification, data consistency, business status
-  - Google-verified address/phone/status: 25-35pts regardless of trust level
-  - Unverified but complete data: 15-25pts
-  - Sparse/conflicting data: 0-15pts
+- Google-verified address/phone/status: 25-35pts regardless of trust level
+- Unverified but complete data: 15-25pts
+- Sparse/conflicting data: 0-15pts
+{{if and .TypeMismatch (lt .TrustLevel 0.8)}}- Deduct 10-15pts for classification mismatch{{end}}
 
 • COMPLETENESS (30pts): Count available fields
-  - Name + Address + Coordinates: 15pts (required minimum)
-  - Phone: +5pts, Website: +5pts, Hours: +5pts
+- Name + Address + Coordinates: 15pts (required minimum)
+- Phone: +5pts, Website: +5pts, Hours: +5pts
 
 • RELEVANCE (35pts): Vegan/vegetarian evidence
-  {{if ge .TrustLevel 0.8}}- HIGH TRUST: User description about vegan options counts as strong evidence{{end}}
-  - Clear vegan options mentioned: 25-35pts
-  - Vegetarian-friendly or plant-based options: 20-30pts
-  - No clear evidence but food venue in veg-sparse area: 10-15pts
-  - No vegan accommodation evidence: 0-10pts
+{{if ge .TrustLevel 0.8}}- HIGH TRUST: User description about vegan options counts as strong evidence{{end}}
+- Clear vegan options mentioned: 25-35pts
+- Vegetarian-friendly or plant-based options: 20-30pts
+- Venue type/category suggests vegan-friendliness: 15-25pts
+- No clear evidence but food venue in veg-sparse area: 10-15pts
+- No vegan accommodation evidence: 0-10pts
+
+TYPE ANALYSIS:
+- Compare HappyCow classification ({{.VenueType}}{{if .Category}}/{{.Category}}{{end}}) with Google types
+- Consider if Google business types support the claimed venue purpose
+- Factor venue category relevance to vegan/vegetarian audience
 
 ## SCORING SUMMARY:
 • AUTO-APPROVAL THRESHOLD: >= 85 points
-• MANUAL REVIEW RANGE: 50-84 points
+• MANUAL REVIEW RANGE: 50-84 points ({{if and .TypeMismatch (lt .TrustLevel 0.8)}}REQUIRED for classification mismatch{{end}})
 • REJECTION THRESHOLD: <50 points
 
 OUTPUT REQUIREMENT:

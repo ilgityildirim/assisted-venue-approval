@@ -378,6 +378,11 @@ func VenueDetailHandler(db *database.DB) http.HandlerFunc {
 			AIOutputNotes      string
 			AIOutputRestPretty string
 			AIOutputFullPretty string
+			// NEW: Classification data for templates
+			VenueTypeLabel    string
+			VeganStatusLabel  string
+			CategoryLabel     string
+			TypeMismatchAlert bool
 		}{
 			Venue:         *venue,
 			History:       history,
@@ -390,6 +395,11 @@ func VenueDetailHandler(db *database.DB) http.HandlerFunc {
 				}
 				return 30
 			}(),
+			// NEW: Add classification data from combined info
+			VenueTypeLabel:    combined.VenueType,
+			VeganStatusLabel:  combined.VeganStatus,
+			CategoryLabel:     combined.Category,
+			TypeMismatchAlert: combined.TypeMismatch,
 		}
 
 		// Prepare latest history and AI review fields

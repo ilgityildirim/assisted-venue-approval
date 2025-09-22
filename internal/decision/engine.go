@@ -316,8 +316,9 @@ func (de *DecisionEngine) detectQualityFlags(venue models.Venue, validation *mod
 			flags = append(flags, "multiple_conflicts")
 		}
 
-		// Distance check
+		// Distance check - only for regular users (this should rarely trigger since AI scorer catches it first)
 		if venue.ValidationDetails.DistanceMeters > 500 {
+			// This flag is mainly for cases that somehow bypass the AI scorer check
 			flags = append(flags, "location_mismatch")
 		}
 	}

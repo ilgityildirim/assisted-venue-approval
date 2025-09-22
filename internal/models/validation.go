@@ -1,6 +1,7 @@
 package models
 
 import (
+	"fmt"
 	"strings"
 
 	"assisted-venue-approval/internal/constants"
@@ -28,6 +29,36 @@ func ShouldRequireManualReview(v Venue) (bool, string) {
 			strings.HasPrefix(p, constants.PathAsiaSouthKorea) {
 			return true, "Asian venue - manual review required (no API calls)"
 		}
+	}
+
+	return false, ""
+}
+
+// ShouldRequireManualReviewForLocation checks if venue location mismatch requires manual review
+// based on user trust level and operational status.
+// Returns true with reason if manual review is required.
+func ShouldRequireManualReviewForLocation(v Venue, u User, trustLevel float64) (bool, string) {
+	// No validation details means no distance check needed
+	if v.ValidationDetails == nil {
+		return false, ""
+	}
+
+	// High trust users, venue owners, and venue admins can have location discrepancies
+	if trustLevel >= 0.8 || u.IsVenueAdmin || uint(v.UserID) == u.ID {
+		return false, ""
+	}
+
+	// Check if Google business is operational
+	if v.GoogleData != nil && v.GoogleData.BusinessStatus != "" {
+		status := strings.ToLower(v.GoogleData.BusinessStatus)
+		if status == "closed_permanently" || status == "closed_temporarily" {
+			return true, "Business is closed - manual review required"
+		}
+	}
+
+	// For regular users, check distance if Google business is operational
+	if v.ValidationDetails.DistanceMeters > 500 {
+		return true, fmt.Sprintf("Location mismatch detected: %.0fm from Google location", v.ValidationDetails.DistanceMeters)
 	}
 
 	return false, ""

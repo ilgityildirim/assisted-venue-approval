@@ -339,6 +339,19 @@ func (s *AIScorer) ScoreVenue(ctx context.Context, venue models.Venue, user mode
 		}, nil
 	}
 
+	// Check location mismatch BEFORE AI scoring
+	if skip, reason := models.ShouldRequireManualReviewForLocation(venue, user, trustLevel); skip {
+		pv := s.generatePromptVersion("system", "unified_user")
+		return &models.ValidationResult{
+			VenueID:        venue.ID,
+			Score:          0,
+			Status:         "manual_review",
+			Notes:          reason,
+			ScoreBreakdown: map[string]int{"location_mismatch": 0},
+			PromptVersion:  &pv,
+		}, nil
+	}
+
 	// Unified scoring regardless of Google data presence
 	t := mScoringDuration.Start()
 	result, err := s.scoreUnifiedVenue(ctx, venue, user, trustLevel)
@@ -471,18 +484,6 @@ func (s *AIScorer) buildUnifiedPrompt(venue models.Venue, user models.User, trus
 	// Centralized combination
 	ci, cerr := models.GetCombinedVenueInfo(venue, user, trustLevel)
 
-	// Location validation from combined info
-	locationValidation := ""
-	if ci.Lat == nil || ci.Lng == nil {
-		locationValidation = "CRITICAL: No valid coordinates available - MUST require manual review regardless of other scores."
-	} else {
-		src := ci.Sources["latlng"]
-		if src == "" {
-			src = ""
-		}
-		locationValidation = fmt.Sprintf("Location source: %s. Coordinates: %.6f, %.6f", src, *ci.Lat, *ci.Lng)
-	}
-
 	// Types from combined info
 	googleTypes := ci.Types
 
@@ -544,15 +545,19 @@ func (s *AIScorer) buildUnifiedPrompt(venue models.Venue, user models.User, trus
 			"AdminNote":          escapeForPrompt(adminNote),
 			"AdminHoldEmailNote": escapeForPrompt(adminHoldEmailNote),
 			"GoogleStatus":       googleStatus,
-			"GoogleTypes":        googleTypes,
+			"GoogleTypes":        strings.Join(googleTypes, ", "),
 			"VegOnly":            venue.VegOnly,
 			"Vegan":              venue.Vegan,
 			"Category":           venue.Category,
 			"TrustLevel":         trustLevel,
-			"LocationValidation": locationValidation,
 			"DataPriority":       dataPriorityNote,
 			"NewVenuePolicy":     newVenuePolicy,
 			"IsVenueOwner":       isVenueOwner,
+			// NEW: Classification fields for the updated template
+			"VenueType":       ci.VenueType,
+			"VeganStatus":     ci.VeganStatus,
+			"CategoryDisplay": ci.Category,
+			"TypeMismatch":    ci.TypeMismatch,
 		}
 		if out, err := s.pm.Render("unified_user", data); err == nil {
 			return out
@@ -732,7 +737,7 @@ func (s *AIScorer) BatchScoreVenues(ctx context.Context, venues []models.Venue, 
 				default:
 				}
 
-				result, err := s.ScoreVenue(ctx, v, models.User{})
+				result, err := s.ScoreVenue(ctx, v, models.User{ID: uint(v.UserID)})
 
 				mu.Lock()
 				if err != nil {

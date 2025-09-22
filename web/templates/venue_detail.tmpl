@@ -59,6 +59,26 @@
         
         <div class="venue-grid">
             <div>
+                {{if or .GoogleData .LatestHist (or .AIReviewNote .AIOutputNotes) }}
+                <!-- Editor Feedback -->
+                <div class="section" id="feedback-section">
+                    <h2>Editor Feedback</h2>
+                    <div id="feedback-summary" style="margin: 10px 0; color:#555;">
+                        <span id="fb-up-count">0</span> 👍 · <span id="fb-down-count">0</span> 👎
+                    </div>
+                    <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+                        <button class="btn" id="btn-thumbs-up" onclick="submitFeedback('thumbs_up')">👍 Thumbs Up</button>
+                        <button class="btn btn-danger" id="btn-thumbs-down" onclick="submitFeedback('thumbs_down')">👎 Thumbs Down</button>
+                        <input type="hidden" id="prompt_version" value="{{if .LatestHist}}{{if .LatestHist.PromptVersion}}{{.LatestHist.PromptVersion}}{{end}}{{end}}" />
+                    </div>
+                    <div style="margin-top:10px;">
+                        <label for="fb-comment" style="display:block; color:#666; margin-bottom:6px;">Optional comment</label>
+                        <textarea id="fb-comment" rows="2" style="width:100%; padding:10px; border:1px solid #ddd; border-radius:4px; resize:vertical;" placeholder="Write your feedback here; both right and / or wrong things"></textarea>
+                    </div>
+                    <div id="fb-status" style="margin-top:10px; display:none;"></div>
+                </div>
+                {{end}}
+                
                 {{if .GoogleData}}
                 <div class="section">
                     <h2>Combined Information</h2>
@@ -99,16 +119,24 @@
                         </div>
                         <div class="field">
                             <div class="field-label">Type</div>
-                            <div class="field-value">{{hcType .Venue.Venue.EntryType}}</div>
+                            <div class="field-value">{{.VenueTypeLabel}}</div>
                         </div>
                         <div class="field">
                             <div class="field-label">Vegan</div>
-                            <div class="field-value">{{hcVeganLabel .Venue.Venue.EntryType .Venue.Venue.VegOnly .Venue.Venue.Vegan}}</div>
+                            <div class="field-value">{{.VeganStatusLabel}}</div>
                         </div>
                         <div class="field">
                             <div class="field-label">Category</div>
-                            <div class="field-value">{{if (hcCategory .Venue.Venue.EntryType .Venue.Venue.Category)}}{{hcCategory .Venue.Venue.EntryType .Venue.Venue.Category}}{{else}}N/A{{end}}</div>
+                            <div class="field-value">{{if .CategoryLabel}}{{.CategoryLabel}}{{else}}N/A{{end}}</div>
                         </div>
+                        {{if .TypeMismatchAlert}}
+                            <div class="field" style="grid-column: 1 / -1;">
+                                <div class="field-label">⚠️ Classification Warning</div>
+                                <div class="field-value" style="background: #fff3cd; padding: 12px; border-radius: 5px; color: #856404; border-left: 4px solid #ffc107;">
+                                    <strong>Type Mismatch Detected:</strong> The venue's classification may not align with Google's business types. This may indicate data quality issues.
+                                </div>
+                            </div>
+                        {{end}}
                         <div class="field">
                             <div class="field-label">Location (Lat, Lng) <span style="color:#999; font-weight:normal">({{index .Combined.Sources "latlng"}})</span></div>
                             <div class="field-value">{{if and .Combined.Lat .Combined.Lng}}{{fmtFloat .Combined.Lat}} , {{fmtFloat .Combined.Lng}}{{else}}N/A{{end}}</div>
@@ -377,15 +405,15 @@
                         </div>
                         <div class="field">
                             <div class="field-label">Type</div>
-                            <div class="field-value">{{hcType .Venue.Venue.EntryType}}</div>
+                            <div class="field-value">{{.VenueTypeLabel}}</div>
                         </div>
                         <div class="field">
                             <div class="field-label">Vegan</div>
-                            <div class="field-value">{{hcVeganLabel .Venue.Venue.EntryType .Venue.Venue.VegOnly .Venue.Venue.Vegan}}</div>
+                            <div class="field-value">{{.VeganStatusLabel}}</div>
                         </div>
                         <div class="field">
                             <div class="field-label">Category</div>
-                            <div class="field-value">{{if (hcCategory .Venue.Venue.EntryType .Venue.Venue.Category)}}{{hcCategory .Venue.Venue.EntryType .Venue.Venue.Category}}{{else}}N/A{{end}}</div>
+                            <div class="field-value">{{if .CategoryLabel}}{{.CategoryLabel}}{{else}}N/A{{end}}</div>
                         </div>
                         <div class="field">
                             <div class="field-label">Date Added</div>
@@ -503,24 +531,6 @@
             </div>
             
             <!-- Sidebar removed per requirements; Similar Venues removed -->
-        </div>
-
-        <!-- Editor Feedback -->
-        <div class="section" id="feedback-section">
-            <h2>Editor Feedback</h2>
-            <div id="feedback-summary" style="margin: 10px 0; color:#555;">
-                <span id="fb-up-count">0</span> 👍 · <span id="fb-down-count">0</span> 👎
-            </div>
-            <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
-                <button class="btn" id="btn-thumbs-up" onclick="submitFeedback('thumbs_up')">👍 Thumbs Up</button>
-                <button class="btn btn-danger" id="btn-thumbs-down" onclick="submitFeedback('thumbs_down')">👎 Thumbs Down</button>
-                <input type="hidden" id="prompt_version" value="{{if .LatestHist}}{{if .LatestHist.PromptVersion}}{{.LatestHist.PromptVersion}}{{end}}{{end}}" />
-            </div>
-            <div style="margin-top:10px;">
-                <label for="fb-comment" style="display:block; color:#666; margin-bottom:6px;">Optional comment</label>
-                <textarea id="fb-comment" rows="2" style="width:100%; padding:10px; border:1px solid #ddd; border-radius:4px; resize:vertical;" placeholder="Tell us what's right or wrong"></textarea>
-            </div>
-            <div id="fb-status" style="margin-top:10px; display:none;"></div>
         </div>
     </div>
     

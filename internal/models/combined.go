@@ -26,6 +26,12 @@ type CombinedInfo struct {
 	Types       []string          `json:"types"`
 	Description string            `json:"description"`
 	Sources     map[string]string `json:"-"`
+	// New fields for venue classification
+	VenueType    string   `json:"venue_type"`
+	VeganStatus  string   `json:"vegan_status"`
+	Category     string   `json:"category"`
+	GoogleTypes  []string `json:"google_types"`
+	TypeMismatch bool     `json:"type_mismatch"`
 }
 
 // GetCombinedVenueInfo merges venue data from user submission and Google data
@@ -50,23 +56,37 @@ func GetCombinedVenueInfo(v Venue, u User, trust float64) (CombinedInfo, error) 
 	gd := v.GoogleData
 	preferUser := isHighTrust(trust) || isOwnerOrAdmin(v, u)
 
-	// Name
-	ci.Name, ci.Sources["name"] = pickStringPrefer(preferUser, strPtr(v.Name), getGoogleStringPtr(gd, func(g GooglePlaceData) string { return g.Name }))
+	// Name - always prefer user for consistency
+	ci.Name, ci.Sources["name"] = pickStringPrefer(true, strPtr(v.Name), getGoogleStringPtr(gd, func(g GooglePlaceData) string { return g.Name }))
 	if ci.Name == "" {
 		ci.Name = v.Name // fallback to raw
 		ci.Sources["name"] = "user"
 	}
 
-	// Address
+	// Address - fallback to Google for regular users
 	ci.Address, ci.Sources["address"] = pickStringPrefer(preferUser, &v.Location, getGoogleStringPtr(gd, func(g GooglePlaceData) string { return g.FormattedAddress }))
 
-	// Phone
-	ci.Phone, ci.Sources["phone"] = pickStringPrefer(preferUser, v.Phone, getGoogleStringPtr(gd, func(g GooglePlaceData) string { return g.FormattedPhone }))
+	// Phone - fallback to Google for regular users OR if user data is empty
+	userPhone := v.Phone
+	if userPhone != nil && strings.TrimSpace(*userPhone) == "" {
+		userPhone = nil // treat empty as missing
+	}
+	ci.Phone, ci.Sources["phone"] = pickStringPrefer(preferUser && userPhone != nil, userPhone, getGoogleStringPtr(gd, func(g GooglePlaceData) string { return g.FormattedPhone }))
 
-	// Website
-	ci.Website, ci.Sources["website"] = pickStringPrefer(preferUser, v.URL, getGoogleStringPtr(gd, func(g GooglePlaceData) string { return g.Website }))
+	// Website - fallback to Google if user left empty
+	userWebsite := v.URL
+	if userWebsite != nil && strings.TrimSpace(*userWebsite) == "" {
+		userWebsite = nil
+	}
+	if userWebsite == nil && gd != nil && gd.Website != "" {
+		ci.Website = gd.Website
+		ci.Sources["website"] = "google"
+	} else if userWebsite != nil {
+		ci.Website = *userWebsite
+		ci.Sources["website"] = "user"
+	}
 
-	// Hours: user stored as raw string vs google weekday text
+	// Hours - use Google data if user left empty
 	var userHours []string
 	if v.OpenHours != nil && strings.TrimSpace(*v.OpenHours) != "" {
 		userHours = []string{*v.OpenHours}
@@ -75,9 +95,16 @@ func GetCombinedVenueInfo(v Venue, u User, trust float64) (CombinedInfo, error) 
 	if gd != nil && gd.OpeningHours != nil && len(gd.OpeningHours.WeekdayText) > 0 {
 		googleHours = gd.OpeningHours.WeekdayText
 	}
-	ci.Hours, ci.Sources["hours"] = pickSlicePrefer(preferUser, userHours, googleHours)
 
-	// Coordinates with fallback for zero/missing
+	if len(userHours) == 0 && len(googleHours) > 0 {
+		ci.Hours = googleHours
+		ci.Sources["hours"] = "google"
+	} else if len(userHours) > 0 {
+		ci.Hours = userHours
+		ci.Sources["hours"] = "user"
+	}
+
+	// Coordinates - if not high trust user, use Google data
 	userLat, userLng := v.Lat, v.Lng
 	if isZeroCoord(userLat, userLng) {
 		userLat, userLng = nil, nil
@@ -90,15 +117,19 @@ func GetCombinedVenueInfo(v Venue, u User, trust float64) (CombinedInfo, error) 
 			gLat, gLng = &lat, &lng
 		}
 	}
-	ci.Lat, ci.Lng, ci.Sources["latlng"] = pickCoordsPrefer(preferUser, userLat, userLng, gLat, gLng)
 
-	// Types - from Google only for now
+	coordPreferUser := preferUser
+	if !isHighTrust(trust) && !isOwnerOrAdmin(v, u) {
+		coordPreferUser = false // Force Google for non-high-trust users
+	}
+	ci.Lat, ci.Lng, ci.Sources["latlng"] = pickCoordsPrefer(coordPreferUser, userLat, userLng, gLat, gLng)
+
+	// Store Google types separately for comparison
 	if gd != nil && len(gd.Types) > 0 {
+		ci.GoogleTypes = gd.Types
+		// Keep original behavior for Types field
 		ci.Types = gd.Types
 		ci.Sources["types"] = "google"
-	} else {
-		ci.Types = nil
-		ci.Sources["types"] = ""
 	}
 
 	// Description - user AdditionalInfo only
@@ -107,13 +138,95 @@ func GetCombinedVenueInfo(v Venue, u User, trust float64) (CombinedInfo, error) 
 		ci.Sources["description"] = "user"
 	}
 
+	// New venue classification fields
+	ci.VenueType = getVenueType(v.EntryType)
+	ci.VeganStatus = getVeganStatus(v.EntryType, v.VegOnly, v.Vegan)
+	ci.Category = getCategory(v.EntryType, v.Category)
+
+	// Check for type mismatch between user classification and Google types
+	ci.TypeMismatch = checkTypeMismatch(ci.VenueType, ci.Category, ci.GoogleTypes)
+
 	// Minimal validation: ensure we have at least some location/address signal
 	if strings.TrimSpace(ci.Address) == "" && isZeroCoord(ci.Lat, ci.Lng) {
-		// Not fatal, but indicate via error for callers that care
 		return ci, errors.New("insufficient location data: missing address and coordinates")
 	}
 
 	return ci, nil
+}
+
+// Helper functions for venue classification
+func getVenueType(entrytype int) string {
+	if entrytype == 2 {
+		return "Store"
+	}
+	return "Restaurant"
+}
+
+func getVeganStatus(entrytype, vegonly, vegan int) string {
+	if entrytype == 2 {
+		return "Store" // stores don't use vegan/non-veg labels
+	}
+	if vegonly == 1 && vegan == 1 {
+		return "Vegan"
+	}
+	if vegonly == 1 && vegan == 0 {
+		return "Vegetarian"
+	}
+	return "Vegan Options"
+}
+
+func getCategory(entrytype, category int) string {
+	if category == 0 || entrytype == 1 {
+		return ""
+	}
+	categories := map[int]string{
+		1: "Health Store", 2: "Veg Store", 3: "Bakery", 4: "B&B",
+		5: "Delivery", 6: "Catering", 7: "Organization", 8: "Farmer's Market",
+		10: "Food Truck", 11: "Market Vendor", 12: "Ice Cream", 13: "Juice Bar",
+		14: "Professional", 15: "Coffee & Tea", 16: "Spa", 99: "Other",
+	}
+	if name, ok := categories[category]; ok {
+		return name
+	}
+	return ""
+}
+
+func checkTypeMismatch(venueType, category string, googleTypes []string) bool {
+	// Simple heuristic - can be enhanced
+	if len(googleTypes) == 0 {
+		return false
+	}
+
+	// Convert our classifications to comparable Google type patterns
+	expectedTypes := map[string][]string{
+		"Restaurant":   {"restaurant", "food", "meal_takeaway", "cafe"},
+		"Store":        {"establishment", "store", "supermarket", "food", "cafe", "grocery_or_supermarket"},
+		"Bakery":       {"bakery", "food", "cafe", "establishment", "store"},
+		"Juice Bar":    {"restaurant", "food"},
+		"Coffee & Tea": {"cafe", "food", "bakery", "store", "restaurant"},
+		"Food Truck":   {"restaurant", "food", "meal_takeaway"},
+	}
+
+	searchKey := category
+	if searchKey == "" {
+		searchKey = venueType
+	}
+
+	expected, exists := expectedTypes[searchKey]
+	if !exists {
+		return false // Can't determine mismatch
+	}
+
+	// Check if any Google type matches our expectations
+	for _, gType := range googleTypes {
+		for _, exp := range expected {
+			if strings.Contains(strings.ToLower(gType), exp) {
+				return false // Match found, no mismatch
+			}
+		}
+	}
+
+	return true // No matches found, potential mismatch
 }
 
 func isHighTrust(trust float64) bool { return trust >= 0.8 }
