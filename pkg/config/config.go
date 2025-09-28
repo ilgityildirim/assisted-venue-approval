@@ -35,6 +35,9 @@ type Config struct {
 	HealthCheckPort string
 	HealthCheckPath string
 
+	// Web interface settings
+	BasePath string
+
 	// Environment & profiling/metrics
 	Env              string // development, staging, production
 	ProfilingEnabled bool
@@ -140,6 +143,9 @@ func Load() *Config {
 		// Health check settings
 		HealthCheckPort: getEnv("HEALTH_CHECK_PORT", "8081"),
 		HealthCheckPath: getEnv("HEALTH_CHECK_PATH", "/health"),
+
+		// Web interface settings
+		BasePath: getEnv("BASE_PATH", "/"),
 
 		// Environment & profiling/metrics
 		Env:              env,

@@ -10,6 +10,9 @@ import (
 // adminTemplates holds the parsed templates for the admin UI.
 var adminTemplates *template.Template
 
+// basePath holds the base path for URLs in templates
+var basePath = "/"
+
 // funcMap provides template helper functions used across templates.
 var funcMap = template.FuncMap{
 	"add": func(a, b interface{}) interface{} {
@@ -114,6 +117,9 @@ var funcMap = template.FuncMap{
 		}
 		return fmt.Sprintf("%.6f", *f)
 	},
+	"basePath": func() string {
+		return basePath
+	},
 }
 
 // LoadTemplates parses all admin templates from the provided filesystem. It should be called at application startup.
@@ -124,6 +130,11 @@ func LoadTemplates(fsys fs.FS) error {
 	}
 	adminTemplates = t
 	return nil
+}
+
+// SetBasePath sets the base path for URLs in templates.
+func SetBasePath(path string) {
+	basePath = path
 }
 
 // ExecuteTemplate renders a named template to the ResponseWriter.

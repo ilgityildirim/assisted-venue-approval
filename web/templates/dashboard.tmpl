@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <base href="{{basePath}}">
     <title>HappyCow Validation Dashboard</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -51,11 +52,11 @@
     
     <div class="container">
         <nav class="nav">
-            <a href="/" class="active">Dashboard</a>
-            <a href="/venues/pending">Pending Venues</a>
-            <a href="/venues/manual-review">Pending Manual Review</a>
-            <a href="/validation/history">History</a>
-            <a href="/analytics">Analytics</a>
+            <a href="{{basePath}}" class="active">Dashboard</a>
+            <a href="{{basePath}}venues/pending">Pending Venues</a>
+            <a href="{{basePath}}venues/manual-review">Pending Manual Review</a>
+            <a href="{{basePath}}validation/history">History</a>
+            <a href="{{basePath}}analytics">Analytics</a>
         </nav>
         
         <div class="stats-grid">

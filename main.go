@@ -87,6 +87,9 @@ func main() {
 		log.Fatal("Failed to load templates:", err)
 	}
 
+	// Set base path for templates
+	admin.SetBasePath(cfg.BasePath)
+
 	// Wire event store into engine and admin
 	if err := c.Invoke(func(pe *processor.ProcessingEngine, es events.EventStore) {
 		pe.SetEventStore(es)
