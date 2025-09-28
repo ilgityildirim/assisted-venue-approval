@@ -48,3 +48,9 @@ tasks:
     desc: Compile the Go application for EC2 instance
     cmds:
       - GOOS=linux GOARCH=amd64 go build -o ./bin/assisted-venue-approval
+  
+  deploy:
+    desc: Deploy the compiled binary to the EC2 instance
+    cmds:
+      - task: compile
+      - scp -v -P ${DEPLOY_PORT} -i ${DEPLOY_KEY} ./bin/assisted-venue-approval ${DEPLOY_USER}@${DEPLOY_HOST}:${DEPLOY_PATH}
