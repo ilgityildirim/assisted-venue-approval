@@ -182,8 +182,8 @@ func main() {
 	router.HandleFunc("/batch-operation", admin.BatchOperationHandler(db)).Methods("POST")
 	router.HandleFunc("/validation/history", admin.ValidationHistoryHandler(db)).Methods("GET")
 
-	router.PathPrefix("/static/").Handler(http.StripPrefix("/static/", http.FileServer(http.FS(Static()))))
-
+	staticPath := cfg.BasePath + "static/"
+	router.PathPrefix(staticPath).Handler(http.StripPrefix(staticPath, http.FileServer(http.FS(Static()))))
 	server := &http.Server{Addr: ":" + cfg.Port, Handler: router}
 
 	var adminServer *http.Server

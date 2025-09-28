@@ -68,7 +68,7 @@
             <form method="GET">
                 <input type="text" name="search" value="{{.Search}}" placeholder="Search venues...">
                 <button type="submit" class="btn">Filter</button>
-                <a href="/venues/pending" class="btn">Clear</a>
+                <a href="{{basePath}}venues/pending" class="btn">Clear</a>
             </form>
         </div>
         
@@ -109,7 +109,7 @@
                             {{if .AmbassadorLevel}}<span title="Ambassador">🌟</span>{{end}}
                         </td>
                         <td class="actions-column">
-                            <a href="/venues/{{.Venue.ID}}" class="btn btn-sm" onclick="event.stopPropagation()">View</a>
+                            <a href="{{basePath}}venues/{{.Venue.ID}}" class="btn btn-sm" onclick="event.stopPropagation()">View</a>
                         </td>
                     </tr>
                     <tr class="venue-details" id="details-{{.Venue.ID}}">

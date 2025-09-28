@@ -67,7 +67,7 @@
                     {{range .History}}
                     <tr>
                         <td>{{.ProcessedAt.Format "2006-01-02 15:04"}}</td>
-                        <td><a href="/venues/{{.VenueID}}">{{.VenueID}}</a></td>
+                        <td><a href="{{basePath}}venues/{{.VenueID}}">{{.VenueID}}</a></td>
                         <td>{{.VenueName}}</td>
                         <td>
                             {{if eq .ValidationStatus "approved"}}

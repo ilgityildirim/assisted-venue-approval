@@ -60,7 +60,7 @@
             <form method="GET">
                 <input type="text" name="search" value="{{.Search}}" placeholder="Search...">
                 <button type="submit" class="btn">Filter</button>
-                <a href="/venues/manual-review" class="btn">Clear</a>
+                <a href="{{basePath}}venues/manual-review" class="btn">Clear</a>
             </form>
         </div>
 
@@ -112,7 +112,7 @@
                             {{end}}
                         </td>
                         <td class="actions-column">
-                            <a href="/venues/{{.VenueWithUser.Venue.ID}}" class="btn btn-sm">View details</a>
+                            <a href="{{basePath}}venues/{{.VenueWithUser.Venue.ID}}" class="btn btn-sm">View details</a>
                             <button class="btn btn-success btn-sm" onclick="approveVenue({{.VenueWithUser.Venue.ID}})">✅</button>
                             <button class="btn btn-danger btn-sm" onclick="rejectVenue({{.VenueWithUser.Venue.ID}})">❌</button>
                         </td>

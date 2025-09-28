@@ -123,7 +123,7 @@
                     {{range .PendingVenues}}
                     <tr>
                         <td>{{.Venue.ID}}</td>
-                        <td><a href="/venues/{{.Venue.ID}}">{{.Venue.Name}}</a></td>
+                        <td><a href="{{basePath}}venues/{{.Venue.ID}}">{{.Venue.Name}}</a></td>
                         <td>{{.Venue.Location}}</td>
                         <td>{{.User.Username}}</td>
                         <td>
@@ -132,14 +132,14 @@
                             {{if .AmbassadorLevel}}🌟 Ambassador{{end}}
                         </td>
                         <td>
-                            <a href="/venues/{{.Venue.ID}}" class="btn" style="padding: 5px 10px; font-size: 12px;">View</a>
+                            <a href="{{basePath}}venues/{{.Venue.ID}}" class="btn" style="padding: 5px 10px; font-size: 12px;">View</a>
                         </td>
                     </tr>
                     {{end}}
                 </tbody>
             </table>
             {{if gt (len .PendingVenues) 50}}
-                <p><a href="/venues/pending">View all pending venues...</a></p>
+                <p><a href="{{basePath}}venues/pending">View all pending venues...</a></p>
             {{end}}
         </div>
     </div>
