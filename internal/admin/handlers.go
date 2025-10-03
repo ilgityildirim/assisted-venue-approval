@@ -387,6 +387,9 @@ func VenueDetailHandler(db *database.DB) http.HandlerFunc {
 			VeganStatusLabel  string
 			CategoryLabel     string
 			TypeMismatchAlert bool
+			// Quality suggestions fields
+			DescriptionSuggestion string
+			NameSuggestion        string
 		}{
 			Venue:          *venue,
 			History:        history,
@@ -427,18 +430,26 @@ func VenueDetailHandler(db *database.DB) http.HandlerFunc {
 			if latest.AIOutputData != nil && *latest.AIOutputData != "" {
 				var raw map[string]interface{}
 				if err := json.Unmarshal([]byte(*latest.AIOutputData), &raw); err == nil {
-					// Extract notes if available
-					if n, ok := raw["notes"].(string); ok {
-						data.AIOutputNotes = n
+					// Extract scoring notes if available
+					if scoringMap, ok := raw["scoring"].(map[string]interface{}); ok {
+						if n, ok := scoringMap["notes"].(string); ok {
+							data.AIOutputNotes = n
+						}
 					}
-					// Prepare the rest of JSON without notes
-					delete(raw, "notes")
+
+					// Extract quality suggestions
+					if qualityMap, ok := raw["quality"].(map[string]interface{}); ok {
+						if desc, ok := qualityMap["description"].(string); ok {
+							data.DescriptionSuggestion = desc
+						}
+						if name, ok := qualityMap["name"].(string); ok {
+							data.NameSuggestion = name
+						}
+					}
+
+					// Pretty print for display
 					if rb, err := json.MarshalIndent(raw, "", "  "); err == nil {
-						data.AIOutputRestPretty = string(rb)
-					}
-					// Also keep full pretty JSON
-					if fb, err := json.MarshalIndent(json.RawMessage(*latest.AIOutputData), "", "  "); err == nil {
-						data.AIOutputFullPretty = string(fb)
+						data.AIOutputFullPretty = string(rb)
 					}
 				}
 			}

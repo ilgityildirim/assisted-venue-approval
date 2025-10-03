@@ -70,6 +70,36 @@ type ValidationResult struct {
 	ScoreBreakdown map[string]int `json:"score_breakdown"`
 	AIOutputData   *string        `json:"ai_output_data,omitempty"`
 	PromptVersion  *string        `json:"prompt_version,omitempty"`
+
+	// Extended validation fields (parsed from ai_output_data JSON)
+	DescriptionReview *DescriptionReview `json:"description_review,omitempty"`
+	NameReview        *NameReview        `json:"name_review,omitempty"`
+}
+
+// DescriptionReview contains AI assessment of venue description quality and language
+type DescriptionReview struct {
+	Language             string   `json:"language"`               // "en", "zh", "ko", "ja", "th", "mixed", "other"
+	QualityScore         int      `json:"quality_score"`          // 0-10 scale
+	ConformsToGuidelines bool     `json:"conforms_to_guidelines"` // matches category guidelines
+	SuggestedDescription string   `json:"suggested_description,omitempty"`
+	Issues               []string `json:"issues,omitempty"` // ["first-person", "too-short", "promotional", etc]
+	CategoryMatch        bool     `json:"category_match"`   // description fits venue category
+}
+
+// NameReview contains AI assessment of venue name translation format
+type NameReview struct {
+	Format           string `json:"format"`           // "correct", "needs_translation", "missing_native", "incorrect"
+	TranslationType  string `json:"translation_type"` // "phonetic", "official", "literal", "none"
+	SuggestedName    string `json:"suggested_name,omitempty"`
+	OriginalDetected string `json:"original_detected,omitempty"` // "zh", "ko", "ja", "th", "none"
+	HasNativeScript  bool   `json:"has_native_script"`           // true if native characters present
+}
+
+// QualitySuggestions contains AI-suggested improvements for venue content
+// This is stored in ai_output_data JSON alongside scoring data
+type QualitySuggestions struct {
+	Description string `json:"description"`    // Always provided: rewritten to follow ALL guidelines
+	Name        string `json:"name,omitempty"` // Only if correction needed, omitted if already correct
 }
 
 type ValidationDetails struct {

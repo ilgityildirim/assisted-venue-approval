@@ -99,3 +99,25 @@ func (m *Manager) Render(name string, data any) (string, error) {
 	}
 	return sb.String(), nil
 }
+
+// LoadGuidelines loads markdown guideline files for AI prompt injection.
+// Returns description guidelines and name guidelines as strings for template rendering.
+// Non-fatal errors are logged; empty strings returned if files can't be loaded.
+func LoadGuidelines(descriptionPath, namePath string) (description string, name string, err error) {
+	// Load description guidelines
+	descBytes, err := os.ReadFile(descriptionPath)
+	if err != nil {
+		log.Printf("prompts: failed to load description guidelines from %s: %v", descriptionPath, err)
+		return "", "", errs.NewBiz("prompts.LoadGuidelines", "load description guidelines", err)
+	}
+
+	// Load name translation guidelines
+	nameBytes, err := os.ReadFile(namePath)
+	if err != nil {
+		log.Printf("prompts: failed to load name guidelines from %s: %v", namePath, err)
+		return "", "", errs.NewBiz("prompts.LoadGuidelines", "load name guidelines", err)
+	}
+
+	log.Printf("prompts: loaded guidelines - description: %d bytes, name: %d bytes", len(descBytes), len(nameBytes))
+	return string(descBytes), string(nameBytes), nil
+}

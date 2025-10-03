@@ -203,6 +203,28 @@
                 </div>
                 {{end}}
 
+                {{if and .LatestHist .DescriptionSuggestion}}
+                <div class="section">
+                    <h2>✨ AI Content Suggestions</h2>
+                    <div class="field-grid">
+                        <div class="field" style="grid-column: 1 / -1;">
+                            <div class="field-label">Suggested Description</div>
+                            <div class="field-value" style="background: #e8f5e9; padding: 15px; border-radius: 5px; border-left: 4px solid #27ae60;">
+                                {{.DescriptionSuggestion}}
+                            </div>
+                        </div>
+                        {{if .NameSuggestion}}
+                        <div class="field" style="grid-column: 1 / -1;">
+                            <div class="field-label">Suggested Name Format</div>
+                            <div class="field-value" style="background: #fff3cd; padding: 12px; border-radius: 5px; border-left: 4px solid #ffc107;">
+                                <code style="background: white; padding: 4px 8px; border-radius: 3px; font-size: 14px;">{{.NameSuggestion}}</code>
+                            </div>
+                        </div>
+                        {{end}}
+                    </div>
+                </div>
+                {{end}}
+
                 {{if .GoogleData}}
                 <div class="section">
                     <h2>Current Status</h2>

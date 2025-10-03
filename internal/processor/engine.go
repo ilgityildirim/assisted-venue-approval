@@ -2,6 +2,7 @@ package processor
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"strings"
@@ -232,13 +233,19 @@ type VenueScorer interface {
 	GetBufferPoolStats() (gets int64, puts int64, misses int64)
 }
 
+// QualityReviewer abstracts the quality suggestions used by the engine.
+type QualityReviewer interface {
+	ReviewQuality(ctx context.Context, venue models.Venue, category string) (*models.QualitySuggestions, error)
+}
+
 type ProcessingEngine struct {
-	repo           domain.Repository
-	uowFactory     domain.UnitOfWorkFactory
-	scraper        GoogleScraper
-	scorer         VenueScorer
-	decisionEngine *decision.DecisionEngine
-	eventStore     events.EventStore
+	repo            domain.Repository
+	uowFactory      domain.UnitOfWorkFactory
+	scraper         GoogleScraper
+	scorer          VenueScorer
+	qualityReviewer QualityReviewer
+	decisionEngine  *decision.DecisionEngine
+	eventStore      events.EventStore
 
 	// Configuration
 	workerCount int
@@ -303,7 +310,7 @@ func DefaultProcessingConfig() ProcessingConfig {
 }
 
 // NewProcessingEngine creates a new concurrent processing engine
-func NewProcessingEngine(repo domain.Repository, uowFactory domain.UnitOfWorkFactory, scraper GoogleScraper, scorer VenueScorer, config ProcessingConfig, decisionConfig decision.DecisionConfig) *ProcessingEngine {
+func NewProcessingEngine(repo domain.Repository, uowFactory domain.UnitOfWorkFactory, scraper GoogleScraper, scorer VenueScorer, qualityReviewer QualityReviewer, config ProcessingConfig, decisionConfig decision.DecisionConfig) *ProcessingEngine {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	// Initialize decision engine with provided configuration (env-driven)
@@ -314,6 +321,7 @@ func NewProcessingEngine(repo domain.Repository, uowFactory domain.UnitOfWorkFac
 		uowFactory:      uowFactory,
 		scraper:         scraper,
 		scorer:          scorer,
+		qualityReviewer: qualityReviewer,
 		decisionEngine:  decisionEngine,
 		workerCount:     config.WorkerCount,
 		maxRetries:      config.MaxRetries,
@@ -791,6 +799,23 @@ func (e *ProcessingEngine) processVenueWithRateLimit(ctx context.Context, venue 
 	atomic.AddInt64(&e.stats.APICallsOpenAI, 1)
 	mApiOpenAI.Inc(1)
 
+	// Run quality review (separate API call) - optional, doesn't fail scoring
+	var qualitySuggestions *models.QualitySuggestions
+	if e.qualityReviewer != nil {
+		category := getCategoryFromVenue(*enhancedVenue)
+		qualitySuggestions, err = e.qualityReviewer.ReviewQuality(ctx, *enhancedVenue, category)
+		if err != nil {
+			log.Printf("quality review failed for venue %d: %v (continuing without quality data)", venue.ID, err)
+			// Don't fail the whole process, continue without quality data
+		}
+	}
+
+	// Combine scoring + quality suggestions into ai_output_data JSON
+	if qualitySuggestions != nil {
+		combinedJSON := buildCombinedOutput(validationResult, qualitySuggestions)
+		validationResult.AIOutputData = &combinedJSON
+	}
+
 	// Use decision engine to make final decision with user context
 	decisionResult := e.decisionEngine.MakeDecision(ctx, *enhancedVenue, user, validationResult)
 
@@ -997,4 +1022,43 @@ func containsAny(s string, substrings []string) bool {
 		}
 	}
 	return false
+}
+
+// getCategoryFromVenue extracts category name from venue
+func getCategoryFromVenue(venue models.Venue) string {
+	// Map HappyCow category IDs to display names
+	categoryMap := map[int]string{
+		1: "Restaurant",
+		2: "Health Food Store",
+		3: "Bakery",
+		4: "Caterer",
+		5: "Juice Bar",
+		6: "Market/Co-op",
+		7: "Ice Cream Shop",
+		8: "Organization",
+		9: "B&B/Hotel",
+	}
+
+	if category, ok := categoryMap[venue.Category]; ok {
+		return category
+	}
+	return "Restaurant" // Default fallback
+}
+
+// buildCombinedOutput combines scoring and quality suggestions into JSON for ai_output_data field
+func buildCombinedOutput(scoring *models.ValidationResult, quality *models.QualitySuggestions) string {
+	combined := map[string]interface{}{
+		"scoring": map[string]interface{}{
+			"score":     scoring.Score,
+			"notes":     scoring.Notes,
+			"breakdown": scoring.ScoreBreakdown,
+		},
+	}
+
+	if quality != nil {
+		combined["quality"] = quality
+	}
+
+	data, _ := json.Marshal(combined)
+	return string(data)
 }

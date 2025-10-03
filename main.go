@@ -58,8 +58,13 @@ func main() {
 		return scorer.NewAIScorerWithTimeoutAndPrompts(cfg.OpenAIAPIKey, cfg.OpenAITimeout, pm)
 	}, true)
 
+	// Quality reviewer (singleton)
+	_ = c.Provide(func(cfg *config.Config, pm *prompts.Manager) *scorer.QualityReviewer {
+		return scorer.NewQualityReviewer(cfg.OpenAIAPIKey, pm, cfg.OpenAITimeout)
+	}, true)
+
 	// Processing engine (singleton)
-	_ = c.Provide(func(repo domain.Repository, uow domain.UnitOfWorkFactory, g *scraper.GoogleMapsScraper, s *scorer.AIScorer, cfg *config.Config) *processor.ProcessingEngine {
+	_ = c.Provide(func(repo domain.Repository, uow domain.UnitOfWorkFactory, g *scraper.GoogleMapsScraper, s *scorer.AIScorer, qr *scorer.QualityReviewer, cfg *config.Config) *processor.ProcessingEngine {
 		pc := processor.DefaultProcessingConfig()
 		if cfg.WorkerCount > 0 {
 			pc.WorkerCount = cfg.WorkerCount
@@ -68,7 +73,7 @@ func main() {
 		if cfg.ApprovalThreshold > 0 {
 			dc.ApprovalThreshold = cfg.ApprovalThreshold
 		}
-		return processor.NewProcessingEngine(repo, uow, g, s, pc, dc)
+		return processor.NewProcessingEngine(repo, uow, g, s, qr, pc, dc)
 	}, true)
 
 	// Event store (singleton)
