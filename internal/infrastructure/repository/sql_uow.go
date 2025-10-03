@@ -107,6 +107,9 @@ func (u *SQLUnitOfWork) GetManualReviewVenuesCtx(ctx context.Context, search str
 func (u *SQLUnitOfWork) GetVenueStatisticsCtx(ctx context.Context) (*models.VenueStats, error) {
 	return u.db.GetVenueStatisticsCtx(ctx)
 }
+func (u *SQLUnitOfWork) CountVenuesByPathCtx(ctx context.Context, path string, excludeVenueID int64) (int, error) {
+	return u.db.CountVenuesByPathCtx(ctx, path, excludeVenueID)
+}
 
 // ValidationRepository methods (writes via tx)
 func (u *SQLUnitOfWork) SaveValidationResultCtx(ctx context.Context, result *models.ValidationResult) error {

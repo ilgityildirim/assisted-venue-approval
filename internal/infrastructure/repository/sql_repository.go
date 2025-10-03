@@ -55,6 +55,10 @@ func (r *SQLRepository) UpdateVenueActiveCtx(ctx context.Context, venueID int64,
 	return r.db.UpdateVenueActiveCtx(ctx, venueID, active)
 }
 
+func (r *SQLRepository) CountVenuesByPathCtx(ctx context.Context, path string, excludeVenueID int64) (int, error) {
+	return r.db.CountVenuesByPathCtx(ctx, path, excludeVenueID)
+}
+
 // ValidationRepository methods
 func (r *SQLRepository) SaveValidationResultCtx(ctx context.Context, result *models.ValidationResult) error {
 	return r.db.SaveValidationResultCtx(ctx, result)

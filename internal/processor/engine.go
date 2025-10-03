@@ -643,6 +643,23 @@ func (e *ProcessingEngine) processJob(job *ProcessingJob) *ProcessingResult {
 		return result
 	}
 
+	// Path validation check - prevent API costs for venues with unique paths
+	if venue.Path != nil && *venue.Path != "" {
+		count, err := e.repo.CountVenuesByPathCtx(jobCtx, *venue.Path, venue.ID)
+		if err == nil && count == 0 {
+			// No other venues use this path - manual review required
+			result.ValidationResult = &models.ValidationResult{
+				VenueID:        venue.ID,
+				Score:          0,
+				Status:         "manual_review",
+				Notes:          "Manual Review: Venue Path has no other venues in it, manual review required",
+				ScoreBreakdown: map[string]int{"unique_path_flag": 0},
+			}
+			result.Success = true
+			return result
+		}
+	}
+
 	// Publish start event
 	if e.eventStore != nil {
 		uid := user.ID

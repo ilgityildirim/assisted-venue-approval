@@ -910,6 +910,20 @@ func (db *DB) GetSimilarVenuesCtx(ctx context.Context, venue models.Venue, limit
 	return venues, nil
 }
 
+// CountVenuesByPathCtx counts venues with the same path, excluding a specific venue ID
+func (db *DB) CountVenuesByPathCtx(ctx context.Context, path string, excludeVenueID int64) (int, error) {
+	ctx, cancel := db.withReadTimeout(ctx)
+	defer cancel()
+
+	query := `SELECT COUNT(*) FROM venues WHERE path = ? AND id != ?`
+	var count int
+	err := db.conn.QueryRowContext(ctx, query, path, excludeVenueID).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count venues by path: %w", err)
+	}
+	return count, nil
+}
+
 // GetValidationHistoryPaginated returns validation history with pagination
 func (db *DB) GetValidationHistoryPaginated(limit, offset int) ([]models.ValidationHistory, int, error) {
 	// Get total count
