@@ -26,19 +26,14 @@ func NewSQLEventStore(db *database.DB) (*SQLEventStore, error) {
 
 func (s *SQLEventStore) ensureSchema() error {
 	conn := s.db.Conn()
-	// Compatible with MySQL; uses JSON column type.
-	q := `CREATE TABLE IF NOT EXISTS venue_events (
-		id BIGINT AUTO_INCREMENT PRIMARY KEY,
-		venue_id BIGINT NOT NULL,
-		type VARCHAR(64) NOT NULL,
-		ts TIMESTAMP NOT NULL,
-		admin VARCHAR(255) NULL,
-		payload JSON NOT NULL,
-		INDEX idx_venue_ts (venue_id, ts),
-		INDEX idx_venue_id (venue_id)
-	)`
-	if _, err := conn.Exec(q); err != nil {
-		return fmt.Errorf("create venue_events table: %w", err)
+	// Check if table exists without trying to create it (migrations are handled externally)
+	var tableName string
+	err := conn.QueryRow("SHOW TABLES LIKE 'venue_events'").Scan(&tableName)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("venue_events table does not exist")
+		}
+		return fmt.Errorf("check venue_events table existence: %w", err)
 	}
 	return nil
 }
