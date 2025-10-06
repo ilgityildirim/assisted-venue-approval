@@ -33,6 +33,9 @@ import (
 )
 
 func main() {
+	// Set embedded config filesystem for prompts package
+	prompts.ConfigFilesFS = ConfigFiles()
+
 	// Build container and register providers
 	c := container.New()
 

@@ -13,6 +13,9 @@ import (
 	errs "assisted-venue-approval/pkg/errors"
 )
 
+// ConfigFilesFS holds the embedded config filesystem, set by main package during init
+var ConfigFilesFS fs.FS
+
 // Manager loads, compiles and renders prompt templates.
 // Templates are compiled once at startup for performance.
 // Simple and extensible: variants can be added as new files (e.g., unified_user@v2.tmpl).
@@ -102,20 +105,46 @@ func (m *Manager) Render(name string, data any) (string, error) {
 
 // LoadGuidelines loads markdown guideline files for AI prompt injection.
 // Returns description guidelines and name guidelines as strings for template rendering.
-// Non-fatal errors are logged; empty strings returned if files can't be loaded.
+// First tries to load from filesystem (allows overrides), then falls back to embedded files.
 func LoadGuidelines(descriptionPath, namePath string) (description string, name string, err error) {
 	// Load description guidelines
 	descBytes, err := os.ReadFile(descriptionPath)
 	if err != nil {
-		log.Printf("prompts: failed to load description guidelines from %s: %v", descriptionPath, err)
-		return "", "", errs.NewBiz("prompts.LoadGuidelines", "load description guidelines", err)
+		log.Printf("prompts: external description guidelines not found at %s, using embedded", descriptionPath)
+		// Fall back to embedded file
+		if ConfigFilesFS != nil {
+			descBytes, err = fs.ReadFile(ConfigFilesFS, filepath.Base(descriptionPath))
+			if err != nil {
+				log.Printf("prompts: failed to load embedded description guidelines: %v", err)
+				return "", "", errs.NewBiz("prompts.LoadGuidelines", "load description guidelines", err)
+			}
+			log.Printf("prompts: loaded embedded description guidelines")
+		} else {
+			log.Printf("prompts: no embedded config filesystem available")
+			return "", "", errs.NewBiz("prompts.LoadGuidelines", "load description guidelines", err)
+		}
+	} else {
+		log.Printf("prompts: loaded external description guidelines from %s", descriptionPath)
 	}
 
 	// Load name translation guidelines
 	nameBytes, err := os.ReadFile(namePath)
 	if err != nil {
-		log.Printf("prompts: failed to load name guidelines from %s: %v", namePath, err)
-		return "", "", errs.NewBiz("prompts.LoadGuidelines", "load name guidelines", err)
+		log.Printf("prompts: external name guidelines not found at %s, using embedded", namePath)
+		// Fall back to embedded file
+		if ConfigFilesFS != nil {
+			nameBytes, err = fs.ReadFile(ConfigFilesFS, filepath.Base(namePath))
+			if err != nil {
+				log.Printf("prompts: failed to load embedded name guidelines: %v", err)
+				return "", "", errs.NewBiz("prompts.LoadGuidelines", "load name guidelines", err)
+			}
+			log.Printf("prompts: loaded embedded name guidelines")
+		} else {
+			log.Printf("prompts: no embedded config filesystem available")
+			return "", "", errs.NewBiz("prompts.LoadGuidelines", "load name guidelines", err)
+		}
+	} else {
+		log.Printf("prompts: loaded external name guidelines from %s", namePath)
 	}
 
 	log.Printf("prompts: loaded guidelines - description: %d bytes, name: %d bytes", len(descBytes), len(nameBytes))

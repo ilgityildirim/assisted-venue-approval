@@ -11,6 +11,9 @@ var templatesFS embed.FS
 //go:embed web/static
 var staticFS embed.FS
 
+//go:embed config/*.md
+var configFS embed.FS
+
 // Templates returns a filesystem rooted at web/templates within the embedded FS.
 func Templates() fs.FS {
 	if sub, err := fs.Sub(templatesFS, "web/templates"); err == nil {
@@ -25,4 +28,12 @@ func Static() fs.FS {
 		return sub
 	}
 	return staticFS
+}
+
+// ConfigFiles returns a filesystem rooted at config within the embedded FS.
+func ConfigFiles() fs.FS {
+	if sub, err := fs.Sub(configFS, "config"); err == nil {
+		return sub
+	}
+	return configFS
 }
