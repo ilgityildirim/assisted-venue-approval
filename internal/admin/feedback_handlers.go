@@ -125,6 +125,51 @@ func APIFeedbackStatsHandler(db *database.DB) http.HandlerFunc {
 	}
 }
 
+// EditorialFeedbackListHandler handles GET /editorial-feedback
+func EditorialFeedbackListHandler(db *database.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+		if page < 1 {
+			page = 1
+		}
+		limit := 50
+		offset := (page - 1) * limit
+
+		// Get paginated feedback
+		feedbackList, total, err := db.GetAllEditorFeedbackPaginatedCtx(r.Context(), limit, offset)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Error fetching feedback: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		// Get overall stats
+		stats, err := db.GetFeedbackStatsCtx(r.Context(), nil)
+		if err != nil {
+			http.Error(w, fmt.Sprintf("Error fetching stats: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		data := struct {
+			FeedbackList []models.EditorFeedbackWithVenue
+			Stats        *models.FeedbackStats
+			Total        int
+			Page         int
+			TotalPages   int
+		}{
+			FeedbackList: feedbackList,
+			Stats:        stats,
+			Total:        total,
+			Page:         page,
+			TotalPages:   (total + limit - 1) / limit,
+		}
+
+		if err := ExecuteTemplate(w, "editorial_feedback.tmpl", data); err != nil {
+			http.Error(w, fmt.Sprintf("template error: %v", err), http.StatusInternalServerError)
+			return
+		}
+	}
+}
+
 // clientIP extracts the first client IP from common headers or RemoteAddr.
 func clientIP(r *http.Request) net.IP {
 	// X-Forwarded-For can have multiple IPs, use the first

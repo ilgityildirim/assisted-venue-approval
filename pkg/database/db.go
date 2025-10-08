@@ -2114,3 +2114,64 @@ func (db *DB) GetFeedbackStatsCtx(ctx context.Context, promptVersion *string) (*
 	}
 	return stats, nil
 }
+
+// GetAllEditorFeedbackPaginatedCtx returns all editor feedback with venue information, paginated
+func (db *DB) GetAllEditorFeedbackPaginatedCtx(ctx context.Context, limit, offset int) ([]models.EditorFeedbackWithVenue, int, error) {
+	ctx, cancel := db.withReadTimeout(ctx)
+	defer cancel()
+
+	if limit <= 0 || limit > 500 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	// Get total count
+	var total int
+	countQuery := `SELECT COUNT(*) FROM venue_validation_editor_feedback`
+	if err := db.conn.QueryRowContext(ctx, countQuery).Scan(&total); err != nil {
+		return nil, 0, errs.NewDB("database.GetAllEditorFeedbackPaginatedCtx", "count query failed", err)
+	}
+
+	// Get paginated feedback with venue information
+	query := `SELECT
+		ef.id, ef.venue_id, ef.prompt_version, ef.feedback_type, ef.comment, ef.ip, ef.created_at,
+		COALESCE(v.name, '') AS venue_name
+		FROM venue_validation_editor_feedback ef
+		LEFT JOIN venues v ON ef.venue_id = v.id
+		ORDER BY ef.created_at DESC
+		LIMIT ? OFFSET ?`
+
+	rows, err := db.conn.QueryContext(ctx, query, limit, offset)
+	if err != nil {
+		return nil, 0, errs.NewDB("database.GetAllEditorFeedbackPaginatedCtx", "query failed", err)
+	}
+	defer rows.Close()
+
+	list := make([]models.EditorFeedbackWithVenue, 0, limit)
+	for rows.Next() {
+		var efv models.EditorFeedbackWithVenue
+		var ft string
+		if err := rows.Scan(
+			&efv.ID,
+			&efv.VenueID,
+			&efv.PromptVersion,
+			&ft,
+			&efv.Comment,
+			&efv.IP,
+			&efv.CreatedAt,
+			&efv.VenueName,
+		); err != nil {
+			return nil, 0, errs.NewDB("database.GetAllEditorFeedbackPaginatedCtx", "scan failed", err)
+		}
+		efv.FeedbackType = models.FeedbackType(ft)
+		list = append(list, efv)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, 0, errs.NewDB("database.GetAllEditorFeedbackPaginatedCtx", "rows iteration failed", err)
+	}
+
+	return list, total, nil
+}

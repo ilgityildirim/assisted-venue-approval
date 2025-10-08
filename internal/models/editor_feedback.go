@@ -77,3 +77,9 @@ type DailyCount struct {
 	ThumbsUp   int    `json:"thumbs_up"`
 	ThumbsDown int    `json:"thumbs_down"`
 }
+
+// EditorFeedbackWithVenue extends EditorFeedback with venue information
+type EditorFeedbackWithVenue struct {
+	EditorFeedback
+	VenueName string `json:"venue_name"`
+}

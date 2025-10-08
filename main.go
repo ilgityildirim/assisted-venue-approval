@@ -189,6 +189,7 @@ func main() {
 
 	router.HandleFunc("/batch-operation", admin.BatchOperationHandler(db)).Methods("POST")
 	router.HandleFunc("/validation/history", admin.ValidationHistoryHandler(db)).Methods("GET")
+	router.HandleFunc("/editorial-feedback", admin.EditorialFeedbackListHandler(db)).Methods("GET")
 
 	staticPath := cfg.BasePath + "static/"
 	router.PathPrefix(staticPath).Handler(http.StripPrefix(staticPath, http.FileServer(http.FS(Static()))))
