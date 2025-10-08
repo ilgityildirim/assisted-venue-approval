@@ -40,13 +40,19 @@ func NewQualityReviewer(apiKey string, pm *prompts.Manager, timeout time.Duratio
 	}
 }
 
-func (qr *QualityReviewer) ReviewQuality(ctx context.Context, venue models.Venue, category string) (*models.QualitySuggestions, error) {
+func (qr *QualityReviewer) ReviewQuality(ctx context.Context, venue models.Venue, user models.User, category string, trustLevel float64) (*models.QualitySuggestions, error) {
 	ctx, cancel := context.WithTimeout(ctx, qr.timeout)
 	defer cancel()
 
-	// Build prompts
+	// Get combined venue info for quality review
+	combinedInfo, err := models.GetCombinedVenueInfo(venue, user, trustLevel)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get combined venue info: %w", err)
+	}
+
+	// Build prompts using combined data
 	systemPrompt := qr.buildSystemPrompt()
-	userPrompt := qr.buildUserPrompt(venue, category)
+	userPrompt := qr.buildUserPrompt(combinedInfo, category)
 
 	// Call OpenAI API (use gpt-3.5-turbo for cost efficiency)
 	resp, err := qr.client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
@@ -80,23 +86,26 @@ func (qr *QualityReviewer) buildSystemPrompt() string {
 	return fallbackQualitySystemPrompt
 }
 
-func (qr *QualityReviewer) buildUserPrompt(venue models.Venue, category string) string {
-	description := ""
-	if venue.AdditionalInfo != nil {
-		description = *venue.AdditionalInfo
+func (qr *QualityReviewer) buildUserPrompt(combinedInfo models.CombinedInfo, category string) string {
+	// Format hours for display
+	hoursStr := "Not available"
+	if len(combinedInfo.Hours) > 0 {
+		hoursStr = strings.Join(combinedInfo.Hours, "; ")
 	}
 
 	if qr.pm != nil {
 		data := map[string]any{
-			"VenueName":   venue.Name,
-			"Description": description,
+			"VenueName":   combinedInfo.Name,
+			"Description": combinedInfo.Description,
 			"Category":    category,
+			"VeganStatus": combinedInfo.VeganStatus,
+			"Hours":       hoursStr,
 		}
 		if out, err := qr.pm.Render("quality_user", data); err == nil {
 			return out
 		}
 	}
-	return fmt.Sprintf("Assess quality of:\nName: %s\nDescription: %s\nCategory: %s", venue.Name, description, category)
+	return fmt.Sprintf("Assess quality of:\nName: %s\nDescription: %s\nCategory: %s\nVeganStatus: %s", combinedInfo.Name, combinedInfo.Description, category, combinedInfo.VeganStatus)
 }
 
 func (qr *QualityReviewer) parseResponse(response string) (*models.QualitySuggestions, error) {

@@ -9,9 +9,71 @@ NAME TRANSLATION GUIDELINES:
 Your task:
 1. Rewrite the description to follow ALL guidelines perfectly
 2. Fix the name format if incorrect (omit if already correct)
+2.5. CRITICAL - DO NOT INVENT ANY INFORMATION:
+  - NEVER add information not explicitly stated in the original text
+  - Do NOT invent: features, offerings, menu items, attributes, facilities, or any other details
+  - Do NOT make assumptions or guesses about the venue
+  - Do NOT add "variety of" unless original mentions multiple items
+  - ONLY state facts clearly present in the original description
+
+2.6. REMOVE ALL SUBJECTIVE LANGUAGE (even if in original):
+  - ALWAYS remove subjective opinions and promotional words:
+    * Atmosphere: cozy, nice, charming, lovely, beautiful, inviting, welcoming, warm
+    * Service: friendly (when describing staff/service), attentive, kind, helpful
+    * Food: tasty, delicious, amazing, great, yummy, excellent, wonderful
+    * Value: affordable, cheap, expensive, great price
+  - EXCEPTION - Keep factual policy descriptors ONLY:
+    * "dog-friendly", "pet-friendly" = dogs allowed (factual policy, not opinion)
+    * "child-friendly", "cash-free", "non-smoking" = factual policies
+  - Use neutral language: "serves", "offers", "includes", "located in"
+
+2.7. HANDLING USER REVIEWS:
+  - If text uses first person ("I", "my", "we"): Extract ONLY factual information
+  - Remove ALL opinions and promotional language
+  - Examples:
+    * Input: "I found this cozy place nice, variety of tasty dishes!"
+      Facts: None specific (no actual menu items mentioned)
+      Output: Flag for manual review if insufficient factual information
+
+    * Input: "Friendly cafe with delicious vegan burgers and amazing fries"
+      Facts: serves vegan burgers and fries
+      Output: "Café serving vegan burgers and fries."
+
+    * Input: "Dog-friendly restaurant, loved their vegan tacos"
+      Facts: dogs allowed, serves vegan tacos
+      Output: "Dog-friendly restaurant serving vegan tacos."
+
+3. IMPORTANT - "SERVES MEAT" PREFIX RULES (check VeganStatus field):
+
+  ** IF VeganStatus is "Vegan": **
+  - This is a 100% vegan venue
+  - DO NOT add "Serves meat" or "Serves fish" to the description
+  - EXCEPTION: If the user's description explicitly mentions meat/fish dishes (beef, pork, chicken, lamb, bacon, fish, seafood), then ADD "Serves meat, vegan options available, " - this indicates incorrect venue classification
+
+  ** IF VeganStatus is "Vegetarian": **
+  - This is a 100% vegetarian venue (no meat)
+  - DO NOT add "Serves meat" to the description
+  - If description mentions fish dishes, use "Serves fish, vegetarian options available, "
+  - EXCEPTION: If description mentions meat dishes, ADD "Serves meat, vegetarian options available, " - this indicates incorrect classification
+
+  ** IF VeganStatus is "Vegan Options": **
+  - This venue serves meat/fish to non-vegans
+  - Description MUST start with "Serves meat, vegan options available, " OR "Serves fish, vegan options available, "
+  - Choose "Serves fish" only for pescatarian restaurants (no meat, only fish)
+
+4. HOURS NOTE (CLOSED DAYS) GENERATION:
+  - Analyze the Hours field to identify days with no operating hours
+  - Generate closed_days field ONLY if there are regular weekly closed days
+  - Format options:
+    * Single day: "Closed Mon"
+    * Two days: "Closed Sun & Mon"
+    * Consecutive range: "Closed Mon-Wed"
+  - If no closed days or hours data unavailable: omit closed_days field entirely
+  - Do NOT include specific hour ranges or temporary closures
 
 Output JSON only:
 {
   "description": "rewritten description following all guidelines",
-  "name": "corrected name format (omit this field entirely if name is already correct)"
+  "name": "corrected name format (omit this field entirely if name is already correct or your change is matching the original)",
+  "closed_days": "Closed days note (omit this field entirely if no regular closed days)"
 }

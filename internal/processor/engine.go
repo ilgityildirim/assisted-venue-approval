@@ -13,6 +13,7 @@ import (
 	"assisted-venue-approval/internal/decision"
 	"assisted-venue-approval/internal/domain"
 	"assisted-venue-approval/internal/models"
+	"assisted-venue-approval/internal/trust"
 	"assisted-venue-approval/pkg/events"
 	"assisted-venue-approval/pkg/metrics"
 )
@@ -235,7 +236,7 @@ type VenueScorer interface {
 
 // QualityReviewer abstracts the quality suggestions used by the engine.
 type QualityReviewer interface {
-	ReviewQuality(ctx context.Context, venue models.Venue, category string) (*models.QualitySuggestions, error)
+	ReviewQuality(ctx context.Context, venue models.Venue, user models.User, category string, trustLevel float64) (*models.QualitySuggestions, error)
 }
 
 type ProcessingEngine struct {
@@ -245,6 +246,7 @@ type ProcessingEngine struct {
 	scorer          VenueScorer
 	qualityReviewer QualityReviewer
 	decisionEngine  *decision.DecisionEngine
+	trustCalc       *trust.Calculator
 	eventStore      events.EventStore
 
 	// Configuration
@@ -323,6 +325,7 @@ func NewProcessingEngine(repo domain.Repository, uowFactory domain.UnitOfWorkFac
 		scorer:          scorer,
 		qualityReviewer: qualityReviewer,
 		decisionEngine:  decisionEngine,
+		trustCalc:       trust.NewDefault(),
 		workerCount:     config.WorkerCount,
 		maxRetries:      config.MaxRetries,
 		retryDelay:      config.RetryDelay,
@@ -651,20 +654,49 @@ func (e *ProcessingEngine) processJob(job *ProcessingJob) *ProcessingResult {
 		return result
 	}
 
-	// Path validation check - prevent API costs for venues with unique paths
+	// Path validation check - prevent API costs for venues with incorrect/unusual paths
 	if venue.Path != nil && *venue.Path != "" {
-		count, err := e.repo.CountVenuesByPathCtx(jobCtx, *venue.Path, venue.ID)
-		if err == nil && count == 0 {
-			// No other venues use this path - manual review required
+		path := strings.TrimSpace(*venue.Path)
+
+		// Check 1: Path must contain pipe separator for hierarchical structure (e.g., "asia|china")
+		if !strings.Contains(path, "|") {
 			result.ValidationResult = &models.ValidationResult{
 				VenueID:        venue.ID,
 				Score:          0,
 				Status:         "manual_review",
-				Notes:          "Manual Review: Venue Path has no other venues in it, manual review required",
-				ScoreBreakdown: map[string]int{"unique_path_flag": 0},
+				Notes:          "Manual Review: Venue path format is invalid (missing hierarchy separator '|')",
+				ScoreBreakdown: map[string]int{"invalid_path_format": 0},
 			}
 			result.Success = true
 			return result
+		}
+
+		// Check 2: Count other venues in this path
+		count, err := e.repo.CountVenuesByPathCtx(jobCtx, path, venue.ID)
+		if err == nil {
+			if count == 0 {
+				// No other venues use this path - likely incorrect path selection
+				result.ValidationResult = &models.ValidationResult{
+					VenueID:        venue.ID,
+					Score:          0,
+					Status:         "manual_review",
+					Notes:          "Manual Review: No other venues found in this path - likely incorrect path selection",
+					ScoreBreakdown: map[string]int{"unique_path_flag": 0},
+				}
+				result.Success = true
+				return result
+			} else if count <= 2 {
+				// Very few venues in path - uncommon, flag for review
+				result.ValidationResult = &models.ValidationResult{
+					VenueID:        venue.ID,
+					Score:          0,
+					Status:         "manual_review",
+					Notes:          fmt.Sprintf("Manual Review: Only %d venue(s) in this path - potentially incorrect path selection", count),
+					ScoreBreakdown: map[string]int{"uncommon_path_flag": 0},
+				}
+				result.Success = true
+				return result
+			}
 		}
 	}
 
@@ -799,11 +831,15 @@ func (e *ProcessingEngine) processVenueWithRateLimit(ctx context.Context, venue 
 	atomic.AddInt64(&e.stats.APICallsOpenAI, 1)
 	mApiOpenAI.Inc(1)
 
+	// Calculate trust level using trust calculator
+	assessment := e.trustCalc.Assess(user, venue.Location)
+	trustLevel := assessment.Trust
+
 	// Run quality review (separate API call) - optional, doesn't fail scoring
 	var qualitySuggestions *models.QualitySuggestions
 	if e.qualityReviewer != nil {
 		category := getCategoryFromVenue(*enhancedVenue)
-		qualitySuggestions, err = e.qualityReviewer.ReviewQuality(ctx, *enhancedVenue, category)
+		qualitySuggestions, err = e.qualityReviewer.ReviewQuality(ctx, *enhancedVenue, user, category, trustLevel)
 		if err != nil {
 			log.Printf("quality review failed for venue %d: %v (continuing without quality data)", venue.ID, err)
 			// Don't fail the whole process, continue without quality data

@@ -2,8 +2,10 @@ VENUE INFORMATION:
 Name: {{.VenueName}}
 Description: {{if .Description}}{{.Description}}{{else}}(no description provided){{end}}
 Category: {{if .Category}}{{.Category}}{{else}}Restaurant{{end}}
+VeganStatus: {{.VeganStatus}}
+Hours: {{.Hours}}
 
 Rewrite description following ALL guidelines perfectly.
 Fix name format if wrong (omit name field if already correct).
 
-Output JSON only:
+Output JSON only.

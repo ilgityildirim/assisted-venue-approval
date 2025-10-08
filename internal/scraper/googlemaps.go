@@ -793,9 +793,28 @@ func fillMissingVenueData(venue *models.Venue, googleData models.GooglePlaceData
 		venue.Phone = &googleData.FormattedPhone
 	}
 
-	// Fill missing website
+	// Fill missing website - but check if it's actually social media first
 	if venue.URL == nil && googleData.Website != "" {
-		venue.URL = &googleData.Website
+		websiteURL := strings.ToLower(strings.TrimSpace(googleData.Website))
+
+		// Check if Google website is Facebook
+		if strings.Contains(websiteURL, "facebook.com/") ||
+			strings.Contains(websiteURL, "fb.com/") ||
+			strings.Contains(websiteURL, "m.facebook.com/") {
+			// Move to FBUrl if empty
+			if venue.FBUrl == nil || *venue.FBUrl == "" {
+				venue.FBUrl = &googleData.Website
+			}
+		} else if strings.Contains(websiteURL, "instagram.com/") ||
+			strings.Contains(websiteURL, "instagr.am/") {
+			// Move to InstagramUrl if empty
+			if venue.InstagramUrl == nil || *venue.InstagramUrl == "" {
+				venue.InstagramUrl = &googleData.Website
+			}
+		} else {
+			// Regular website - fill as normal
+			venue.URL = &googleData.Website
+		}
 	}
 
 	// Use Google Places location if user didn't provide valid coordinates

@@ -390,6 +390,7 @@ func VenueDetailHandler(db *database.DB) http.HandlerFunc {
 			// Quality suggestions fields
 			DescriptionSuggestion string
 			NameSuggestion        string
+			ClosedDaysSuggestion  string
 		}{
 			Venue:          *venue,
 			History:        history,
@@ -444,6 +445,9 @@ func VenueDetailHandler(db *database.DB) http.HandlerFunc {
 						}
 						if name, ok := qualityMap["name"].(string); ok {
 							data.NameSuggestion = name
+						}
+						if closedDays, ok := qualityMap["closed_days"].(string); ok {
+							data.ClosedDaysSuggestion = closedDays
 						}
 					}
 

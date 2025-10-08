@@ -63,8 +63,9 @@ func GetCombinedVenueInfo(v Venue, u User, trust float64) (CombinedInfo, error) 
 		ci.Sources["name"] = "user"
 	}
 
-	// Address - fallback to Google for regular users
-	ci.Address, ci.Sources["address"] = pickStringPrefer(preferUser, &v.Location, getGoogleStringPtr(gd, func(g GooglePlaceData) string { return g.FormattedAddress }))
+	// Address - always prefer Google for standardized formatting (St, Ln, Rd abbreviations)
+	// User address only used as fallback when Google is unavailable
+	ci.Address, ci.Sources["address"] = pickStringPrefer(false, &v.Location, getGoogleStringPtr(gd, func(g GooglePlaceData) string { return g.FormattedAddress }))
 
 	// Phone - fallback to Google for regular users OR if user data is empty
 	userPhone := v.Phone

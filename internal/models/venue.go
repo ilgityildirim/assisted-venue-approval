@@ -98,8 +98,9 @@ type NameReview struct {
 // QualitySuggestions contains AI-suggested improvements for venue content
 // This is stored in ai_output_data JSON alongside scoring data
 type QualitySuggestions struct {
-	Description string `json:"description"`    // Always provided: rewritten to follow ALL guidelines
-	Name        string `json:"name,omitempty"` // Only if correction needed, omitted if already correct
+	Description string  `json:"description"`           // Always provided: rewritten to follow ALL guidelines
+	Name        string  `json:"name,omitempty"`        // Only if correction needed, omitted if already correct
+	ClosedDays  *string `json:"closed_days,omitempty"` // Generated from hours: "Closed Mon", "Closed Sun & Tue", "Closed Mon-Wed"
 }
 
 type ValidationDetails struct {

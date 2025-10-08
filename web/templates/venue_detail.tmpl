@@ -221,6 +221,14 @@
                             </div>
                         </div>
                         {{end}}
+                        {{if .ClosedDaysSuggestion}}
+                        <div class="field" style="grid-column: 1 / -1;">
+                            <div class="field-label">Hours Note (Closed Days)</div>
+                            <div class="field-value" style="background: #e3f2fd; padding: 12px; border-radius: 5px; border-left: 4px solid #2196f3;">
+                                <code style="background: white; padding: 4px 8px; border-radius: 3px; font-size: 14px;">{{.ClosedDaysSuggestion}}</code>
+                            </div>
+                        </div>
+                        {{end}}
                     </div>
                 </div>
                 {{end}}

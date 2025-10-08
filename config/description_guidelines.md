@@ -21,15 +21,27 @@ This document provides comprehensive guidelines for writing and validating venue
 - Avoid excessively long descriptions (> 300 characters)
 
 ### Non-Veg Restaurant Rule (CRITICAL)
-- For **non-veg restaurants and food trucks** (but NOT coffee shops):
-  - **MUST start with**: "Serves meat, "
-  - **IF any vegan / vegetarian options available should continue with**: "vegan options available, " or "vegetarian options available, " or "vegan and vegetarian options available, " depending on available options.
-  - For pescatarian add: "Serves fish, "
+- For **restaurants and food trucks that serve meat or fish**:
+    - Check BOTH the data flags (vegonly, vegan) AND the description content
+    - **If vegonly=1 and vegan=1**: Venue is 100% VEGAN - DO NOT add "Serves meat" or "Serves fish"
+    - **If vegonly=1 and vegan=0**: Venue is 100% VEGETARIAN - DO NOT add "Serves meat" (but may add "Serves fish" if pescatarian)
+    - **If vegonly=0**: Venue serves meat/fish - MUST start with one of:
+        - "Serves meat, vegan options available, "
+        - "Serves meat, vegetarian options available, "
+        - "Serves meat, vegan and vegetarian options available, "
+        - "Serves fish, vegan options available, " (for pescatarian)
+        - "Serves fish, vegetarian options available, " (for pescatarian)
+    - **IMPORTANT**: If description mentions meat/fish dishes BUT venue data flags show vegonly=1 and / or vegan=0 or vegan=1, this is inconsistent - keep the "Serves meat" or "Serves fish" prefix based on description content and flag for manual review
+    - Coffee shops and tea houses: DO NOT require "Serves meat" prefix
 - Avoid repeating the word "options" in the remaining description
 
 ### Tone and Style
 - **Neutral and factual** - not a biased endorsement or review
-- **Remove promotional language**: extremely tasty, excellent, delicious, best, the only one, highly recommended, come check us out, etc.
+- **Remove promotional language and biased words**:
+    - Quality words: great food, delicious, tasty, extremely tasty, excellent, amazing, wonderful, fantastic, superb, outstanding
+    - Value words: great price, affordable, cheap, expensive, best value
+    - Endorsements: best, the only one, highly recommended, come check us out, favorite, must-try
+    - Replace with neutral descriptions: "wide selection", "various options", "menu includes"
 - **Third person only** - change "we have" to "has", "you can choose" to "guests can choose"
 - **Avoid pronouns**: Don't use "you", "they", "we" (see Preferred Writing Style section below)
 
