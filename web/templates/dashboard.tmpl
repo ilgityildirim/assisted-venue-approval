@@ -145,9 +145,10 @@
     </div>
     
     <script>
+        const basePath = '{{basePath}}';
         // Auto-refresh stats every 30 seconds
         setInterval(function() {
-            fetch('/api/stats')
+            fetch(basePath + 'api/stats')
                 .then(response => response.json())
                 .then(data => {
                     // Update stats if needed

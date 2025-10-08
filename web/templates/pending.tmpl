@@ -134,24 +134,25 @@
         
         <div class="pagination">
             {{if gt .Page 1}}
-                <a href="?page={{add .Page -1}}&search={{.Search}}">« Previous</a>
+                <a href="{{basePath}}venues/pending?page={{add .Page -1}}&search={{.Search}}">« Previous</a>
             {{end}}
-            
+
             {{range $i := seq 1 .TotalPages}}
                 {{if eq $i $.Page}}
                     <a href="#" class="active">{{$i}}</a>
                 {{else if or (le $i 3) (ge $i (add $.TotalPages -2)) (and (ge $i (add $.Page -1)) (le $i (add $.Page 1)))}}
-                    <a href="?page={{$i}}&search={{$.Search}}">{{$i}}</a>
+                    <a href="{{basePath}}venues/pending?page={{$i}}&search={{$.Search}}">{{$i}}</a>
                 {{end}}
             {{end}}
-            
+
             {{if lt .Page .TotalPages}}
-                <a href="?page={{add .Page 1}}&search={{.Search}}">Next »</a>
+                <a href="{{basePath}}venues/pending?page={{add .Page 1}}&search={{.Search}}">Next »</a>
             {{end}}
         </div>
     </div>
     
     <script>
+        const basePath = '{{basePath}}';
         function toggleVenueDetails(venueId) {
             const details = document.getElementById('details-' + venueId);
             details.classList.toggle('expanded');
@@ -213,7 +214,7 @@
             btn.disabled = true;
             btn.textContent = '⏳ Queuing ' + ids.length + '...';
             try {
-                const resp = await fetch('/validate/batch', {
+                const resp = await fetch(basePath + 'validate/batch', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ venue_ids: ids.map(id => parseInt(id, 10)) })

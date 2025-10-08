@@ -200,13 +200,14 @@
     </div>
     
     <script>
+        const basePath = '{{basePath}}';
         // Auto-refresh every 60 seconds
         setInterval(function() {
             location.reload();
         }, 60000);
         function loadFBStats() {
             var pv = document.getElementById('pv-filter').value.trim();
-            var url = '/api/feedback/stats' + (pv ? ('?prompt_version=' + encodeURIComponent(pv)) : '');
+            var url = basePath + 'api/feedback/stats' + (pv ? ('?prompt_version=' + encodeURIComponent(pv)) : '');
             fetch(url).then(r => r.json()).then(d => {
                 document.getElementById('fb-up').textContent = d.thumbs_up || 0;
                 document.getElementById('fb-down').textContent = d.thumbs_down || 0;

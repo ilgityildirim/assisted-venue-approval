@@ -559,11 +559,12 @@
     </div>
     
     <script>
+        const basePath = '{{basePath}}';
         function startAIReview() {
             if (!confirm('Start AI-Assisted Review for this venue?')) {
                 return;
             }
-            fetch('/venues/{{.Venue.Venue.ID}}/validate', {
+            fetch(basePath + 'venues/{{.Venue.Venue.ID}}/validate', {
                 method: 'POST'
             }).then(response => {
                 if (response.ok) {
@@ -604,8 +605,8 @@
         function updateVenueStatus(action, notes) {
             const formData = new FormData();
             formData.append(action === 'approve' ? 'notes' : 'reason', notes);
-            
-            fetch('/venues/{{.Venue.Venue.ID}}/' + action, {
+
+            fetch(basePath + 'venues/{{.Venue.Venue.ID}}/' + action, {
                 method: 'POST',
                 body: formData
             })
@@ -644,7 +645,7 @@
             fd.append('feedback_type', type);
             if (pv) fd.append('prompt_version', pv);
             if (cmt) fd.append('comment', cmt);
-            const url = '/venues/{{.Venue.Venue.ID}}/feedback';
+            const url = basePath + 'venues/{{.Venue.Venue.ID}}/feedback';
             setFBStatus('Submitting...', true);
             fetch(url, {
               method: 'POST',
@@ -675,7 +676,7 @@
               });
         }
         function refreshFeedback() {
-            fetch('/venues/{{.Venue.Venue.ID}}/feedback')
+            fetch(basePath + 'venues/{{.Venue.Venue.ID}}/feedback')
               .then(r => r.ok ? r.json() : { thumbs_up: 0, thumbs_down: 0 })
               .then(d => {
                 document.getElementById('fb-up-count').textContent = d.thumbs_up || 0;
