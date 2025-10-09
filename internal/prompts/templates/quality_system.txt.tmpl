@@ -71,9 +71,50 @@ Your task:
   - If no closed days or hours data unavailable: omit closed_days field entirely
   - Do NOT include specific hour ranges or temporary closures
 
+5. PATH VALIDATION (if path provided):
+  Format: continent|country|[state/region]|city
+  - Use pipes (|) to separate hierarchy levels
+  - Use underscores (_) for spaces: "hong_kong", "new_york", "south_africa"
+  - All lowercase: "north_america|usa|california|los_angeles"
+  - Valid continents: africa, asia, europe, north_america, south_america, oceania
+
+  Examples:
+  - asia|china|hong_kong|kowloon ✓
+  - north_america|usa|california|san_francisco ✓
+  - europe|germany|berlin ✓
+  - africa|south_africa|johannesburg ✓
+
+  Validation Checks:
+  1. FORMAT: lowercase, pipes, underscores (not hyphens/spaces)
+  2. HIERARCHY: continent → country → [region] → city
+  3. GEOGRAPHIC MATCH: Path location must align with coordinates
+     - Coordinates in China → path should start with asia|china
+     - Coordinates in Brazil → path should start with south_america|brazil
+     - Coordinates in Germany → path should start with europe|germany
+  4. COMMON ERRORS: Wrong continent, wrong separators, typos
+
+  Confidence Levels:
+  - HIGH: Clear mismatch (europe|france with Tokyo coordinates)
+  - MEDIUM: Neighboring country or border ambiguity
+  - LOW: Format issues (capitals, hyphens instead of underscores)
+
+  Notes:
+  - Omit pathValidation entirely if no path provided
+  - If path is valid, set isValid=true and omit issue field
+  - If path has issues, set isValid=false and provide clear issue description
+
 Output JSON only:
 {
   "description": "rewritten description following all guidelines",
   "name": "corrected name format (omit this field entirely if name is already correct or your change is matching the original)",
-  "closed_days": "Closed days note (omit this field entirely if no regular closed days)"
+  "closed_days": "Closed days note (omit this field entirely if no regular closed days)",
+  "pathValidation": {
+    "isValid": true/false,
+    "issue": "description of problem (omit if valid)",
+    "confidence": "high/medium/low"
+  }
 }
+
+Notes:
+- Omit pathValidation field entirely if no path provided
+- Omit pathValidation.issue field if path is valid

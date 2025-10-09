@@ -100,6 +100,9 @@ func (qr *QualityReviewer) buildUserPrompt(combinedInfo models.CombinedInfo, cat
 			"Category":    category,
 			"VeganStatus": combinedInfo.VeganStatus,
 			"Hours":       hoursStr,
+			"VenuePath":   combinedInfo.Path,
+			"Lat":         combinedInfo.Lat,
+			"Lng":         combinedInfo.Lng,
 		}
 		if out, err := qr.pm.Render("quality_user", data); err == nil {
 			return out

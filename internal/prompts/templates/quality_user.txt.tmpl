@@ -4,6 +4,8 @@ Description: {{if .Description}}{{.Description}}{{else}}(no description provided
 Category: {{if .Category}}{{.Category}}{{else}}Restaurant{{end}}
 VeganStatus: {{.VeganStatus}}
 Hours: {{.Hours}}
+Path: {{if .VenuePath}}{{.VenuePath}}{{else}}(no path provided){{end}}
+Coordinates: {{if and .Lat .Lng}}{{printf "%.6f" .Lat}}, {{printf "%.6f" .Lng}}{{else}}(not available){{end}}
 
 Rewrite description following ALL guidelines perfectly.
 Fix name format if wrong (omit name field if already correct).

@@ -137,6 +137,10 @@
                             <div class="field-label">Location (Lat, Lng) <span style="color:#999; font-weight:normal">({{index .Combined.Sources "latlng"}})</span></div>
                             <div class="field-value">{{if and .Combined.Lat .Combined.Lng}}{{fmtFloat .Combined.Lat}} , {{fmtFloat .Combined.Lng}}{{else}}N/A{{end}}</div>
                         </div>
+                        <div class="field">
+                            <div class="field-label">Path <span style="color:#999; font-weight:normal">({{index .Combined.Sources "path"}})</span></div>
+                            <div class="field-value">{{if .Combined.Path}}{{.Combined.Path}}{{else}}N/A{{end}}</div>
+                        </div>
                         {{if .Combined.Types}}
                         <div class="field">
                             <div class="field-label">Types <span style="color:#999; font-weight:normal">({{index .Combined.Sources "types"}})</span></div>
@@ -193,6 +197,14 @@
                             <div class="field-label">AI Review Note</div>
                             <div class="field-value" style="white-space: pre-wrap; background:#f8f9fa; padding:12px; border-radius:6px;">{{if .LatestHist}}{{if .AIOutputNotes}}{{.AIOutputNotes}}{{else}}—{{end}}{{else}}—{{end}}</div>
                         </div>
+                        {{if .PathValidationIssue}}
+                            <div class="field" style="grid-column: 1 / -1;">
+                                <div class="field-label">⚠️ Path Validation Issue</div>
+                                <div class="field-value" style="white-space: pre-wrap; background:#fff3cd; padding:12px; border-radius:6px; border-left: 4px solid #ffc107; color: #856404;">
+                                    <strong>{{.PathValidationConfidence}} confidence:</strong> {{.PathValidationIssue}}
+                                </div>
+                            </div>
+                        {{end}}
                         <div class="field" style="grid-column: 1 / -1;">
                             <div class="field-label">AI Output (JSON)</div>
                             <pre style="background:#f8f9fa; padding:12px; border-radius:6px; overflow:auto; max-height:300px;">{{if .LatestHist}}{{if .AIOutputRestPretty}}{{.AIOutputRestPretty}}{{else if .AIOutputFullPretty}}{{.AIOutputFullPretty}}{{else}}{}{{end}}{{else}}{}{{end}}</pre>
@@ -422,6 +434,10 @@
                         <div class="field">
                             <div class="field-label">Location</div>
                             <div class="field-value">{{.Venue.Venue.Location}}</div>
+                        </div>
+                        <div class="field">
+                            <div class="field-label">Path</div>
+                            <div class="field-value">{{if .VenuePath}}{{.VenuePath}}{{else}}N/A{{end}}</div>
                         </div>
                         <div class="field">
                             <div class="field-label">Phone</div>

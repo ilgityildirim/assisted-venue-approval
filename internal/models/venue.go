@@ -98,9 +98,17 @@ type NameReview struct {
 // QualitySuggestions contains AI-suggested improvements for venue content
 // This is stored in ai_output_data JSON alongside scoring data
 type QualitySuggestions struct {
-	Description string  `json:"description"`           // Always provided: rewritten to follow ALL guidelines
-	Name        string  `json:"name,omitempty"`        // Only if correction needed, omitted if already correct
-	ClosedDays  *string `json:"closed_days,omitempty"` // Generated from hours: "Closed Mon", "Closed Sun & Tue", "Closed Mon-Wed"
+	Description    string          `json:"description"`              // Always provided: rewritten to follow ALL guidelines
+	Name           string          `json:"name,omitempty"`           // Only if correction needed, omitted if already correct
+	ClosedDays     *string         `json:"closed_days,omitempty"`    // Generated from hours: "Closed Mon", "Closed Sun & Tue", "Closed Mon-Wed"
+	PathValidation *PathValidation `json:"pathValidation,omitempty"` // Path format and geographic validation
+}
+
+// PathValidation contains AI assessment of venue path format and geographic accuracy
+type PathValidation struct {
+	IsValid    bool   `json:"isValid"`              // Whether path format is correct and location matches
+	Issue      string `json:"issue,omitempty"`      // Description of problem if invalid
+	Confidence string `json:"confidence,omitempty"` // high/medium/low confidence level
 }
 
 type ValidationDetails struct {

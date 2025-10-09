@@ -365,6 +365,19 @@ func VenueDetailHandler(db *database.DB) http.HandlerFunc {
 			log.Printf("combined info warning: %v", cerr)
 		}
 
+		// Get venue path with count of venues using that path
+		var venuePath, venuePathRaw string
+		if venue.Venue.Path != nil && *venue.Venue.Path != "" {
+			venuePathRaw = *venue.Venue.Path
+			count, err := db.CountVenuesByPathCtx(r.Context(), venuePathRaw, id)
+			if err != nil {
+				log.Printf("Error counting venues by path: %v", err)
+				venuePath = venuePathRaw // fallback to raw path
+			} else {
+				venuePath = fmt.Sprintf("%s(%d)", venuePathRaw, count+1) // +1 to include current venue
+			}
+		}
+
 		data := struct {
 			Venue              models.VenueWithUser
 			History            []models.ValidationHistory
@@ -391,6 +404,13 @@ func VenueDetailHandler(db *database.DB) http.HandlerFunc {
 			DescriptionSuggestion string
 			NameSuggestion        string
 			ClosedDaysSuggestion  string
+			// Venue path fields
+			VenuePath    string
+			VenuePathRaw string
+			// Path validation fields
+			PathValidationValid      bool
+			PathValidationIssue      string
+			PathValidationConfidence string
 		}{
 			Venue:          *venue,
 			History:        history,
@@ -405,6 +425,9 @@ func VenueDetailHandler(db *database.DB) http.HandlerFunc {
 			VeganStatusLabel:  combined.VeganStatus,
 			CategoryLabel:     combined.Category,
 			TypeMismatchAlert: combined.TypeMismatch,
+			// Add venue path data
+			VenuePath:    venuePath,
+			VenuePathRaw: venuePathRaw,
 		}
 
 		// Prepare latest history and AI review fields
@@ -448,6 +471,19 @@ func VenueDetailHandler(db *database.DB) http.HandlerFunc {
 						}
 						if closedDays, ok := qualityMap["closed_days"].(string); ok {
 							data.ClosedDaysSuggestion = closedDays
+						}
+
+						// Extract path validation from quality field
+						if pathValidation, ok := qualityMap["pathValidation"].(map[string]interface{}); ok {
+							if isValid, ok := pathValidation["isValid"].(bool); ok {
+								data.PathValidationValid = isValid
+							}
+							if issue, ok := pathValidation["issue"].(string); ok {
+								data.PathValidationIssue = issue
+							}
+							if confidence, ok := pathValidation["confidence"].(string); ok {
+								data.PathValidationConfidence = confidence
+							}
 						}
 					}
 

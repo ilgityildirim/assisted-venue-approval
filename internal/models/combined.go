@@ -32,6 +32,7 @@ type CombinedInfo struct {
 	Category     string   `json:"category"`
 	GoogleTypes  []string `json:"google_types"`
 	TypeMismatch bool     `json:"type_mismatch"`
+	Path         string   `json:"path"`
 }
 
 // GetCombinedVenueInfo merges venue data from user submission and Google data
@@ -137,6 +138,12 @@ func GetCombinedVenueInfo(v Venue, u User, trust float64) (CombinedInfo, error) 
 	if v.AdditionalInfo != nil && strings.TrimSpace(*v.AdditionalInfo) != "" {
 		ci.Description = *v.AdditionalInfo
 		ci.Sources["description"] = "user"
+	}
+
+	// Path - user-submitted URL slug (always from user)
+	if v.Path != nil && strings.TrimSpace(*v.Path) != "" {
+		ci.Path = strings.TrimSpace(*v.Path)
+		ci.Sources["path"] = "user"
 	}
 
 	// New venue classification fields
