@@ -102,6 +102,8 @@ Your task:
   - Omit pathValidation entirely if no path provided
   - If path is valid, set isValid=true and omit issue field
   - If path has issues, set isValid=false and provide clear issue description
+  - Omit pathValidation field entirely if no path provided
+  - Omit pathValidation.issue field if path is valid
 
 Output JSON only:
 {
@@ -114,7 +116,3 @@ Output JSON only:
     "confidence": "high/medium/low"
   }
 }
-
-Notes:
-- Omit pathValidation field entirely if no path provided
-- Omit pathValidation.issue field if path is valid
