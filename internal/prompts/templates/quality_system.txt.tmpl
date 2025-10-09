@@ -62,14 +62,26 @@ Your task:
   - Choose "Serves fish" only for pescatarian restaurants (no meat, only fish)
 
 4. HOURS NOTE (CLOSED DAYS) GENERATION:
-  - Analyze the Hours field to identify days with no operating hours
-  - Generate closed_days field ONLY if there are regular weekly closed days
-  - Format options:
+  CRITICAL - Read carefully to avoid false positives:
+
+  A day is CLOSED ONLY if:
+  - The day is completely MISSING from the Hours list, OR
+  - The day explicitly states "Closed" in the Hours text
+
+  A day is NOT closed if:
+  - It has ANY operating hours listed (even if hours differ from other days)
+  - Example: "Monday: 6:00 PM – 12:00 AM" means OPEN on Monday
+
+  Common error to avoid:
+  - If Hours shows: "Monday: 6:00 PM – 12:00 AM, Tuesday: 6:00 PM – 12:00 AM, Wednesday: 12:00 PM – 12:00 AM, ..."
+  - This venue is OPEN all 7 days (just different hours) → omit closed_days field entirely
+
+  Format for actual closed days:
     * Single day: "Closed Mon"
     * Two days: "Closed Sun & Mon"
     * Consecutive range: "Closed Mon-Wed"
-  - If no closed days or hours data unavailable: omit closed_days field entirely
-  - Do NOT include specific hour ranges or temporary closures
+
+  If venue is open 7 days/week OR hours unavailable: omit closed_days field entirely
 
 5. PATH VALIDATION (if path provided):
   Format: continent|country|[state/region]|city
