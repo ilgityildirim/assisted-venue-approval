@@ -3,9 +3,19 @@ Name: {{.VenueName}}
 Description: {{if .Description}}{{.Description}}{{else}}(no description provided){{end}}
 Category: {{if .Category}}{{.Category}}{{else}}Restaurant{{end}}
 VeganStatus: {{.VeganStatus}}
-Hours: {{.Hours}}
+Hours (FOR CLOSED_DAYS FIELD ONLY - NEVER IN DESCRIPTION): {{.Hours}}
 Path: {{if .VenuePath}}{{.VenuePath}}{{else}}(no path provided){{end}}
 Coordinates: {{if and .Lat .Lng}}{{printf "%.6f" .Lat}}, {{printf "%.6f" .Lng}}{{else}}(not available){{end}}
+
+⚠️ CRITICAL REMINDER BEFORE YOU START:
+The Hours field above is ONLY for generating the separate "closed_days" field in your JSON output.
+You must ABSOLUTELY NEVER include operating hours, open times, close times, or any time-related information in the description text.
+Examples of what is FORBIDDEN in description:
+- "Open daily from 7:00 AM to 5:00 PM"
+- "Opens at 9am"
+- "Available Monday through Friday"
+- "Open 24/7"
+- Any mention of opening/closing times
 
 Rewrite description following ALL guidelines perfectly.
 Fix name format if wrong (omit name field if already correct).

@@ -54,14 +54,15 @@ func (qr *QualityReviewer) ReviewQuality(ctx context.Context, venue models.Venue
 	systemPrompt := qr.buildSystemPrompt()
 	userPrompt := qr.buildUserPrompt(combinedInfo, category)
 
-	// Call OpenAI API (use gpt-3.5-turbo for cost efficiency)
+	// Call OpenAI API (use gpt-4o-mini for better instruction following)
 	resp, err := qr.client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
-		Model: openai.GPT3Dot5Turbo,
+		Model: openai.GPT4oMini,
 		Messages: []openai.ChatCompletionMessage{
 			{Role: openai.ChatMessageRoleSystem, Content: systemPrompt},
 			{Role: openai.ChatMessageRoleUser, Content: userPrompt},
 		},
-		Temperature:    0.3,
+		Temperature:    0.0,
+		MaxTokens:      500,
 		ResponseFormat: &openai.ChatCompletionResponseFormat{Type: openai.ChatCompletionResponseFormatTypeJSONObject},
 	})
 
