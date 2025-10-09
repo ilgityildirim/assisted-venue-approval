@@ -313,7 +313,7 @@ func (app *App) validateHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "Successfully queued %d venues for processing\n", len(filtered))
 }
 
-// validateSingleHandler starts AI-assisted review for a single venue
+// validateSingleHandler starts AI-assisted review for a single venue synchronously
 func (app *App) validateSingleHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	idStr, ok := vars["id"]
@@ -338,17 +338,55 @@ func (app *App) validateSingleHandler(w http.ResponseWriter, r *http.Request) {
 	// Ensure score-only mode for this run
 	app.engine.SetScoreOnly(true)
 
-	// Queue just this venue for processing
-	if err := app.engine.ProcessVenuesWithUsers([]models.VenueWithUser{*venueWithUser}); err != nil {
-		http.Error(w, fmt.Sprintf("Failed to queue venue for processing: %v", err), http.StatusInternalServerError)
+	// Create a context with 2-minute timeout for processing
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
+	defer cancel()
+
+	// Process the venue synchronously (not using job queue)
+	result, err := app.engine.ProcessSingleVenueSync(ctx, *venueWithUser)
+
+	w.Header().Set("Content-Type", "application/json")
+
+	if err != nil {
+		log.Printf("Error processing venue %d: %v", id, err)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":    "error",
+			"message":   fmt.Sprintf("Failed to process venue: %v", err),
+			"venueId":   id,
+			"completed": false,
+		})
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"status":  "queued",
-		"venueId": id,
-	})
+	if !result.Success {
+		errorMsg := "Processing failed"
+		if result.Error != nil {
+			errorMsg = result.Error.Error()
+		}
+		log.Printf("Processing failed for venue %d: %s", id, errorMsg)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":    "error",
+			"message":   errorMsg,
+			"venueId":   id,
+			"completed": false,
+		})
+		return
+	}
+
+	// Success - return detailed result
+	response := map[string]interface{}{
+		"status":    "success",
+		"message":   "AI-Assisted Review completed successfully",
+		"venueId":   id,
+		"completed": true,
+	}
+
+	if result.ValidationResult != nil {
+		response["aiStatus"] = result.ValidationResult.Status
+		response["aiScore"] = result.ValidationResult.Score
+	}
+
+	json.NewEncoder(w).Encode(response)
 }
 
 // validateBatchHandler starts AI-assisted review for selected venues

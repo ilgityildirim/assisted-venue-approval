@@ -518,6 +518,110 @@ func (e *ProcessingEngine) ProcessVenuesWithUsers(venuesWithUser []models.VenueW
 	return nil
 }
 
+// ProcessSingleVenueSync processes a single venue synchronously without using the job queue.
+// This is intended for UI-triggered single venue reviews where immediate feedback is needed.
+// For batch operations and automated tasks, use ProcessVenuesWithUsers instead.
+func (e *ProcessingEngine) ProcessSingleVenueSync(ctx context.Context, venueWithUser models.VenueWithUser) (*ProcessingResult, error) {
+	log.Printf("Starting synchronous processing for venue %d", venueWithUser.Venue.ID)
+
+	// Create a job struct for processing (not using pool since we're not queuing)
+	job := &ProcessingJob{
+		Venue:    venueWithUser.Venue,
+		User:     venueWithUser.User,
+		Priority: e.calculatePriorityWithUser(venueWithUser.Venue, venueWithUser.User),
+		Retry:    0,
+	}
+
+	// Process the job directly
+	result := e.processJob(job)
+
+	// Persist the result to database
+	if result.Success && result.ValidationResult != nil {
+		// In score-only mode, just save validation result with Google data (no venue status update)
+		if e.scoreOnly {
+			if err := e.repo.SaveValidationResultWithGoogleDataCtx(ctx, result.ValidationResult, result.GoogleData); err != nil {
+				log.Printf("Failed to save validation history for venue %d: %v", result.VenueID, err)
+				result.Error = fmt.Errorf("failed to save validation result: %w", err)
+				result.Success = false
+				return result, err
+			}
+		} else {
+			// Normal mode: update venue status atomically with validation result
+			uow, err := e.uowFactory.Begin(ctx)
+			if err != nil {
+				log.Printf("Failed to begin unit of work for venue %d: %v", result.VenueID, err)
+				result.Error = fmt.Errorf("failed to begin transaction: %w", err)
+				result.Success = false
+				return result, err
+			}
+			defer uow.Rollback()
+
+			// Update venue status
+			newStatus := map[string]int{
+				"approved":      1,
+				"rejected":      -1,
+				"manual_review": 0,
+			}[result.ValidationResult.Status]
+
+			if err := uow.UpdateVenueStatusCtx(ctx, result.VenueID, newStatus, result.ValidationResult.Notes, nil); err != nil {
+				log.Printf("Failed to update venue status for venue %d: %v", result.VenueID, err)
+				result.Error = fmt.Errorf("failed to update venue status: %w", err)
+				result.Success = false
+				return result, err
+			}
+
+			// Save validation result with Google data
+			if result.GoogleData != nil {
+				if err := uow.SaveValidationResultWithGoogleDataCtx(ctx, result.ValidationResult, result.GoogleData); err != nil {
+					log.Printf("Failed to save validation result for venue %d: %v", result.VenueID, err)
+					result.Error = fmt.Errorf("failed to save validation result: %w", err)
+					result.Success = false
+					return result, err
+				}
+			} else {
+				if err := uow.SaveValidationResultCtx(ctx, result.ValidationResult); err != nil {
+					log.Printf("Failed to save validation result for venue %d: %v", result.VenueID, err)
+					result.Error = fmt.Errorf("failed to save validation result: %w", err)
+					result.Success = false
+					return result, err
+				}
+			}
+
+			if err := uow.Commit(); err != nil {
+				log.Printf("Failed to commit transaction for venue %d: %v", result.VenueID, err)
+				result.Error = fmt.Errorf("failed to commit transaction: %w", err)
+				result.Success = false
+				return result, err
+			}
+		}
+	}
+
+	// Update stats
+	e.statsMu.Lock()
+	e.stats.CompletedJobs++
+	if result.Success {
+		e.stats.SuccessfulJobs++
+	} else {
+		e.stats.FailedJobs++
+	}
+	if result.ValidationResult != nil {
+		switch result.ValidationResult.Status {
+		case "approved":
+			e.stats.AutoApproved++
+		case "rejected":
+			e.stats.AutoRejected++
+		case "manual_review":
+			e.stats.ManualReview++
+		}
+	}
+	e.stats.LastActivity = time.Now()
+	e.statsMu.Unlock()
+
+	log.Printf("Synchronous processing completed for venue %d: success=%v", result.VenueID, result.Success)
+
+	return result, nil
+}
+
 // GetStats returns current processing statistics
 func (e *ProcessingEngine) SetScoreOnly(scoreOnly bool) {
 	e.statsMu.Lock()

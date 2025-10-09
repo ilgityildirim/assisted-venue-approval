@@ -587,26 +587,54 @@
     <script>
         const basePath = '{{basePath}}';
         function startAIReview() {
-            if (!confirm('Start AI-Assisted Review for this venue?')) {
-                return;
+            const btn = event.target;
+            const originalText = btn.textContent;
+
+            // Disable button and show loading state
+            btn.disabled = true;
+            btn.style.opacity = '0.6';
+            btn.style.cursor = 'not-allowed';
+            btn.textContent = '⏳ Processing...';
+
+            // Clear any previous error messages
+            const existingError = document.getElementById('ai-review-error');
+            if (existingError) {
+                existingError.remove();
             }
+
             fetch(basePath + 'venues/{{.Venue.Venue.ID}}/validate', {
                 method: 'POST'
             }).then(response => {
-                if (response.ok) {
-                    return response.json().catch(() => ({}));
+                if (!response.ok) {
+                    throw new Error('Request failed with status: ' + response.status);
                 }
-                throw new Error('Request failed');
+                return response.json();
             }).then(data => {
-                alert('AI-Assisted Review started for venue #' + (data.venueId || '{{.Venue.Venue.ID}}'));
+                if (data.status === 'success' && data.completed) {
+                    // Success - reload the page immediately to show fresh data
+                    window.location.reload();
+                } else if (data.status === 'error') {
+                    // Show error message inline
+                    throw new Error(data.message || 'Processing failed');
+                } else {
+                    throw new Error('Unexpected response from server');
+                }
             }).catch(err => {
                 console.error('Error starting AI review:', err);
-                alert('Failed to start AI-Assisted Review');
-            }).finally(() => {
-              setTimeout(() => {
-                window.location.reload();
-              }, 1000);
-            })
+
+                // Re-enable button
+                btn.disabled = false;
+                btn.style.opacity = '1';
+                btn.style.cursor = 'pointer';
+                btn.textContent = originalText;
+
+                // Show error message inline
+                const errorDiv = document.createElement('div');
+                errorDiv.id = 'ai-review-error';
+                errorDiv.style.cssText = 'margin-top: 10px; padding: 12px; background: #f8d7da; color: #721c24; border-radius: 5px; border-left: 4px solid #dc3545;';
+                errorDiv.textContent = '❌ ' + (err.message || 'Failed to start AI-Assisted Review');
+                btn.parentElement.appendChild(errorDiv);
+            });
         }
         function approveVenue() {
             const notes = document.getElementById('notes').value;
