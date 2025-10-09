@@ -685,18 +685,19 @@ func (e *ProcessingEngine) processJob(job *ProcessingJob) *ProcessingResult {
 				}
 				result.Success = true
 				return result
-			} else if count <= 2 {
-				// Very few venues in path - uncommon, flag for review
-				result.ValidationResult = &models.ValidationResult{
-					VenueID:        venue.ID,
-					Score:          0,
-					Status:         "manual_review",
-					Notes:          fmt.Sprintf("Manual Review: Only %d venue(s) in this path - potentially incorrect path selection", count),
-					ScoreBreakdown: map[string]int{"uncommon_path_flag": 0},
-				}
-				result.Success = true
-				return result
 			}
+			//} else if count <= 2 {
+			//	// Very few venues in path - uncommon, flag for review
+			//	result.ValidationResult = &models.ValidationResult{
+			//		VenueID:        venue.ID,
+			//		Score:          0,
+			//		Status:         "manual_review",
+			//		Notes:          fmt.Sprintf("Manual Review: Only %d venue(s) in this path - potentially incorrect path selection", count),
+			//		ScoreBreakdown: map[string]int{"uncommon_path_flag": 0},
+			//	}
+			//	result.Success = true
+			//	return result
+			//}
 		}
 	}
 

@@ -43,7 +43,46 @@ Your task:
       Facts: dogs allowed, serves vegan tacos
       Output: "Dog-friendly restaurant serving vegan tacos."
 
-3. IMPORTANT - "SERVES MEAT" PREFIX RULES (check VeganStatus field):
+2.8. CRITICAL - NUMBERS AND CAPITALIZATION:
+  ** Write numbers as words: **
+  - Convert all numbers (1-20 at minimum) to words
+  - Examples: "5" → "five", "10" → "ten", "3" → "three"
+  - Exceptions: years (2024), dates (Jan 2024), addresses (123 Main St)
+
+  ** CRITICAL - Do NOT capitalize dish names: **
+  - Dish names should be lowercase unless they contain proper nouns
+  - Examples:
+    * ✓ CORRECT: "vegan burger", "tofu scramble", "chocolate cake", "pad thai"
+    * ✗ WRONG: "Vegan Burger", "Tofu Scramble", "Chocolate Cake", "Pad Thai"
+    * ✓ CORRECT with proper nouns: "French fries", "Impossible burger", "Belgian waffles"
+  - This applies to ALL dish names, menu items, and food descriptions
+
+2.9. CRITICAL - NO HOURS IN DESCRIPTION:
+  - Do NOT include operating hours in the description text
+  - Do NOT include open days or closed days in the description text
+  - Hours and closed days are handled separately (closed_days field)
+  - Examples of what NOT to include:
+    * "Open 9am-5pm daily"
+    * "Closed on Mondays"
+    * "Open Monday to Friday"
+  - Exception: If hours are part of venue's name or a special feature, it's allowed
+
+3. IMPORTANT - "SERVES MEAT" PREFIX RULES (check VeganStatus AND Category fields):
+
+  ** CATEGORY CHECK - Apply "Serves meat" prefix ONLY to these venue types: **
+  - Restaurant (no specific category)
+  - Food Truck
+  - Delivery (food delivery services)
+  - Catering
+
+  ** DO NOT apply "Serves meat" prefix to: **
+  - Bakery
+  - Ice Cream
+  - Juice Bar
+  - Coffee & Tea (unless it's primarily a restaurant)
+  - Market Vendor
+  - Veg Store / Health Store
+  - Any other non-restaurant venue type
 
   ** IF VeganStatus is "Vegan": **
   - This is a 100% vegan venue
@@ -56,10 +95,14 @@ Your task:
   - If description mentions fish dishes, use "Serves fish, vegetarian options available, "
   - EXCEPTION: If description mentions meat dishes, ADD "Serves meat, vegetarian options available, " - this indicates incorrect classification
 
-  ** IF VeganStatus is "Vegan Options": **
+  ** IF VeganStatus is "Vegan Options" AND venue is a restaurant/food truck/delivery/catering: **
   - This venue serves meat/fish to non-vegans
   - Description MUST start with "Serves meat, vegan options available, " OR "Serves fish, vegan options available, "
   - Choose "Serves fish" only for pescatarian restaurants (no meat, only fish)
+
+  ** IF VeganStatus is "Vegan Options" BUT venue is bakery/ice cream/juice bar/coffee shop/store: **
+  - DO NOT add "Serves meat" prefix
+  - These venues may have some non-vegan items but don't "serve meat" in the restaurant sense
 
 4. HOURS NOTE (CLOSED DAYS) GENERATION:
   CRITICAL - Read carefully to avoid false positives:

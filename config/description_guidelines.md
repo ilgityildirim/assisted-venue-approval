@@ -52,6 +52,7 @@ This document provides comprehensive guidelines for writing and validating venue
   - Exact prices (subject to change)
   - Links to other websites (unless absolutely necessary)
   - Comments over a year old
+  - Operating hours, open days, or closed days (these are displayed separately)
 
 - **DO include**:
   - Relevant keywords (e.g., "candy" for candy shop, "noodles" for noodle restaurant)
@@ -62,6 +63,9 @@ This document provides comprehensive guidelines for writing and validating venue
 - **Avoid second/third person**: "you can choose" → "guests can choose"
 - **Change owner language to third person**: "we have" → "has"
 - **Use "it" instead of "they"** for restaurants/stores
+- **Write numbers as words**: Numbers should be written out as words (e.g., "5" → "five", "10" → "ten")
+  - Apply to numbers 1-20 at minimum
+  - Exceptions: years, dates, addresses
 - **Do NOT capitalize dish names** unless they contain proper nouns (e.g., French fries, Impossible burger)
 - **Do NOT use ALL CAPS** unless instructed
 - **One space between sentences** (not two)
@@ -333,6 +337,8 @@ When evaluating descriptions, AI should check for:
 | "Home-made" | "Home-made pasta" | "House-made pasta" or "Made in-house pasta" |
 | Capitalized dishes | "Vegan Burger and Fries" | "Vegan burger and fries" |
 | Proper noun OK | "french fries" | "French fries" (proper noun - France) |
+| Numbers as digits | "Offers 5 vegan dishes" | "Offers five vegan dishes" |
+| Hours in description | "Open 9am-5pm daily" | Remove (hours displayed separately) |
 
 ---
 
