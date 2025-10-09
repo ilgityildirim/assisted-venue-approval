@@ -915,7 +915,7 @@ func (db *DB) CountVenuesByPathCtx(ctx context.Context, path string, excludeVenu
 	ctx, cancel := db.withReadTimeout(ctx)
 	defer cancel()
 
-	query := `SELECT COUNT(*) FROM venues WHERE path = ? AND id != ?`
+	query := `SELECT COUNT(*) FROM venues WHERE path = ? AND id != ? AND active=1`
 	var count int
 	err := db.conn.QueryRowContext(ctx, query, path, excludeVenueID).Scan(&count)
 	if err != nil {
