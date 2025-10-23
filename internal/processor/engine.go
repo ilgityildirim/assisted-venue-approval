@@ -254,6 +254,10 @@ type ProcessingEngine struct {
 	maxRetries  int
 	retryDelay  time.Duration
 	jobTimeout  time.Duration
+	// AVA qualification configuration
+	avaConfigMu         sync.RWMutex
+	minUserPointsForAVA int
+	onlyAmbassadors     bool
 
 	// Mode flags
 	scoreOnly bool
@@ -294,6 +298,9 @@ type ProcessingConfig struct {
 	OpenAIRPS   int // OpenAI API requests per second
 	OpenAIBurst int // OpenAI API burst capacity
 	QueueSize   int // Job queue buffer size
+	// Automatic Venue Approval (AVA) qualification requirements
+	MinUserPointsForAVA int  // Minimum ambassador points required for automated reviews (0 = disabled)
+	OnlyAmbassadors     bool // If true, only ambassadors can submit for automated review
 }
 
 // DefaultProcessingConfig returns a sensible default configuration optimized for cost efficiency
@@ -308,6 +315,9 @@ func DefaultProcessingConfig() ProcessingConfig {
 		OpenAIRPS:   8,                // Optimized rate for OpenAI API (cost-conscious)
 		OpenAIBurst: 15,               // Controlled burst to manage costs
 		QueueSize:   2000,             // Larger queue for batch processing
+		// AVA qualification defaults - cost-optimized
+		MinUserPointsForAVA: 150,
+		OnlyAmbassadors:     false,
 	}
 }
 
@@ -319,25 +329,27 @@ func NewProcessingEngine(repo domain.Repository, uowFactory domain.UnitOfWorkFac
 	decisionEngine := decision.NewDecisionEngine(decisionConfig)
 
 	engine := &ProcessingEngine{
-		repo:            repo,
-		uowFactory:      uowFactory,
-		scraper:         scraper,
-		scorer:          scorer,
-		qualityReviewer: qualityReviewer,
-		decisionEngine:  decisionEngine,
-		trustCalc:       trust.NewDefault(),
-		workerCount:     config.WorkerCount,
-		maxRetries:      config.MaxRetries,
-		retryDelay:      config.RetryDelay,
-		jobTimeout:      config.JobTimeout,
-		googleRateLimit: NewRateLimiter(config.GoogleRPS, config.GoogleBurst),
-		openAIRateLimit: NewRateLimiter(config.OpenAIRPS, config.OpenAIBurst),
-		jobQueue:        make(chan *ProcessingJob, config.QueueSize),
-		resultChan:      make(chan *ProcessingResult, config.QueueSize),
-		ctx:             ctx,
-		cancel:          cancel,
-		shutdown:        make(chan struct{}),
-		scoreOnly:       false,
+		repo:                repo,
+		uowFactory:          uowFactory,
+		scraper:             scraper,
+		scorer:              scorer,
+		qualityReviewer:     qualityReviewer,
+		decisionEngine:      decisionEngine,
+		trustCalc:           trust.NewDefault(),
+		workerCount:         config.WorkerCount,
+		maxRetries:          config.MaxRetries,
+		retryDelay:          config.RetryDelay,
+		jobTimeout:          config.JobTimeout,
+		minUserPointsForAVA: config.MinUserPointsForAVA,
+		onlyAmbassadors:     config.OnlyAmbassadors,
+		googleRateLimit:     NewRateLimiter(config.GoogleRPS, config.GoogleBurst),
+		openAIRateLimit:     NewRateLimiter(config.OpenAIRPS, config.OpenAIBurst),
+		jobQueue:            make(chan *ProcessingJob, config.QueueSize),
+		resultChan:          make(chan *ProcessingResult, config.QueueSize),
+		ctx:                 ctx,
+		cancel:              cancel,
+		shutdown:            make(chan struct{}),
+		scoreOnly:           false,
 		stats: ProcessingStats{
 			StartTime:    time.Now(),
 			LastActivity: time.Now(),
@@ -349,7 +361,7 @@ func NewProcessingEngine(repo domain.Repository, uowFactory domain.UnitOfWorkFac
 }
 
 // ApplyConfig applies runtime-configurable changes safely.
-// Currently supports resizing worker pool.
+// Supports resizing worker pool and updating AVA qualification settings.
 func (e *ProcessingEngine) ApplyConfig(newWorkers int, approvalThreshold int) {
 	// Resize workers if needed
 	if newWorkers > 0 {
@@ -363,6 +375,17 @@ func (e *ProcessingEngine) ApplyConfig(newWorkers int, approvalThreshold int) {
 			a.ApplyConfig(approvalThreshold)
 		}
 	}
+}
+
+// ApplyAVAConfig updates AVA qualification requirements at runtime with thread safety.
+func (e *ProcessingEngine) ApplyAVAConfig(minUserPoints int, onlyAmbassadors bool) {
+	e.avaConfigMu.Lock()
+	defer e.avaConfigMu.Unlock()
+
+	e.minUserPointsForAVA = minUserPoints
+	e.onlyAmbassadors = onlyAmbassadors
+	log.Printf("AVA config updated: MinUserPointsForAVA=%d, OnlyAmbassadors=%v",
+		minUserPoints, onlyAmbassadors)
 }
 
 func (e *ProcessingEngine) resizeWorkers(target int) {
@@ -686,6 +709,35 @@ func (e *ProcessingEngine) calculatePriorityWithUser(venue models.Venue, user mo
 	return priority
 }
 
+// requiresManualReviewEarly checks if venue should bypass automated review for cost optimization
+func (e *ProcessingEngine) requiresManualReviewEarly(venue *models.Venue, user *models.User, trustAssessment *trust.Assessment) (bool, EarlyExitReason) {
+	// Thread-safe read of AVA configuration
+	e.avaConfigMu.RLock()
+	minUserPointsForAVA := e.minUserPointsForAVA
+	onlyAmbassadors := e.onlyAmbassadors
+	e.avaConfigMu.RUnlock()
+
+	// Run all early exit checks using helper functions
+	if skip, reason := checkMinimumPoints(user, minUserPointsForAVA); skip {
+		return true, reason
+	}
+
+	if skip, reason := checkTrustLevel(trustAssessment); skip {
+		return true, reason
+	}
+
+	if skip, reason := checkVenueType(venue); skip {
+		return true, reason
+	}
+
+	if skip, reason := checkAmbassadorRequirement(user, onlyAmbassadors); skip {
+		return true, reason
+	}
+
+	// All checks passed - venue can proceed to API calls
+	return false, EarlyExitReason{}
+}
+
 // worker processes jobs from the queue
 func (e *ProcessingEngine) worker(id int, stopCh <-chan struct{}) {
 	defer e.wg.Done()
@@ -740,7 +792,10 @@ func (e *ProcessingEngine) processJob(job *ProcessingJob) *ProcessingResult {
 	result.Retries = job.Retry
 
 	// Centralized manual review checks (admin notes, region restrictions)
+	// This check runs early to prevent API costs for venues with admin notes or Asian region restrictions
 	if skip, reason := models.ShouldRequireManualReview(job.Venue); skip {
+		log.Printf("[Early Exit] Venue %d: %s", venue.ID, reason)
+
 		key := "manual_review"
 		if strings.Contains(reason, "Admin") {
 			key = "admin_note_block"
@@ -755,6 +810,21 @@ func (e *ProcessingEngine) processJob(job *ProcessingJob) *ProcessingResult {
 			ScoreBreakdown: map[string]int{key: 0},
 		}
 		result.Success = true
+
+		// Publish early exit event for consistency
+		if e.eventStore != nil {
+			if err := e.eventStore.Append(jobCtx, events.VenueRequiresManualReview{
+				Base:   events.Base{Ts: time.Now(), VID: venue.ID},
+				Reason: reason,
+			}); err != nil {
+				log.Printf("[Warning] Failed to append manual review event for venue %d: %v", venue.ID, err)
+			}
+		}
+
+		// Update metrics
+		atomic.AddInt64(&e.stats.ManualReview, 1)
+		mDecisionManual.Inc(1)
+
 		return result
 	}
 
@@ -805,14 +875,60 @@ func (e *ProcessingEngine) processJob(job *ProcessingJob) *ProcessingResult {
 		}
 	}
 
+	// Calculate trust assessment early (before API calls) for early exit logic
+	// User might be empty for some venues, handle gracefully
+	var trustAssessment *trust.Assessment
+	if user.ID > 0 {
+		assessment := e.trustCalc.Assess(user, venue.Location)
+		trustAssessment = &assessment
+	} else {
+		// No user data available - venue will likely require manual review
+		log.Printf("[Warning] Venue %d has no associated user data", venue.ID)
+	}
+
+	// Early exit check - bypass API calls if venue should go directly to manual review
+	// This prevents unnecessary costs for venues that don't meet automated review criteria
+	requiresEarlyReview, exitReason := e.requiresManualReviewEarly(&venue, &user, trustAssessment)
+	if requiresEarlyReview {
+		log.Printf("[Early Exit] Venue %d bypassing API calls: %s", venue.ID, exitReason.String())
+
+		// Create validation result for manual review
+		result.ValidationResult = &models.ValidationResult{
+			VenueID:        venue.ID,
+			Score:          earlyExitManualReviewScore,
+			Status:         "manual_review",
+			Notes:          exitReason.String(),
+			ScoreBreakdown: map[string]int{exitReason.Code: 0},
+		}
+		result.Success = true
+
+		// Publish early exit event
+		if e.eventStore != nil {
+			if err := e.eventStore.Append(jobCtx, events.VenueRequiresManualReview{
+				Base:   events.Base{Ts: time.Now(), VID: venue.ID},
+				Reason: exitReason.String(),
+			}); err != nil {
+				log.Printf("[Warning] Failed to append early exit event for venue %d: %v", venue.ID, err)
+			}
+		}
+
+		// Update metrics
+		atomic.AddInt64(&e.stats.ManualReview, 1)
+		mDecisionManual.Inc(1)
+
+		return result
+	}
+
 	// Publish start event
 	if e.eventStore != nil {
 		uid := user.ID
-		_ = e.eventStore.Append(jobCtx, events.VenueValidationStarted{
+		if err := e.eventStore.Append(jobCtx, events.VenueValidationStarted{
 			Base:      events.Base{Ts: time.Now(), VID: venue.ID},
 			UserID:    &uid,
 			Triggered: "system",
-		})
+		}); err != nil {
+			log.Printf("[Warning] Failed to append validation started event for venue %d: %v", venue.ID, err)
+		}
 	}
 
 	// Process venue with exponential backoff retry logic
@@ -836,7 +952,7 @@ func (e *ProcessingEngine) processJob(job *ProcessingJob) *ProcessingResult {
 		}
 
 		// Process the venue
-		validationResult, googleData, err = e.processVenueWithRateLimit(jobCtx, venue, user)
+		validationResult, googleData, err = e.processVenueWithRateLimit(jobCtx, venue, user, trustAssessment)
 		if err == nil {
 			result.Success = true
 			result.ValidationResult = validationResult
@@ -849,7 +965,7 @@ func (e *ProcessingEngine) processJob(job *ProcessingJob) *ProcessingResult {
 					gdFound = true
 					gpID = googleData.PlaceID
 				}
-				_ = e.eventStore.Append(jobCtx, events.VenueValidationCompleted{
+				if err := e.eventStore.Append(jobCtx, events.VenueValidationCompleted{
 					Base:           events.Base{Ts: time.Now(), VID: venue.ID},
 					Score:          validationResult.Score,
 					Status:         map[string]int{"approved": 1, "rejected": -1, "manual_review": 0}[validationResult.Status],
@@ -858,7 +974,9 @@ func (e *ProcessingEngine) processJob(job *ProcessingJob) *ProcessingResult {
 					GoogleFound:    gdFound,
 					GooglePlaceID:  gpID,
 					Conflicts:      nil,
-				})
+				}); err != nil {
+					log.Printf("[Warning] Failed to append validation completed event for venue %d: %v", venue.ID, err)
+				}
 			}
 			break
 		}
@@ -884,11 +1002,14 @@ func (e *ProcessingEngine) processJob(job *ProcessingJob) *ProcessingResult {
 }
 
 // processVenueWithRateLimit processes a venue with proper rate limiting and user context
-func (e *ProcessingEngine) processVenueWithRateLimit(ctx context.Context, venue models.Venue, user models.User) (*models.ValidationResult, *models.GooglePlaceData, error) {
+func (e *ProcessingEngine) processVenueWithRateLimit(ctx context.Context, venue models.Venue, user models.User, trustAssessment *trust.Assessment) (*models.ValidationResult, *models.GooglePlaceData, error) {
 	// Rate limit Google Maps API call
 	if err := e.googleRateLimit.Wait(ctx); err != nil {
 		return nil, nil, fmt.Errorf("google rate limit wait cancelled: %w", err)
 	}
+
+	// Track original coordinates for audit trail
+	originalLat, originalLng := venue.Lat, venue.Lng
 
 	// Enhance venue with Google Maps data
 	enhancedVenue, err := e.scraper.EnhanceVenueWithValidation(ctx, venue)
@@ -904,6 +1025,15 @@ func (e *ProcessingEngine) processVenueWithRateLimit(ctx context.Context, venue 
 	var gData *models.GooglePlaceData
 	if enhancedVenue.GoogleData != nil {
 		gData = enhancedVenue.GoogleData
+	}
+
+	// Track coordinate changes for audit purposes
+	var coordinateNote string
+	if originalLat != nil && originalLng != nil && enhancedVenue.Lat != nil && enhancedVenue.Lng != nil {
+		if *originalLat != *enhancedVenue.Lat || *originalLng != *enhancedVenue.Lng {
+			coordinateNote = fmt.Sprintf(" | Coordinates updated from (%.6f,%.6f) to (%.6f,%.6f)",
+				*originalLat, *originalLng, *enhancedVenue.Lat, *enhancedVenue.Lng)
+		}
 	}
 
 	// If no location information available after Google enrichment, require manual review
@@ -936,9 +1066,15 @@ func (e *ProcessingEngine) processVenueWithRateLimit(ctx context.Context, venue 
 	atomic.AddInt64(&e.stats.APICallsOpenAI, 1)
 	mApiOpenAI.Inc(1)
 
-	// Calculate trust level using trust calculator
-	assessment := e.trustCalc.Assess(user, venue.Location)
-	trustLevel := assessment.Trust
+	// Use trust assessment calculated earlier (or calculate if not provided)
+	var trustLevel float64
+	if trustAssessment != nil {
+		trustLevel = trustAssessment.Trust
+	} else {
+		// Fallback: calculate trust if not provided (shouldn't happen in normal flow)
+		assessment := e.trustCalc.Assess(user, venue.Location)
+		trustLevel = assessment.Trust
+	}
 
 	// Run quality review (separate API call) - optional, doesn't fail scoring
 	var qualitySuggestions *models.QualitySuggestions
@@ -963,6 +1099,10 @@ func (e *ProcessingEngine) processVenueWithRateLimit(ctx context.Context, venue 
 	// Override validation result with decision engine output
 	validationResult.Status = decisionResult.FinalStatus
 	validationResult.Notes = decisionResult.DecisionReason
+	// Append coordinate change audit trail if applicable
+	if coordinateNote != "" {
+		validationResult.Notes += coordinateNote
+	}
 	validationResult.Score = decisionResult.FinalScore
 
 	// Add decision metadata to score breakdown

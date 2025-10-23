@@ -1,6 +1,7 @@
 package config
 
 import (
+	"log"
 	"os"
 	"strconv"
 	"strings"
@@ -65,6 +66,12 @@ type Config struct {
 	PromptStableOnly            bool
 	PromptWeights               string
 	ConfigReloadIntervalSeconds int
+
+	// Automatic Venue Approval (AVA) qualification requirements
+	// MinUserPointsForAVA: Minimum ambassador points required for automated reviews (0 = disabled)
+	MinUserPointsForAVA int
+	// OnlyAmbassadors: If true, only ambassador submissions are eligible for automated review
+	OnlyAmbassadors bool
 }
 
 func Load() *Config {
@@ -119,7 +126,17 @@ func Load() *Config {
 	// Config reload
 	reloadIntSec, _ := strconv.Atoi(getEnv("CONFIG_RELOAD_INTERVAL_SECONDS", "2"))
 
-	return &Config{
+	// AVA qualification requirements
+	minUserPoints, _ := strconv.Atoi(getEnv("MIN_USER_POINTS_FOR_AVA", "150"))
+	onlyAmbassadors, _ := strconv.ParseBool(getEnv("ONLY_AMBASSADORS", "false"))
+
+	// Validate AVA configuration
+	if minUserPoints < 0 {
+		log.Printf("[Warning] MIN_USER_POINTS_FOR_AVA is negative (%d), using 0 to disable check", minUserPoints)
+		minUserPoints = 0
+	}
+
+	cfg := &Config{
 		DatabaseURL:       getEnv("DATABASE_URL", ""),
 		GoogleMapsAPIKey:  getEnv("GOOGLE_MAPS_API_KEY", ""),
 		OpenAIAPIKey:      getEnv("OPENAI_API_KEY", ""),
@@ -172,7 +189,16 @@ func Load() *Config {
 		PromptStableOnly:            promptStableOnly,
 		PromptWeights:               promptWeights,
 		ConfigReloadIntervalSeconds: reloadIntSec,
+
+		// AVA qualification requirements
+		MinUserPointsForAVA: minUserPoints,
+		OnlyAmbassadors:     onlyAmbassadors,
 	}
+
+	log.Printf("Config: MinUserPointsForAVA=%d, OnlyAmbassadors=%v",
+		cfg.MinUserPointsForAVA, cfg.OnlyAmbassadors)
+
+	return cfg
 }
 
 func getEnv(key, defaultValue string) string {

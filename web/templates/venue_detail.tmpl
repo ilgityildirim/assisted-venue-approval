@@ -639,20 +639,18 @@
         function approveVenue() {
             const notes = document.getElementById('notes').value;
             if (confirm('Approve this venue?')) {
-              alert('venue approvals are temporarily disabled.');
-                //updateVenueStatus('approve', notes || 'Manual approval');
+                updateVenueStatus('approve', notes || 'Manual approval');
             }
         }
-        
+
         function rejectVenue() {
             const notes = document.getElementById('notes').value;
             if (!notes.trim()) {
-                alert('Please provide a reason for rejection.');
+                alert('Rejection reason is required.');
                 return;
             }
             if (confirm('Reject this venue?')) {
-              alert('venue rejections are temporarily disabled.');
-                //updateVenueStatus('reject', notes);
+                updateVenueStatus('reject', notes);
             }
         }
         

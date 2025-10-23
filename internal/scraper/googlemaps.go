@@ -817,14 +817,11 @@ func fillMissingVenueData(venue *models.Venue, googleData models.GooglePlaceData
 		}
 	}
 
-	// Use Google Places location if user didn't provide valid coordinates
-	if venue.Lat == nil || venue.Lng == nil ||
-		(*venue.Lat == 0.0 && *venue.Lng == 0.0) {
-		lat := googleData.Geometry.Location.Lat
-		lng := googleData.Geometry.Location.Lng
-		venue.Lat = &lat
-		venue.Lng = &lng
-	}
+	// Always override with Google Places coordinates - Google data is authoritative
+	lat := googleData.Geometry.Location.Lat
+	lng := googleData.Geometry.Location.Lng
+	venue.Lat = &lat
+	venue.Lng = &lng
 
 	// Fill missing zipcode
 	if venue.Zipcode == nil {

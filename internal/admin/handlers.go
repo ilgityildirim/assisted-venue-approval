@@ -262,12 +262,15 @@ func RejectVenueHandler(db *database.DB) http.HandlerFunc {
 
 		// Get reviewer info from session/auth (simplified)
 		reviewer := "admin" // This should come from authentication
-		reason := r.FormValue("reason")
+		reason := strings.TrimSpace(r.FormValue("reason"))
+
+		// Rejection reason is required
 		if reason == "" {
-			reason = "Manually rejected by " + reviewer
-		} else {
-			reason = fmt.Sprintf("Manually rejected by %s: %s", reviewer, reason)
+			http.Error(w, "Rejection reason is required", http.StatusBadRequest)
+			return
 		}
+
+		reason = fmt.Sprintf("Manually rejected by %s: %s", reviewer, reason)
 
 		// Create validation result for audit trail
 		validationResult := &models.ValidationResult{
@@ -517,6 +520,12 @@ func BatchOperationHandler(db *database.DB) http.HandlerFunc {
 
 		if action == "" || venueIDs == "" {
 			http.Error(w, "Missing required parameters", http.StatusBadRequest)
+			return
+		}
+
+		// Validate rejection reason is provided
+		if action == "reject" && strings.TrimSpace(reason) == "" {
+			http.Error(w, "Rejection reason is required", http.StatusBadRequest)
 			return
 		}
 

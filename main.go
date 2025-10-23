@@ -72,6 +72,9 @@ func main() {
 		if cfg.WorkerCount > 0 {
 			pc.WorkerCount = cfg.WorkerCount
 		}
+		// Apply AVA qualification configuration
+		pc.MinUserPointsForAVA = cfg.MinUserPointsForAVA
+		pc.OnlyAmbassadors = cfg.OnlyAmbassadors
 		dc := decision.DefaultDecisionConfig()
 		if cfg.ApprovalThreshold > 0 {
 			dc.ApprovalThreshold = cfg.ApprovalThreshold
@@ -124,7 +127,7 @@ func main() {
 
 	app := &App{db: db, config: cfg, engine: eng}
 
-	// Start config watcher for hot-reload (applies worker count and approval threshold)
+	// Start config watcher for hot-reload (applies worker count, approval threshold, and AVA config)
 	cw := config.NewWatcher(time.Duration(cfg.ConfigReloadIntervalSeconds) * time.Second)
 	cw.Start()
 	chgCh := cw.Subscribe()
@@ -140,6 +143,8 @@ func main() {
 				wc = cfg.WorkerCount
 			}
 			eng.ApplyConfig(wc, chg.New.ApprovalThreshold)
+			// Apply AVA qualification config updates
+			eng.ApplyAVAConfig(chg.New.MinUserPointsForAVA, chg.New.OnlyAmbassadors)
 			cfg = chg.New
 			log.Printf("Config applied. Changed fields: %v", chg.Fields)
 		}
