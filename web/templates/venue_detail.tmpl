@@ -63,6 +63,36 @@
         <div class="venue-grid">
             <div>
                 {{if or .GoogleData .LatestHist (or .AIReviewNote .AIOutputNotes) }}
+                <div class="section">
+                    <h2>Current Status</h2>
+                    <div style="text-align: center; margin-bottom: 20px;">
+                        {{if eq (intVal .Venue.Venue.Active 0) 1}}
+                            <span class="status-badge status-approved" style="font-size: 18px;">✅ APPROVED</span>
+                        {{else if eq (intVal .Venue.Venue.Active 0) -1}}
+                            <span class="status-badge status-rejected" style="font-size: 18px;">❌ REJECTED</span>
+                        {{else}}
+                            <span class="status-badge status-pending" style="font-size: 18px;">⏳ PENDING</span>
+                        {{end}}
+                    </div>
+                    {{if eq (intVal .Venue.Venue.Active 0) 0}}
+                        <div class="action-form">
+                            <h3>Manual Review</h3>
+                            <!-- Status message area for errors/success -->
+                            <div id="approval-status" style="display: none; margin-bottom: 15px; padding: 12px; border-radius: 5px;"></div>
+                            <form id="approval-form">
+                                <div style="margin-bottom: 15px; display: flex; flex-wrap: wrap; gap: 10px;">
+                                    <button type="button" class="btn" onclick="startAIReview()">🚀 {{if .GoogleData}}Refresh AI-Assisted Review{{else}}Start AI-Assisted Review{{end}}</button>
+                                    <button type="button" class="btn btn-success" onclick="approveVenue()">✅ Approve</button>
+                                    <button type="button" class="btn btn-danger" onclick="rejectVenue()">❌ Reject</button>
+                                </div>
+                                <div style="margin-bottom: 10px;">
+                                    <label for="notes">Notes/Reason:</label>
+                                </div>
+                                <textarea id="notes" placeholder="Enter your reason or notes..." rows="3"></textarea>
+                            </form>
+                        </div>
+                    {{end}}
+                </div>
                 <!-- Editor Feedback -->
                 <div class="section" id="feedback-section">
                     <h2>Editor Feedback</h2>
@@ -91,6 +121,14 @@
                             <div class="field-label">Name <span style="color:#999; font-weight:normal">({{index .Combined.Sources "name"}})</span></div>
                             <div class="field-value"><strong>{{.Combined.Name}}</strong></div>
                         </div>
+                        {{if .NameSuggestion}}
+                        <div class="field" style="grid-column: 1 / -1;">
+                            <div class="field-label">Suggested Name Format</div>
+                            <div class="field-value" style="background: #fff3cd; padding: 12px; border-radius: 5px; border-left: 4px solid #ffc107;">
+                                <code style="background: white; padding: 4px 8px; border-radius: 3px; font-size: 14px;">{{.NameSuggestion}}</code>
+                            </div>
+                        </div>
+                        {{end}}
                         <div class="field">
                             <div class="field-label">Submitted By</div>
                             <div class="field-value">
@@ -161,6 +199,22 @@
                             <div class="field-value" style="background: #f8f9fa; padding: 12px; border-radius: 5px;">{{.Combined.Description}}</div>
                         </div>
                         {{end}}
+                        {{if .DescriptionSuggestion}}
+                        <div class="field" style="grid-column: 1 / -1;">
+                            <div class="field-label">Suggested Description</div>
+                            <div class="field-value" style="background: #e8f5e9; padding: 15px; border-radius: 5px; border-left: 4px solid #27ae60;">
+                                {{.DescriptionSuggestion}}
+                            </div>
+                        </div>
+                        {{end}}
+                        {{if .ClosedDaysSuggestion}}
+                        <div class="field" style="grid-column: 1 / -1;">
+                            <div class="field-label">Hours Note (Closed Days)</div>
+                            <div class="field-value" style="background: #e3f2fd; padding: 12px; border-radius: 5px; border-left: 4px solid #2196f3;">
+                                <code style="background: white; padding: 4px 8px; border-radius: 3px; font-size: 14px;">{{.ClosedDaysSuggestion}}</code>
+                            </div>
+                        </div>
+                        {{end}}
                         <div class="field" style="grid-column: 1 / -1;">
                             <div class="field-label">Admin Note</div>
                             <div class="field-value" style="background: #f8f9fa; padding: 12px; border-radius: 5px;">{{if .Venue.Venue.AdminNote}}{{.Venue.Venue.AdminNote}}{{else}}N/A{{end}}</div>
@@ -214,67 +268,6 @@
                             <pre style="background:#f8f9fa; padding:12px; border-radius:6px; overflow:auto; max-height:300px;">{{if .LatestHist}}{{if .PrettyBreakdown}}{{.PrettyBreakdown}}{{else}}{}{{end}}{{else}}{}{{end}}</pre>
                         </div>
                     </div>
-                </div>
-                {{end}}
-
-                {{if and .LatestHist .DescriptionSuggestion}}
-                <div class="section">
-                    <h2>✨ AI Content Suggestions</h2>
-                    <div class="field-grid">
-                        <div class="field" style="grid-column: 1 / -1;">
-                            <div class="field-label">Suggested Description</div>
-                            <div class="field-value" style="background: #e8f5e9; padding: 15px; border-radius: 5px; border-left: 4px solid #27ae60;">
-                                {{.DescriptionSuggestion}}
-                            </div>
-                        </div>
-                        {{if .NameSuggestion}}
-                        <div class="field" style="grid-column: 1 / -1;">
-                            <div class="field-label">Suggested Name Format</div>
-                            <div class="field-value" style="background: #fff3cd; padding: 12px; border-radius: 5px; border-left: 4px solid #ffc107;">
-                                <code style="background: white; padding: 4px 8px; border-radius: 3px; font-size: 14px;">{{.NameSuggestion}}</code>
-                            </div>
-                        </div>
-                        {{end}}
-                        {{if .ClosedDaysSuggestion}}
-                        <div class="field" style="grid-column: 1 / -1;">
-                            <div class="field-label">Hours Note (Closed Days)</div>
-                            <div class="field-value" style="background: #e3f2fd; padding: 12px; border-radius: 5px; border-left: 4px solid #2196f3;">
-                                <code style="background: white; padding: 4px 8px; border-radius: 3px; font-size: 14px;">{{.ClosedDaysSuggestion}}</code>
-                            </div>
-                        </div>
-                        {{end}}
-                    </div>
-                </div>
-                {{end}}
-
-                {{if .GoogleData}}
-                <div class="section">
-                    <h2>Current Status</h2>
-                    <div style="text-align: center; margin-bottom: 20px;">
-                        {{if eq (intVal .Venue.Venue.Active 0) 1}}
-                            <span class="status-badge status-approved" style="font-size: 18px;">✅ APPROVED</span>
-                        {{else if eq (intVal .Venue.Venue.Active 0) -1}}
-                            <span class="status-badge status-rejected" style="font-size: 18px;">❌ REJECTED</span>
-                        {{else}}
-                            <span class="status-badge status-pending" style="font-size: 18px;">⏳ PENDING</span>
-                        {{end}}
-                    </div>
-                    {{if eq (intVal .Venue.Venue.Active 0) 0}}
-                    <div class="action-form">
-                        <h3>Manual Review</h3>
-                        <form id="approval-form">
-                            <div style="margin-bottom: 15px; display: flex; flex-wrap: wrap; gap: 10px;">
-                                <button type="button" class="btn" onclick="startAIReview()">🚀 {{if .GoogleData}}Refresh AI-Assisted Review{{else}}Start AI-Assisted Review{{end}}</button>
-                                <button type="button" class="btn btn-success" onclick="approveVenue()">✅ Approve</button>
-                                <button type="button" class="btn btn-danger" onclick="rejectVenue()">❌ Reject</button>
-                            </div>
-                            <div style="margin-bottom: 10px;">
-                                <label for="notes">Notes/Reason:</label>
-                            </div>
-                            <textarea id="notes" placeholder="Enter your reason or notes..." rows="3"></textarea>
-                        </form>
-                    </div>
-                    {{end}}
                 </div>
                 {{end}}
 
@@ -527,6 +520,8 @@
                     {{if eq (intVal .Venue.Venue.Active 0) 0}}
                     <div class="action-form">
                         <h3>Manual Review</h3>
+                        <!-- Status message area for errors/success -->
+                        <div id="approval-status-alt" style="display: none; margin-bottom: 15px; padding: 12px; border-radius: 5px;"></div>
                         <form id="approval-form">
                             <div style="margin-bottom: 15px; display: flex; flex-wrap: wrap; gap: 10px;">
                                 <button type="button" class="btn" onclick="startAIReview()">🚀 Start AI-Assisted Review</button>
@@ -636,25 +631,40 @@
                 btn.parentElement.appendChild(errorDiv);
             });
         }
+        function showApprovalStatus(message, isError) {
+            const statusDiv = document.getElementById('approval-status') || document.getElementById('approval-status-alt');
+            if (statusDiv) {
+                statusDiv.style.display = 'block';
+                statusDiv.style.backgroundColor = isError ? '#f8d7da' : '#d4edda';
+                statusDiv.style.color = isError ? '#721c24' : '#155724';
+                statusDiv.style.borderLeft = isError ? '4px solid #dc3545' : '4px solid #28a745';
+                statusDiv.textContent = (isError ? '❌ ' : '✅ ') + message;
+            }
+        }
+
+        function hideApprovalStatus() {
+            const statusDiv = document.getElementById('approval-status') || document.getElementById('approval-status-alt');
+            if (statusDiv) {
+                statusDiv.style.display = 'none';
+            }
+        }
+
         function approveVenue() {
             const notes = document.getElementById('notes').value;
-            if (confirm('Approve this venue?')) {
-                updateVenueStatus('approve', notes || 'Manual approval');
-            }
+            updateVenueStatus('approve', notes || 'Manual approval');
         }
 
         function rejectVenue() {
             const notes = document.getElementById('notes').value;
             if (!notes.trim()) {
-                alert('Rejection reason is required.');
+                showApprovalStatus('Rejection reason is required.', true);
                 return;
             }
-            if (confirm('Reject this venue?')) {
-                updateVenueStatus('reject', notes);
-            }
+            updateVenueStatus('reject', notes);
         }
-        
+
         function updateVenueStatus(action, notes) {
+            hideApprovalStatus();
             const formData = new FormData();
             formData.append(action === 'approve' ? 'notes' : 'reason', notes);
 
@@ -663,16 +673,25 @@
                 body: formData
             })
             .then(response => {
-                if (response.ok) {
-                    alert('Venue ' + action + 'd successfully!');
-                    location.reload();
-                } else {
-                    alert('Error updating venue status');
+                if (!response.ok) {
+                    return response.json().then(data => {
+                        throw new Error(data.message || 'Error updating venue status');
+                    }).catch(err => {
+                        if (err instanceof SyntaxError) {
+                            throw new Error('Error updating venue status');
+                        }
+                        throw err;
+                    });
                 }
+                return response.json();
+            })
+            .then(data => {
+                // Success - reload the page to show updated status
+                location.reload();
             })
             .catch(error => {
                 console.error('Error:', error);
-                alert('Error updating venue status');
+                showApprovalStatus(error.message || 'Error updating venue status', true);
             });
         }
         // --- Feedback UI ---

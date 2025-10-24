@@ -55,7 +55,6 @@ func GetCombinedVenueInfo(v Venue, u User, trust float64) (CombinedInfo, error) 
 	}
 
 	gd := v.GoogleData
-	preferUser := isHighTrust(trust) || isOwnerOrAdmin(v, u)
 
 	// Name - always prefer user for consistency
 	ci.Name, ci.Sources["name"] = pickStringPrefer(true, strPtr(v.Name), getGoogleStringPtr(gd, func(g GooglePlaceData) string { return g.Name }))
@@ -68,12 +67,13 @@ func GetCombinedVenueInfo(v Venue, u User, trust float64) (CombinedInfo, error) 
 	// User address only used as fallback when Google is unavailable
 	ci.Address, ci.Sources["address"] = pickStringPrefer(false, &v.Location, getGoogleStringPtr(gd, func(g GooglePlaceData) string { return g.FormattedAddress }))
 
-	// Phone - fallback to Google for regular users OR if user data is empty
+	// Phone - ALWAYS prefer Google data, fallback to user data
 	userPhone := v.Phone
 	if userPhone != nil && strings.TrimSpace(*userPhone) == "" {
 		userPhone = nil // treat empty as missing
 	}
-	ci.Phone, ci.Sources["phone"] = pickStringPrefer(preferUser && userPhone != nil, userPhone, getGoogleStringPtr(gd, func(g GooglePlaceData) string { return g.FormattedPhone }))
+	// Always prefer Google (false = prefer Google in pickStringPrefer)
+	ci.Phone, ci.Sources["phone"] = pickStringPrefer(false, userPhone, getGoogleStringPtr(gd, func(g GooglePlaceData) string { return g.FormattedPhone }))
 
 	// Website - fallback to Google if user left empty
 	userWebsite := v.URL
@@ -120,10 +120,9 @@ func GetCombinedVenueInfo(v Venue, u User, trust float64) (CombinedInfo, error) 
 		}
 	}
 
-	coordPreferUser := preferUser
-	if !isHighTrust(trust) && !isOwnerOrAdmin(v, u) {
-		coordPreferUser = false // Force Google for non-high-trust users
-	}
+	// Always prefer Google coordinates over user-provided coordinates
+	// Only fallback to user coordinates if Google data is not available
+	coordPreferUser := false
 	ci.Lat, ci.Lng, ci.Sources["latlng"] = pickCoordsPrefer(coordPreferUser, userLat, userLng, gLat, gLng)
 
 	// Store Google types separately for comparison

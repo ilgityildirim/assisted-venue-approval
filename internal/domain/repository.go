@@ -18,6 +18,7 @@ type VenueRepository interface {
 
 	UpdateVenueStatusCtx(ctx context.Context, venueID int64, active int, notes string, reviewer *string) error
 	UpdateVenueActiveCtx(ctx context.Context, venueID int64, active int) error
+	ApproveVenueWithDataReplacement(ctx context.Context, approvalData *ApprovalData) error
 }
 
 // ValidationRepository defines access for validation history and caches.
@@ -29,6 +30,7 @@ type ValidationRepository interface {
 	GetValidationHistoryPaginatedCtx(ctx context.Context, limit int, offset int) ([]models.ValidationHistory, int, error)
 	GetCachedGooglePlaceDataCtx(ctx context.Context, venueID int64) (*models.GooglePlaceData, error)
 	HasAnyValidationHistory(venueID int64) (bool, error)
+	ValidateApprovalEligibility(venueID int64, threshold int) error
 }
 
 // UserRepository defines user-related data access. Not yet used by services here.

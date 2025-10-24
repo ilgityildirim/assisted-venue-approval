@@ -59,6 +59,10 @@ func (r *SQLRepository) CountVenuesByPathCtx(ctx context.Context, path string, e
 	return r.db.CountVenuesByPathCtx(ctx, path, excludeVenueID)
 }
 
+func (r *SQLRepository) ApproveVenueWithDataReplacement(ctx context.Context, approvalData *domain.ApprovalData) error {
+	return r.db.ApproveVenueWithDataReplacementCtx(ctx, approvalData)
+}
+
 // ValidationRepository methods
 func (r *SQLRepository) SaveValidationResultCtx(ctx context.Context, result *models.ValidationResult) error {
 	return r.db.SaveValidationResultCtx(ctx, result)
@@ -86,6 +90,10 @@ func (r *SQLRepository) GetCachedGooglePlaceDataCtx(ctx context.Context, venueID
 
 func (r *SQLRepository) HasAnyValidationHistory(venueID int64) (bool, error) {
 	return r.db.HasAnyValidationHistory(venueID)
+}
+
+func (r *SQLRepository) ValidateApprovalEligibility(venueID int64, threshold int) error {
+	return r.db.ValidateApprovalEligibility(venueID, threshold)
 }
 
 // AuditLogRepository methods

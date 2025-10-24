@@ -14,14 +14,16 @@ func (db *DB) CreateAuditLogCtx(ctx context.Context, log *domain.VenueValidation
 	defer cancel()
 
 	query := `INSERT INTO venue_validation_audit_logs
-	          (history_id, admin_id, status, reason, created_at)
-	          VALUES (?, ?, ?, ?, ?)`
+	          (venue_id, history_id, admin_id, status, reason, data_replacements, created_at)
+	          VALUES (?, ?, ?, ?, ?, ?, ?)`
 
 	result, err := db.conn.ExecContext(ctx, query,
+		log.VenueID,
 		log.HistoryID,
 		log.AdminID,
 		log.Status,
 		log.Reason,
+		log.DataReplacements,
 		log.CreatedAt,
 	)
 
@@ -43,7 +45,7 @@ func (db *DB) GetAuditLogsByHistoryIDCtx(ctx context.Context, historyID int64) (
 	ctx, cancel := db.withReadTimeout(ctx)
 	defer cancel()
 
-	query := `SELECT id, history_id, admin_id, status, reason, created_at
+	query := `SELECT id, venue_id, history_id, admin_id, status, reason, data_replacements, created_at
 	          FROM venue_validation_audit_logs
 	          WHERE history_id = ?
 	          ORDER BY created_at DESC`
@@ -57,18 +59,27 @@ func (db *DB) GetAuditLogsByHistoryIDCtx(ctx context.Context, historyID int64) (
 	var logs []domain.VenueValidationAuditLog
 	for rows.Next() {
 		var log domain.VenueValidationAuditLog
+		var historyID sql.NullInt64
 		var adminID sql.NullInt32
 		var reason sql.NullString
+		var dataReplacements sql.NullString
 
 		if err := rows.Scan(
 			&log.ID,
-			&log.HistoryID,
+			&log.VenueID,
+			&historyID,
 			&adminID,
 			&log.Status,
 			&reason,
+			&dataReplacements,
 			&log.CreatedAt,
 		); err != nil {
 			return nil, errs.NewDB("GetAuditLogsByHistoryIDCtx", "failed to scan audit log", err)
+		}
+
+		if historyID.Valid {
+			hid := historyID.Int64
+			log.HistoryID = &hid
 		}
 
 		if adminID.Valid {
@@ -78,6 +89,10 @@ func (db *DB) GetAuditLogsByHistoryIDCtx(ctx context.Context, historyID int64) (
 
 		if reason.Valid {
 			log.Reason = &reason.String
+		}
+
+		if dataReplacements.Valid {
+			log.DataReplacements = &dataReplacements.String
 		}
 
 		logs = append(logs, log)
@@ -103,7 +118,7 @@ func (db *DB) GetAuditLogsByAdminIDCtx(ctx context.Context, adminID int, limit i
 	}
 
 	// Get logs
-	query := `SELECT id, history_id, admin_id, status, reason, created_at
+	query := `SELECT id, venue_id, history_id, admin_id, status, reason, data_replacements, created_at
 	          FROM venue_validation_audit_logs
 	          WHERE admin_id = ?
 	          ORDER BY created_at DESC
@@ -118,18 +133,27 @@ func (db *DB) GetAuditLogsByAdminIDCtx(ctx context.Context, adminID int, limit i
 	var logs []domain.VenueValidationAuditLog
 	for rows.Next() {
 		var log domain.VenueValidationAuditLog
+		var historyID sql.NullInt64
 		var adminIDVal sql.NullInt32
 		var reason sql.NullString
+		var dataReplacements sql.NullString
 
 		if err := rows.Scan(
 			&log.ID,
-			&log.HistoryID,
+			&log.VenueID,
+			&historyID,
 			&adminIDVal,
 			&log.Status,
 			&reason,
+			&dataReplacements,
 			&log.CreatedAt,
 		); err != nil {
 			return nil, 0, errs.NewDB("GetAuditLogsByAdminIDCtx", "failed to scan audit log", err)
+		}
+
+		if historyID.Valid {
+			hid := historyID.Int64
+			log.HistoryID = &hid
 		}
 
 		if adminIDVal.Valid {
@@ -139,6 +163,10 @@ func (db *DB) GetAuditLogsByAdminIDCtx(ctx context.Context, adminID int, limit i
 
 		if reason.Valid {
 			log.Reason = &reason.String
+		}
+
+		if dataReplacements.Valid {
+			log.DataReplacements = &dataReplacements.String
 		}
 
 		logs = append(logs, log)

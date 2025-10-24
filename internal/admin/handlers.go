@@ -14,6 +14,7 @@ import (
 	"assisted-venue-approval/internal/models"
 	"assisted-venue-approval/internal/processor"
 	"assisted-venue-approval/internal/trust"
+	"assisted-venue-approval/pkg/config"
 	"assisted-venue-approval/pkg/database"
 	"assisted-venue-approval/pkg/events"
 	"assisted-venue-approval/pkg/metrics"
@@ -199,7 +200,7 @@ func ManualReviewHandler(db *database.DB) http.HandlerFunc {
 	}
 }
 
-func ApproveVenueHandler(repo domain.Repository) http.HandlerFunc {
+func ApproveVenueHandler(repo domain.Repository, cfg *config.Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
 		id, _ := strconv.ParseInt(vars["id"], 10, 64)
@@ -207,7 +208,12 @@ func ApproveVenueHandler(repo domain.Repository) http.HandlerFunc {
 		// Get admin ID from context (set by middleware)
 		adminID, ok := auth.GetAdminIDFromContext(r.Context())
 		if !ok {
-			http.Error(w, "Admin ID not found in context", http.StatusForbidden)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			json.NewEncoder(w).Encode(map[string]string{
+				"status":  "error",
+				"message": "Admin ID not found in context",
+			})
 			return
 		}
 
@@ -220,45 +226,169 @@ func ApproveVenueHandler(repo domain.Repository) http.HandlerFunc {
 			notes = fmt.Sprintf("Manually approved by %s: %s", reviewer, notes)
 		}
 
-		// Create validation result for audit trail
-		validationResult := &models.ValidationResult{
-			VenueID:        id,
-			Score:          95, // Manual approval gets high score
-			Status:         "approved",
-			Notes:          notes,
-			ScoreBreakdown: map[string]int{"manual_approval": 95},
-		}
-
-		// Update venue status
-		err := repo.UpdateVenueStatusCtx(r.Context(), id, 1, notes, &reviewer)
-		// metrics
-		mAdminApproved.Inc(1)
-		if err != nil {
-			http.Error(w, fmt.Sprintf("Error updating venue: %v", err), http.StatusInternalServerError)
+		// Validate that venue has a valid validation history before approval
+		// Venue can only be approved if there's already a validation history with status='approved' and score >= threshold
+		approvalThreshold := cfg.ApprovalThreshold
+		if err := repo.ValidateApprovalEligibility(id, approvalThreshold); err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{
+				"status":  "error",
+				"message": fmt.Sprintf("Cannot approve venue: %v", err),
+			})
 			return
 		}
 
-		// Save validation result
-		if err := repo.SaveValidationResultCtx(r.Context(), validationResult); err != nil {
-			log.Printf("Failed to save validation result for manual approval: %v", err)
+		// Get validation history
+		history, err := repo.GetVenueValidationHistoryCtx(r.Context(), id)
+		if err != nil || len(history) == 0 {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{
+				"status":  "error",
+				"message": "Cannot approve venue: no validation history found",
+			})
+			return
 		}
 
-		// Get the validation history ID to create audit log
-		history, err := repo.GetVenueValidationHistoryCtx(r.Context(), id)
-		if err == nil && len(history) > 0 {
-			// Find the most recent history entry
-			latestHistory := history[0]
-			for _, h := range history {
-				if h.ProcessedAt.After(latestHistory.ProcessedAt) {
-					latestHistory = h
+		// Find the most recent history entry
+		latestHistory := history[0]
+		for _, h := range history {
+			if h.ProcessedAt.After(latestHistory.ProcessedAt) {
+				latestHistory = h
+			}
+		}
+
+		// Additional check: ensure latest status is "approved"
+		if latestHistory.ValidationStatus != "approved" {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{
+				"status":  "error",
+				"message": fmt.Sprintf("Cannot approve venue: latest validation status is '%s' (not 'approved')", latestHistory.ValidationStatus),
+			})
+			return
+		}
+
+		// Get current venue data
+		venueWithUser, err := repo.GetVenueWithUserByIDCtx(r.Context(), id)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{
+				"status":  "error",
+				"message": fmt.Sprintf("Error fetching venue: %v", err),
+			})
+			return
+		}
+		venue := venueWithUser.Venue
+
+		// Build Combined Information using trust-based merging
+		if latestHistory.GooglePlaceData != nil {
+			venue.GoogleData = latestHistory.GooglePlaceData
+		}
+		tc := trust.NewDefault()
+		assessment := tc.Assess(venueWithUser.User, *venue.Path)
+		combined, cerr := models.GetCombinedVenueInfo(venue, venueWithUser.User, assessment.Trust)
+		if cerr != nil {
+			log.Printf("Warning: failed to build combined info for venue %d: %v", id, cerr)
+		}
+
+		// Extract AI suggestions from validation history
+		var nameSuggestion, descSuggestion, closedDaysSuggestion string
+		if latestHistory.AIOutputData != nil && *latestHistory.AIOutputData != "" {
+			var raw map[string]interface{}
+			if err := json.Unmarshal([]byte(*latestHistory.AIOutputData), &raw); err == nil {
+				if qualityMap, ok := raw["quality"].(map[string]interface{}); ok {
+					if name, ok := qualityMap["name"].(string); ok {
+						nameSuggestion = strings.TrimSpace(name)
+					}
+					if desc, ok := qualityMap["description"].(string); ok {
+						descSuggestion = strings.TrimSpace(desc)
+					}
+					if closed, ok := qualityMap["closed_days"].(string); ok {
+						closedDaysSuggestion = strings.TrimSpace(closed)
+					}
 				}
 			}
+		}
 
-			// Create audit log entry
-			auditLog := domain.NewAuditLog(latestHistory.ID, &adminID, "approved", &notes)
-			if err := repo.CreateAuditLogCtx(r.Context(), auditLog); err != nil {
-				log.Printf("Failed to create audit log for venue approval: %v", err)
+		// Build approval data - use CombinedInfo with AI suggestion overrides
+		approvalData := domain.NewApprovalData(id, adminID, notes)
+
+		// Name: Use NameSuggestion if available, otherwise Combined.Name
+		finalName := combined.Name
+		if nameSuggestion != "" {
+			finalName = nameSuggestion
+		}
+		if finalName != "" && finalName != venue.Name {
+			approvalData.Name = &finalName
+		}
+
+		// Address: Use Combined.Address
+		if combined.Address != "" && combined.Address != venue.Location {
+			approvalData.Address = &combined.Address
+		}
+
+		// Description: Use DescriptionSuggestion if available, otherwise Combined.Description
+		finalDesc := combined.Description
+		if descSuggestion != "" {
+			finalDesc = descSuggestion
+		}
+		if finalDesc != "" {
+			approvalData.Description = &finalDesc
+		}
+
+		// Lat/Lng: Use Combined coordinates
+		if combined.Lat != nil && combined.Lng != nil {
+			approvalData.Lat = combined.Lat
+			approvalData.Lng = combined.Lng
+		}
+
+		// Phone: Use Combined.Phone
+		if combined.Phone != "" {
+			approvalData.Phone = &combined.Phone
+		}
+
+		// Website: Use Combined.Website
+		if combined.Website != "" {
+			approvalData.Website = &combined.Website
+		}
+
+		// OpenHours: Format from Combined.Hours
+		if len(combined.Hours) > 0 {
+			formattedHours, err := FormatOpenHoursFromCombined(combined.Hours)
+			if err != nil {
+				log.Printf("Warning: failed to format open hours for venue %d: %v", id, err)
+			} else if formattedHours != "" {
+				approvalData.OpenHours = &formattedHours
 			}
+		}
+
+		// OpenHoursNote: Use ClosedDaysSuggestion if available
+		if closedDaysSuggestion != "" {
+			approvalData.OpenHoursNote = &closedDaysSuggestion
+		}
+
+		// Approve venue
+		if err := repo.ApproveVenueWithDataReplacement(r.Context(), approvalData); err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{
+				"status":  "error",
+				"message": fmt.Sprintf("Error approving venue: %v", err),
+			})
+			return
+		}
+
+		// metrics
+		mAdminApproved.Inc(1)
+
+		// Create simple audit log
+		histID := latestHistory.ID
+		auditLog := domain.NewAuditLog(id, &histID, &adminID, "approved", &notes)
+		if err := repo.CreateAuditLogCtx(r.Context(), auditLog); err != nil {
+			log.Printf("Failed to create audit log for venue approval: %v", err)
 		}
 
 		// Publish event
@@ -266,18 +396,13 @@ func ApproveVenueHandler(repo domain.Repository) http.HandlerFunc {
 			_ = eventSink.Append(r.Context(), events.VenueApproved{
 				Base:   events.Base{Ts: time.Now(), VID: id, Adm: &reviewer},
 				Reason: notes,
-				Score:  validationResult.Score,
+				Score:  latestHistory.ValidationScore,
 			})
 		}
 
-		// Return JSON for AJAX requests
-		if r.Header.Get("Content-Type") == "application/json" {
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]string{"status": "approved"})
-			return
-		}
-
-		http.Redirect(w, r, "/venues/pending", http.StatusFound)
+		// Always return JSON
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "approved"})
 	}
 }
 
@@ -289,7 +414,12 @@ func RejectVenueHandler(repo domain.Repository) http.HandlerFunc {
 		// Get admin ID from context (set by middleware)
 		adminID, ok := auth.GetAdminIDFromContext(r.Context())
 		if !ok {
-			http.Error(w, "Admin ID not found in context", http.StatusForbidden)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusForbidden)
+			json.NewEncoder(w).Encode(map[string]string{
+				"status":  "error",
+				"message": "Admin ID not found in context",
+			})
 			return
 		}
 
@@ -299,33 +429,29 @@ func RejectVenueHandler(repo domain.Repository) http.HandlerFunc {
 
 		// Rejection reason is required
 		if reason == "" {
-			http.Error(w, "Rejection reason is required", http.StatusBadRequest)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{
+				"status":  "error",
+				"message": "Rejection reason is required",
+			})
 			return
 		}
 
 		reason = fmt.Sprintf("Manually rejected by %s: %s", reviewer, reason)
-
-		// Create validation result for audit trail
-		validationResult := &models.ValidationResult{
-			VenueID:        id,
-			Score:          5, // Manual rejection gets low score
-			Status:         "rejected",
-			Notes:          reason,
-			ScoreBreakdown: map[string]int{"manual_rejection": 5},
-		}
 
 		// Update venue status
 		err := repo.UpdateVenueStatusCtx(r.Context(), id, -1, reason, &reviewer)
 		// metrics
 		mAdminRejected.Inc(1)
 		if err != nil {
-			http.Error(w, fmt.Sprintf("Error updating venue: %v", err), http.StatusInternalServerError)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			json.NewEncoder(w).Encode(map[string]string{
+				"status":  "error",
+				"message": fmt.Sprintf("Error updating venue: %v", err),
+			})
 			return
-		}
-
-		// Save validation result
-		if err := repo.SaveValidationResultCtx(r.Context(), validationResult); err != nil {
-			log.Printf("Failed to save validation result for manual rejection: %v", err)
 		}
 
 		// Get the validation history ID to create audit log
@@ -340,7 +466,8 @@ func RejectVenueHandler(repo domain.Repository) http.HandlerFunc {
 			}
 
 			// Create audit log entry
-			auditLog := domain.NewAuditLog(latestHistory.ID, &adminID, "rejected", &reason)
+			histID := latestHistory.ID
+			auditLog := domain.NewAuditLog(id, &histID, &adminID, "rejected", &reason)
 			if err := repo.CreateAuditLogCtx(r.Context(), auditLog); err != nil {
 				log.Printf("Failed to create audit log for venue rejection: %v", err)
 			}
@@ -348,21 +475,20 @@ func RejectVenueHandler(repo domain.Repository) http.HandlerFunc {
 
 		// Publish event
 		if eventSink != nil {
+			score := 0
+			if len(history) > 0 {
+				score = history[0].ValidationScore
+			}
 			_ = eventSink.Append(r.Context(), events.VenueRejected{
 				Base:   events.Base{Ts: time.Now(), VID: id, Adm: &reviewer},
 				Reason: reason,
-				Score:  validationResult.Score,
+				Score:  score,
 			})
 		}
 
-		// Return JSON for AJAX requests
-		if r.Header.Get("Content-Type") == "application/json" {
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]string{"status": "rejected"})
-			return
-		}
-
-		http.Redirect(w, r, "/venues/pending", http.StatusFound)
+		// Always return JSON
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "rejected"})
 	}
 }
 
@@ -609,21 +735,17 @@ func BatchOperationHandler(repo domain.Repository) http.HandlerFunc {
 
 		for _, id := range ids {
 			var dbStatus int
-			var score int
 			var status string
 
 			switch action {
 			case "approve":
 				dbStatus = 1
-				score = 95
 				status = "approved"
 			case "reject":
 				dbStatus = -1
-				score = 5
 				status = "rejected"
 			default:
 				dbStatus = 0
-				score = 50
 				status = "manual_review"
 			}
 
@@ -633,19 +755,6 @@ func BatchOperationHandler(repo domain.Repository) http.HandlerFunc {
 			if err := repo.UpdateVenueStatusCtx(r.Context(), id, dbStatus, notes, &reviewer); err != nil {
 				log.Printf("Failed to update venue %d: %v", id, err)
 				continue
-			}
-
-			// Create validation result
-			validationResult := &models.ValidationResult{
-				VenueID:        id,
-				Score:          score,
-				Status:         status,
-				Notes:          notes,
-				ScoreBreakdown: map[string]int{"batch_operation": score},
-			}
-
-			if err := repo.SaveValidationResultCtx(r.Context(), validationResult); err != nil {
-				log.Printf("Failed to save validation result for venue %d: %v", id, err)
 			}
 
 			// Create audit log for approved/rejected venues
@@ -661,7 +770,8 @@ func BatchOperationHandler(repo domain.Repository) http.HandlerFunc {
 					}
 
 					// Create audit log entry
-					auditLog := domain.NewAuditLog(latestHistory.ID, &adminID, status, &notes)
+					histID := latestHistory.ID
+					auditLog := domain.NewAuditLog(id, &histID, &adminID, status, &notes)
 					if err := repo.CreateAuditLogCtx(r.Context(), auditLog); err != nil {
 						log.Printf("Failed to create audit log for batch operation venue %d: %v", id, err)
 					}

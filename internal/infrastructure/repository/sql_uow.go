@@ -111,6 +111,10 @@ func (u *SQLUnitOfWork) CountVenuesByPathCtx(ctx context.Context, path string, e
 	return u.db.CountVenuesByPathCtx(ctx, path, excludeVenueID)
 }
 
+func (u *SQLUnitOfWork) ApproveVenueWithDataReplacement(ctx context.Context, approvalData *domain.ApprovalData) error {
+	return u.db.ApproveVenueWithDataReplacementCtx(ctx, approvalData)
+}
+
 // ValidationRepository methods (writes via tx)
 func (u *SQLUnitOfWork) SaveValidationResultCtx(ctx context.Context, result *models.ValidationResult) error {
 	if u.tx == nil {
@@ -140,4 +144,7 @@ func (u *SQLUnitOfWork) GetCachedGooglePlaceDataCtx(ctx context.Context, venueID
 }
 func (u *SQLUnitOfWork) HasAnyValidationHistory(venueID int64) (bool, error) {
 	return u.db.HasAnyValidationHistory(venueID)
+}
+func (u *SQLUnitOfWork) ValidateApprovalEligibility(venueID int64, threshold int) error {
+	return u.db.ValidateApprovalEligibility(venueID, threshold)
 }

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"assisted-venue-approval/internal/constants"
+	"assisted-venue-approval/internal/domain"
 	"assisted-venue-approval/internal/models"
 	"assisted-venue-approval/pkg/config"
 	errs "assisted-venue-approval/pkg/errors"
@@ -324,14 +325,94 @@ func (db *DB) UpdateVenueStatus(venueID int64, active int, notes string, reviewe
 func (db *DB) UpdateVenueStatusCtx(ctx context.Context, venueID int64, active int, notes string, reviewer *string) error {
 	ctx, cancel := db.withWriteTimeout(ctx)
 	defer cancel()
-	query := `UPDATE venues SET 
-        active = ?, 
-        admin_note = ?, 
+	query := `UPDATE venues SET
+        active = ?,
+        admin_note = ?,
         admin_last_update = NOW()
         WHERE id = ?`
 	if _, err := db.conn.ExecContext(ctx, query, active, notes, venueID); err != nil {
 		return fmt.Errorf("failed to update venue status: %w", err)
 	}
+	return nil
+}
+
+// ApproveVenueWithDataReplacementCtx approves a venue and applies data replacements in a single transaction
+func (db *DB) ApproveVenueWithDataReplacementCtx(ctx context.Context, approvalData *domain.ApprovalData) error {
+	ctx, cancel := db.withWriteTimeout(ctx)
+	defer cancel()
+
+	// Build dynamic UPDATE query based on which fields need updating
+	setClauses := []string{"active = 1", "admin_last_update = NOW()", "made_active_at = NOW()"}
+	args := []interface{}{}
+
+	// Add made_active_by_id and made_active_at for approval tracking
+	setClauses = append(setClauses, "made_active_by_id = ?")
+	args = append(args, approvalData.AdminID)
+
+	// Add fields that have replacement values
+	if approvalData.Name != nil {
+		setClauses = append(setClauses, "name = ?")
+		args = append(args, *approvalData.Name)
+	}
+
+	if approvalData.Address != nil {
+		setClauses = append(setClauses, "location = ?")
+		args = append(args, *approvalData.Address)
+	}
+
+	if approvalData.Description != nil {
+		setClauses = append(setClauses, "additionalinfo = ?")
+		args = append(args, *approvalData.Description)
+	}
+
+	if approvalData.Lat != nil {
+		setClauses = append(setClauses, "lat = ?")
+		args = append(args, *approvalData.Lat)
+	}
+
+	if approvalData.Lng != nil {
+		setClauses = append(setClauses, "lng = ?")
+		args = append(args, *approvalData.Lng)
+	}
+
+	// Update geolocation field if both lat and lng are provided
+	// Note: POINT takes (longitude, latitude) - longitude first!
+	if approvalData.Lat != nil && approvalData.Lng != nil {
+		setClauses = append(setClauses, "geolocation = POINT(?, ?)")
+		args = append(args, *approvalData.Lng, *approvalData.Lat)
+	}
+
+	if approvalData.Phone != nil {
+		setClauses = append(setClauses, "phone = ?")
+		args = append(args, *approvalData.Phone)
+	}
+
+	if approvalData.Website != nil {
+		setClauses = append(setClauses, "url = ?")
+		args = append(args, *approvalData.Website)
+	}
+
+	if approvalData.OpenHours != nil {
+		setClauses = append(setClauses, "openhours = ?")
+		args = append(args, *approvalData.OpenHours)
+	}
+
+	if approvalData.OpenHoursNote != nil {
+		setClauses = append(setClauses, "openhours_note = ?")
+		args = append(args, *approvalData.OpenHoursNote)
+	}
+
+	// Add WHERE clause
+	args = append(args, approvalData.VenueID)
+
+	// Build final query
+	query := fmt.Sprintf("UPDATE venues SET %s WHERE id = ?", strings.Join(setClauses, ", "))
+
+	// Execute update
+	if _, err := db.conn.ExecContext(ctx, query, args...); err != nil {
+		return fmt.Errorf("failed to approve venue with data replacement: %w", err)
+	}
+
 	return nil
 }
 
@@ -489,6 +570,40 @@ func (db *DB) GetValidationHistory(venueID int64) ([]models.ValidationHistory, e
 	}
 
 	return history, nil
+}
+
+// ValidateApprovalEligibility checks if a venue has a valid validation history record
+// that allows it to be approved. Returns error if:
+// - No validation history exists
+// - Latest validation_status is not "approved"
+// - Latest validation_score is below threshold
+func (db *DB) ValidateApprovalEligibility(venueID int64, threshold int) error {
+	query := `SELECT validation_status, validation_score
+	            FROM venue_validation_histories
+	            WHERE venue_id = ?
+	            ORDER BY processed_at DESC
+	            LIMIT 1`
+
+	var status string
+	var score int
+
+	err := db.conn.QueryRow(query, venueID).Scan(&status, &score)
+	if err == sql.ErrNoRows {
+		return fmt.Errorf("no validation history found for venue %d - approval requires validated record", venueID)
+	}
+	if err != nil {
+		return fmt.Errorf("failed to query validation history: %w", err)
+	}
+
+	if status != "approved" {
+		return fmt.Errorf("validation status is '%s' (not 'approved') - cannot approve venue", status)
+	}
+
+	if score < threshold {
+		return fmt.Errorf("validation score %d is below threshold %d - cannot approve venue", score, threshold)
+	}
+
+	return nil
 }
 
 // GetVenuesByStatus retrieves venues by their status with pagination
@@ -1624,7 +1739,7 @@ func (db *DB) GetVenueValidationHistoryCtx(ctx context.Context, venueID int64) (
 	defer cancel()
 	query := `SELECT 
         id, venue_id, validation_score, validation_status, validation_notes,
-        score_breakdown, ai_output_data, prompt_version, processed_at
+        score_breakdown, google_place_data, ai_output_data, prompt_version, processed_at
         FROM venue_validation_histories 
         WHERE venue_id = ? 
         ORDER BY processed_at DESC`
@@ -1637,10 +1752,11 @@ func (db *DB) GetVenueValidationHistoryCtx(ctx context.Context, venueID int64) (
 	for rows.Next() {
 		var h models.ValidationHistory
 		var scoreBreakdownJSON string
+		var googlePlaceDataJSON *string
 		var aiOutput sql.NullString
 		var pv sql.NullString
 		if err := rows.Scan(&h.ID, &h.VenueID, &h.ValidationScore, &h.ValidationStatus,
-			&h.ValidationNotes, &scoreBreakdownJSON, &aiOutput, &pv, &h.ProcessedAt); err != nil {
+			&h.ValidationNotes, &scoreBreakdownJSON, &googlePlaceDataJSON, &aiOutput, &pv, &h.ProcessedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan validation history row: %w", err)
 		}
 		if pv.Valid {
@@ -1649,6 +1765,11 @@ func (db *DB) GetVenueValidationHistoryCtx(ctx context.Context, venueID int64) (
 		}
 		if err := json.Unmarshal([]byte(scoreBreakdownJSON), &h.ScoreBreakdown); err != nil {
 			return nil, fmt.Errorf("failed to unmarshal score breakdown: %w", err)
+		}
+		if googlePlaceDataJSON != nil {
+			if err := json.Unmarshal([]byte(*googlePlaceDataJSON), &h.GooglePlaceData); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal google place data: %w", err)
+			}
 		}
 		if aiOutput.Valid {
 			val := aiOutput.String

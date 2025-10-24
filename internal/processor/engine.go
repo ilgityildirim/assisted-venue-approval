@@ -1014,9 +1014,6 @@ func (e *ProcessingEngine) processVenueWithRateLimit(ctx context.Context, venue 
 		return nil, nil, fmt.Errorf("google rate limit wait cancelled: %w", err)
 	}
 
-	// Track original coordinates for audit trail
-	originalLat, originalLng := venue.Lat, venue.Lng
-
 	// Enhance venue with Google Maps data
 	enhancedVenue, err := e.scraper.EnhanceVenueWithValidation(ctx, venue)
 	if err != nil {
@@ -1031,15 +1028,6 @@ func (e *ProcessingEngine) processVenueWithRateLimit(ctx context.Context, venue 
 	var gData *models.GooglePlaceData
 	if enhancedVenue.GoogleData != nil {
 		gData = enhancedVenue.GoogleData
-	}
-
-	// Track coordinate changes for audit purposes
-	var coordinateNote string
-	if originalLat != nil && originalLng != nil && enhancedVenue.Lat != nil && enhancedVenue.Lng != nil {
-		if *originalLat != *enhancedVenue.Lat || *originalLng != *enhancedVenue.Lng {
-			coordinateNote = fmt.Sprintf(" | Coordinates updated from (%.6f,%.6f) to (%.6f,%.6f)",
-				*originalLat, *originalLng, *enhancedVenue.Lat, *enhancedVenue.Lng)
-		}
 	}
 
 	// If no location information available after Google enrichment, require manual review
@@ -1105,10 +1093,6 @@ func (e *ProcessingEngine) processVenueWithRateLimit(ctx context.Context, venue 
 	// Override validation result with decision engine output
 	validationResult.Status = decisionResult.FinalStatus
 	validationResult.Notes = decisionResult.DecisionReason
-	// Append coordinate change audit trail if applicable
-	if coordinateNote != "" {
-		validationResult.Notes += coordinateNote
-	}
 	validationResult.Score = decisionResult.FinalScore
 
 	// Add decision metadata to score breakdown
@@ -1246,14 +1230,28 @@ func (e *ProcessingEngine) handleSuccessfulResult(result *ProcessingResult) {
 	}
 	defer uow.Rollback()
 
-	if err := uow.UpdateVenueActiveCtx(e.ctx, result.VenueID, dbStatus); err != nil {
-		log.Printf("Failed to update venue %d active status: %v", result.VenueID, err)
-		return
-	}
+	// Save validation result FIRST so it can be validated before status update
 	if err := uow.SaveValidationResultCtx(e.ctx, validationResult); err != nil {
 		log.Printf("Failed to save validation result for venue %d: %v", result.VenueID, err)
 		return
 	}
+
+	// For approvals, validate that the venue has a valid validation history before updating status
+	// Venue can only be approved if there's a validation history with status='approved' and score >= threshold
+	if dbStatus == 1 { // Approval
+		const approvalThreshold = 75
+		if err := e.repo.ValidateApprovalEligibility(result.VenueID, approvalThreshold); err != nil {
+			log.Printf("Cannot approve venue %d: %v", result.VenueID, err)
+			// Set to manual review instead
+			dbStatus = 0
+		}
+	}
+
+	if err := uow.UpdateVenueActiveCtx(e.ctx, result.VenueID, dbStatus); err != nil {
+		log.Printf("Failed to update venue %d active status: %v", result.VenueID, err)
+		return
+	}
+
 	if err := uow.Commit(); err != nil {
 		log.Printf("Failed to commit unit of work for venue %d: %v", result.VenueID, err)
 	}

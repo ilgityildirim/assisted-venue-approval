@@ -195,7 +195,7 @@ func main() {
 	router.HandleFunc("/venues/pending", admin.PendingVenuesHandler(db)).Methods("GET")
 	router.HandleFunc("/venues/manual-review", admin.ManualReviewHandler(db)).Methods("GET")
 	router.HandleFunc("/venues/{id}", admin.VenueDetailHandler(db)).Methods("GET")
-	router.HandleFunc("/venues/{id}/approve", admin.ApproveVenueHandler(repo)).Methods("POST")
+	router.HandleFunc("/venues/{id}/approve", admin.ApproveVenueHandler(repo, cfg)).Methods("POST")
 	router.HandleFunc("/venues/{id}/reject", admin.RejectVenueHandler(repo)).Methods("POST")
 	router.HandleFunc("/venues/{id}/validate", app.validateSingleHandler).Methods("POST")
 	// Editor feedback submit/list
