@@ -195,9 +195,6 @@ func Load() *Config {
 		OnlyAmbassadors:     onlyAmbassadors,
 	}
 
-	log.Printf("Config: MinUserPointsForAVA=%d, OnlyAmbassadors=%v",
-		cfg.MinUserPointsForAVA, cfg.OnlyAmbassadors)
-
 	return cfg
 }
 

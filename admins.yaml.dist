@@ -1,0 +1,11 @@
+# Admin IP to Member ID Mapping
+# Format: "IP_ADDRESS": MEMBER_ID
+#
+# This file maps VPN IP addresses to HappyCow member IDs for audit logging.
+# Place this file as 'admins.yaml' in the same directory as the executable.
+#
+# If this file is missing, the system will not allow any approve/reject actions.
+
+"10.0.1.5": 123456
+"10.0.1.8": 789012
+"10.0.1.10": 555555

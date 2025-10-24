@@ -88,6 +88,19 @@ func (r *SQLRepository) HasAnyValidationHistory(venueID int64) (bool, error) {
 	return r.db.HasAnyValidationHistory(venueID)
 }
 
+// AuditLogRepository methods
+func (r *SQLRepository) CreateAuditLogCtx(ctx context.Context, log *domain.VenueValidationAuditLog) error {
+	return r.db.CreateAuditLogCtx(ctx, log)
+}
+
+func (r *SQLRepository) GetAuditLogsByHistoryIDCtx(ctx context.Context, historyID int64) ([]domain.VenueValidationAuditLog, error) {
+	return r.db.GetAuditLogsByHistoryIDCtx(ctx, historyID)
+}
+
+func (r *SQLRepository) GetAuditLogsByAdminIDCtx(ctx context.Context, adminID int, limit int, offset int) ([]domain.VenueValidationAuditLog, int, error) {
+	return r.db.GetAuditLogsByAdminIDCtx(ctx, adminID, limit, offset)
+}
+
 // FilterPendingBySpecCtx fetches pending venues and filters them using a Specification.
 // Note: This applies the spec in-memory. For large datasets, consider adding SQL translations.
 func (r *SQLRepository) FilterPendingBySpecCtx(ctx context.Context, s specs.Specification[models.Venue]) ([]models.VenueWithUser, error) {

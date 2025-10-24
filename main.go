@@ -16,6 +16,7 @@ import (
 	_ "github.com/joho/godotenv/autoload"
 
 	"assisted-venue-approval/internal/admin"
+	"assisted-venue-approval/internal/auth"
 	"assisted-venue-approval/internal/decision"
 	"assisted-venue-approval/internal/domain"
 	"assisted-venue-approval/internal/infrastructure/repository"
@@ -164,6 +165,12 @@ func main() {
 		cancel()
 	}()
 
+	// Initialize admin resolver for IP-based authentication
+	adminResolver := auth.NewAdminResolver()
+
+	// Create admin authentication middleware
+	adminAuthMiddleware := auth.NewAdminAuthMiddleware(adminResolver, admin.RenderUnauthorized)
+
 	// HTTP routing
 	router := mux.NewRouter()
 
@@ -172,6 +179,9 @@ func main() {
 		metrics = monitoring.NewMetrics(512)
 		router.Use(monitoring.Middleware(metrics))
 	}
+
+	// Apply admin authentication middleware to all routes
+	router.Use(adminAuthMiddleware.Handler)
 
 	router.HandleFunc("/", admin.HomeHandler(repo, eng)).Methods("GET")
 	router.HandleFunc("/analytics", admin.AnalyticsHandler(db, eng)).Methods("GET")
@@ -185,14 +195,14 @@ func main() {
 	router.HandleFunc("/venues/pending", admin.PendingVenuesHandler(db)).Methods("GET")
 	router.HandleFunc("/venues/manual-review", admin.ManualReviewHandler(db)).Methods("GET")
 	router.HandleFunc("/venues/{id}", admin.VenueDetailHandler(db)).Methods("GET")
-	router.HandleFunc("/venues/{id}/approve", admin.ApproveVenueHandler(db)).Methods("POST")
-	router.HandleFunc("/venues/{id}/reject", admin.RejectVenueHandler(db)).Methods("POST")
+	router.HandleFunc("/venues/{id}/approve", admin.ApproveVenueHandler(repo)).Methods("POST")
+	router.HandleFunc("/venues/{id}/reject", admin.RejectVenueHandler(repo)).Methods("POST")
 	router.HandleFunc("/venues/{id}/validate", app.validateSingleHandler).Methods("POST")
 	// Editor feedback submit/list
 	router.HandleFunc("/venues/{id}/feedback", admin.SubmitFeedbackHandler(db)).Methods("POST")
 	router.HandleFunc("/venues/{id}/feedback", admin.VenueFeedbackHandler(db)).Methods("GET")
 
-	router.HandleFunc("/batch-operation", admin.BatchOperationHandler(db)).Methods("POST")
+	router.HandleFunc("/venues/batch-operation", admin.BatchOperationHandler(repo)).Methods("POST")
 	router.HandleFunc("/validation/history", admin.ValidationHistoryHandler(db)).Methods("GET")
 	router.HandleFunc("/editorial-feedback", admin.EditorialFeedbackListHandler(db)).Methods("GET")
 

@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"assisted-venue-approval/internal/auth"
 	"assisted-venue-approval/internal/domain"
 	"assisted-venue-approval/internal/models"
 	"assisted-venue-approval/internal/processor"
@@ -198,13 +199,20 @@ func ManualReviewHandler(db *database.DB) http.HandlerFunc {
 	}
 }
 
-func ApproveVenueHandler(db *database.DB) http.HandlerFunc {
+func ApproveVenueHandler(repo domain.Repository) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
 		id, _ := strconv.ParseInt(vars["id"], 10, 64)
 
-		// Get reviewer info from session/auth (simplified)
-		reviewer := "admin" // This should come from authentication
+		// Get admin ID from context (set by middleware)
+		adminID, ok := auth.GetAdminIDFromContext(r.Context())
+		if !ok {
+			http.Error(w, "Admin ID not found in context", http.StatusForbidden)
+			return
+		}
+
+		// Get reviewer info from session/auth
+		reviewer := fmt.Sprintf("admin_%d", adminID)
 		notes := r.FormValue("notes")
 		if notes == "" {
 			notes = "Manually approved by " + reviewer
@@ -222,7 +230,7 @@ func ApproveVenueHandler(db *database.DB) http.HandlerFunc {
 		}
 
 		// Update venue status
-		err := db.UpdateVenueStatusCtx(r.Context(), id, 1, notes, &reviewer)
+		err := repo.UpdateVenueStatusCtx(r.Context(), id, 1, notes, &reviewer)
 		// metrics
 		mAdminApproved.Inc(1)
 		if err != nil {
@@ -231,8 +239,26 @@ func ApproveVenueHandler(db *database.DB) http.HandlerFunc {
 		}
 
 		// Save validation result
-		if err := db.SaveValidationResultCtx(r.Context(), validationResult); err != nil {
+		if err := repo.SaveValidationResultCtx(r.Context(), validationResult); err != nil {
 			log.Printf("Failed to save validation result for manual approval: %v", err)
+		}
+
+		// Get the validation history ID to create audit log
+		history, err := repo.GetVenueValidationHistoryCtx(r.Context(), id)
+		if err == nil && len(history) > 0 {
+			// Find the most recent history entry
+			latestHistory := history[0]
+			for _, h := range history {
+				if h.ProcessedAt.After(latestHistory.ProcessedAt) {
+					latestHistory = h
+				}
+			}
+
+			// Create audit log entry
+			auditLog := domain.NewAuditLog(latestHistory.ID, &adminID, "approved", &notes)
+			if err := repo.CreateAuditLogCtx(r.Context(), auditLog); err != nil {
+				log.Printf("Failed to create audit log for venue approval: %v", err)
+			}
 		}
 
 		// Publish event
@@ -255,13 +281,20 @@ func ApproveVenueHandler(db *database.DB) http.HandlerFunc {
 	}
 }
 
-func RejectVenueHandler(db *database.DB) http.HandlerFunc {
+func RejectVenueHandler(repo domain.Repository) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
 		id, _ := strconv.ParseInt(vars["id"], 10, 64)
 
-		// Get reviewer info from session/auth (simplified)
-		reviewer := "admin" // This should come from authentication
+		// Get admin ID from context (set by middleware)
+		adminID, ok := auth.GetAdminIDFromContext(r.Context())
+		if !ok {
+			http.Error(w, "Admin ID not found in context", http.StatusForbidden)
+			return
+		}
+
+		// Get reviewer info from session/auth
+		reviewer := fmt.Sprintf("admin_%d", adminID)
 		reason := strings.TrimSpace(r.FormValue("reason"))
 
 		// Rejection reason is required
@@ -282,7 +315,7 @@ func RejectVenueHandler(db *database.DB) http.HandlerFunc {
 		}
 
 		// Update venue status
-		err := db.UpdateVenueStatusCtx(r.Context(), id, -1, reason, &reviewer)
+		err := repo.UpdateVenueStatusCtx(r.Context(), id, -1, reason, &reviewer)
 		// metrics
 		mAdminRejected.Inc(1)
 		if err != nil {
@@ -291,8 +324,26 @@ func RejectVenueHandler(db *database.DB) http.HandlerFunc {
 		}
 
 		// Save validation result
-		if err := db.SaveValidationResultCtx(r.Context(), validationResult); err != nil {
+		if err := repo.SaveValidationResultCtx(r.Context(), validationResult); err != nil {
 			log.Printf("Failed to save validation result for manual rejection: %v", err)
+		}
+
+		// Get the validation history ID to create audit log
+		history, err := repo.GetVenueValidationHistoryCtx(r.Context(), id)
+		if err == nil && len(history) > 0 {
+			// Find the most recent history entry
+			latestHistory := history[0]
+			for _, h := range history {
+				if h.ProcessedAt.After(latestHistory.ProcessedAt) {
+					latestHistory = h
+				}
+			}
+
+			// Create audit log entry
+			auditLog := domain.NewAuditLog(latestHistory.ID, &adminID, "rejected", &reason)
+			if err := repo.CreateAuditLogCtx(r.Context(), auditLog); err != nil {
+				log.Printf("Failed to create audit log for venue rejection: %v", err)
+			}
 		}
 
 		// Publish event
@@ -506,17 +557,24 @@ func VenueDetailHandler(db *database.DB) http.HandlerFunc {
 }
 
 // BatchOperationHandler handles bulk approval/rejection operations
-func BatchOperationHandler(db *database.DB) http.HandlerFunc {
+func BatchOperationHandler(repo domain.Repository) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 
+		// Get admin ID from context (set by middleware)
+		adminID, ok := auth.GetAdminIDFromContext(r.Context())
+		if !ok {
+			http.Error(w, "Admin ID not found in context", http.StatusForbidden)
+			return
+		}
+
 		action := r.FormValue("action")      // approve, reject, manual_review
 		venueIDs := r.FormValue("venue_ids") // comma-separated IDs
 		reason := r.FormValue("reason")
-		reviewer := "admin" // This should come from authentication
+		reviewer := fmt.Sprintf("admin_%d", adminID)
 
 		if action == "" || venueIDs == "" {
 			http.Error(w, "Missing required parameters", http.StatusBadRequest)
@@ -572,7 +630,7 @@ func BatchOperationHandler(db *database.DB) http.HandlerFunc {
 			notes := fmt.Sprintf("Batch %s by %s: %s", action, reviewer, reason)
 
 			// Update venue status
-			if err := db.UpdateVenueStatusCtx(r.Context(), id, dbStatus, notes, &reviewer); err != nil {
+			if err := repo.UpdateVenueStatusCtx(r.Context(), id, dbStatus, notes, &reviewer); err != nil {
 				log.Printf("Failed to update venue %d: %v", id, err)
 				continue
 			}
@@ -586,8 +644,28 @@ func BatchOperationHandler(db *database.DB) http.HandlerFunc {
 				ScoreBreakdown: map[string]int{"batch_operation": score},
 			}
 
-			if err := db.SaveValidationResultCtx(r.Context(), validationResult); err != nil {
+			if err := repo.SaveValidationResultCtx(r.Context(), validationResult); err != nil {
 				log.Printf("Failed to save validation result for venue %d: %v", id, err)
+			}
+
+			// Create audit log for approved/rejected venues
+			if status == "approved" || status == "rejected" {
+				history, err := repo.GetVenueValidationHistoryCtx(r.Context(), id)
+				if err == nil && len(history) > 0 {
+					// Find the most recent history entry
+					latestHistory := history[0]
+					for _, h := range history {
+						if h.ProcessedAt.After(latestHistory.ProcessedAt) {
+							latestHistory = h
+						}
+					}
+
+					// Create audit log entry
+					auditLog := domain.NewAuditLog(latestHistory.ID, &adminID, status, &notes)
+					if err := repo.CreateAuditLogCtx(r.Context(), auditLog); err != nil {
+						log.Printf("Failed to create audit log for batch operation venue %d: %v", id, err)
+					}
+				}
 			}
 
 			successCount++

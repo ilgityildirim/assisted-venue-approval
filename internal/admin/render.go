@@ -145,3 +145,16 @@ func ExecuteTemplate(w http.ResponseWriter, name string, data interface{}) error
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	return adminTemplates.ExecuteTemplate(w, name, data)
 }
+
+// RenderUnauthorized renders the unauthorized access page
+func RenderUnauthorized(w http.ResponseWriter, ip string) {
+	data := struct {
+		IP string
+	}{
+		IP: ip,
+	}
+	w.WriteHeader(http.StatusForbidden)
+	if err := ExecuteTemplate(w, "unauthorized.tmpl", data); err != nil {
+		http.Error(w, "Unauthorized", http.StatusForbidden)
+	}
+}

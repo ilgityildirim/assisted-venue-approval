@@ -44,6 +44,9 @@ services:
       LOG_FORMAT: ${LOG_FORMAT:-json}
       ENABLE_FILE_LOGGING: ${ENABLE_FILE_LOGGING:-false}
 
+      # Admin Authentication
+      ADMINS_YAML_PATH: ${ADMINS_YAML_PATH:-/app/admins.yaml}
+
     ports:
       - "8080:8080"   # Main application
       - "8081:8081"   # Health checks

@@ -382,10 +382,16 @@ func (e *ProcessingEngine) ApplyAVAConfig(minUserPoints int, onlyAmbassadors boo
 	e.avaConfigMu.Lock()
 	defer e.avaConfigMu.Unlock()
 
+	// Only log if values actually changed
+	changed := e.minUserPointsForAVA != minUserPoints || e.onlyAmbassadors != onlyAmbassadors
+
 	e.minUserPointsForAVA = minUserPoints
 	e.onlyAmbassadors = onlyAmbassadors
-	log.Printf("AVA config updated: MinUserPointsForAVA=%d, OnlyAmbassadors=%v",
-		minUserPoints, onlyAmbassadors)
+
+	if changed {
+		log.Printf("AVA config updated: MinUserPointsForAVA=%d, OnlyAmbassadors=%v",
+			minUserPoints, onlyAmbassadors)
+	}
 }
 
 func (e *ProcessingEngine) resizeWorkers(target int) {
