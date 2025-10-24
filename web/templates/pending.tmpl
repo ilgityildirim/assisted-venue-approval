@@ -77,8 +77,6 @@
             <div class="selected-count" id="selected-count">0 venues selected</div>
             <div style="margin-top: 10px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
                 <button id="start-ai-btn" class="btn btn-success" onclick="startAIForSelected()" disabled>🚀 Start AI-Assisted Reviews for selected (0) venues</button>
-                <button class="btn btn-success" onclick="batchApprove()">✅ Approve Selected</button>
-                <button class="btn btn-danger" onclick="batchReject()">❌ Reject Selected</button>
                 <button class="btn" onclick="selectAll()">Select All</button>
                 <button class="btn" onclick="selectNone()">Select None</button>
             </div>
@@ -233,46 +231,6 @@
             } finally {
                 setTimeout(() => { window.location.reload(); }, 800);
             }
-        }
-
-        function batchApprove() {
-            const ids = getSelectedIds();
-            if (ids.length === 0) return;
-            if (!confirm('Approve ' + ids.length + ' selected venue' + (ids.length === 1 ? '' : 's') + '?')) return;
-            batchOperation('approve', ids, 'Batch approval by admin');
-        }
-
-        function batchReject() {
-            const ids = getSelectedIds();
-            if (ids.length === 0) return;
-            const reason = prompt('Enter rejection reason (required):');
-            if (!reason || reason.trim() === '') {
-                alert('Rejection reason is required');
-                return;
-            }
-            batchOperation('reject', ids, reason);
-        }
-
-        function batchOperation(action, ids, reason) {
-            const formData = new FormData();
-            formData.append('action', action);
-            formData.append('venue_ids', ids.join(','));
-            formData.append('reason', reason);
-
-            fetch(basePath + 'venues/batch-operation', { method: 'POST', body: formData })
-                .then(r => r.json())
-                .then(data => {
-                    if (data.success_count > 0) {
-                        alert(action.charAt(0).toUpperCase() + action.slice(1) + ': ' + data.success_count + '/' + data.total_count);
-                        location.reload();
-                    } else {
-                        alert('No venues processed');
-                    }
-                })
-                .catch(e => {
-                    console.error(e);
-                    alert('Error performing batch ' + action);
-                });
         }
     </script>
 </body>
