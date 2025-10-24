@@ -38,6 +38,11 @@
         .score-medium { background: #fff3cd; color: #856404; }
         .score-low { background: #f8d7da; color: #721c24; }
         .actions-column { white-space: nowrap; }
+        .batch-results-list { list-style: none; padding: 0; }
+        .batch-results-list li { padding: 10px; margin: 5px 0; border-radius: 4px; border-left: 4px solid #ddd; }
+        .batch-results-list li.success { background: #d4edda; border-left-color: #28a745; }
+        .batch-results-list li.failed { background: #f8d7da; border-left-color: #dc3545; }
+        .batch-results-summary { padding: 15px; background: #e7f3ff; border-radius: 4px; margin-bottom: 15px; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -80,6 +85,11 @@
             </div>
         </div>
 
+        <div class="section" id="batch-results" style="display: none;">
+            <h2>Batch Operation Results</h2>
+            <div id="batch-results-content"></div>
+        </div>
+
         <div class="section">
             <h2>Venues ({{.Total}} {{if .HighScoresOnly}}matching filter{{else}}total{{end}}, Page {{.Page}} of {{.TotalPages}})</h2>
             <table class="table">
@@ -119,8 +129,6 @@
                         </td>
                         <td class="actions-column">
                             <a href="{{basePath}}venues/{{.VenueWithUser.Venue.ID}}" class="btn btn-sm">View details</a>
-                            <button class="btn btn-success btn-sm" onclick="approveVenue({{.VenueWithUser.Venue.ID}})">✅</button>
-                            <button class="btn btn-danger btn-sm" onclick="rejectVenue({{.VenueWithUser.Venue.ID}})">❌</button>
                         </td>
                     </tr>
                     {{end}}
@@ -228,9 +236,12 @@
             fetch(basePath + 'venues/batch-operation', { method: 'POST', body: formData })
                 .then(r => r.json())
                 .then(data => {
-                    if (data.success_count > 0) {
-                        alert(action.charAt(0).toUpperCase() + action.slice(1) + ': ' + data.success_count + '/' + data.total_count);
-                        location.reload();
+                    if (data.results && data.results.length > 0) {
+                        displayBatchResults(data, action);
+                        // Clear selections
+                        selectNone();
+                        // Reload after a delay to show results
+                        setTimeout(() => location.reload(), 5000);
                     } else {
                         alert('No venues processed');
                     }
@@ -239,6 +250,38 @@
                     console.error(e);
                     alert('Error performing batch ' + action);
                 });
+        }
+
+        function displayBatchResults(data, action) {
+            const resultsSection = document.getElementById('batch-results');
+            const resultsContent = document.getElementById('batch-results-content');
+
+            // Build summary
+            let html = '<div class="batch-results-summary">';
+            html += 'Batch ' + action + ' completed: ' + data.success_count + '/' + data.total_count + ' successful';
+            html += '</div>';
+
+            // Build results list
+            html += '<ul class="batch-results-list">';
+            data.results.forEach((result, index) => {
+                const num = index + 1;
+                const name = result.venue_name || 'Unknown';
+                const vid = result.venue_id;
+                const status = result.status;
+                const cssClass = result.success ? 'success' : 'failed';
+                const reasonText = result.reason ? ' (Reason: ' + result.reason + ')' : '';
+
+                html += '<li class="' + cssClass + '">';
+                html += '<strong>' + num + '.</strong> ' + name + ' (<strong>' + vid + '</strong>) - Status: <strong>' + status + '</strong>' + reasonText;
+                html += '</li>';
+            });
+            html += '</ul>';
+
+            resultsContent.innerHTML = html;
+            resultsSection.style.display = 'block';
+
+            // Scroll to results
+            resultsSection.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
         function approveVenue(id) {
             if (!confirm('Approve this venue?')) return;

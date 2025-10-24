@@ -1,6 +1,7 @@
 package admin
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -717,8 +718,17 @@ func VenueDetailHandler(db *database.DB) http.HandlerFunc {
 	}
 }
 
+// BatchResult represents the result of a single venue operation in a batch
+type BatchResult struct {
+	VenueID   int64  `json:"venue_id"`
+	VenueName string `json:"venue_name"`
+	Status    string `json:"status"` // "Approved", "Rejected", or "Failed"
+	Reason    string `json:"reason,omitempty"`
+	Success   bool   `json:"success"`
+}
+
 // BatchOperationHandler handles bulk approval/rejection operations
-func BatchOperationHandler(repo domain.Repository) http.HandlerFunc {
+func BatchOperationHandler(repo domain.Repository, cfg *config.Config) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != "POST" {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
@@ -764,72 +774,285 @@ func BatchOperationHandler(repo domain.Repository) http.HandlerFunc {
 			return
 		}
 
-		// Perform batch operation
-		results := make(map[string]interface{})
+		// Perform batch operation with detailed result tracking
+		var batchResults []BatchResult
 		successCount := 0
 
 		for _, id := range ids {
-			var dbStatus int
-			var status string
+			result := BatchResult{
+				VenueID: id,
+				Success: false,
+			}
+
+			// Get venue name for result tracking
+			venueWithUser, err := repo.GetVenueWithUserByIDCtx(r.Context(), id)
+			if err != nil {
+				result.VenueName = fmt.Sprintf("Unknown (ID: %d)", id)
+				result.Status = "Failed"
+				result.Reason = fmt.Sprintf("Failed to fetch venue: %v", err)
+				batchResults = append(batchResults, result)
+				log.Printf("Batch operation: failed to fetch venue %d: %v", id, err)
+				continue
+			}
+			result.VenueName = venueWithUser.Venue.Name
 
 			switch action {
 			case "approve":
-				dbStatus = 1
-				status = "approved"
-			case "reject":
-				dbStatus = -1
-				status = "rejected"
-			default:
-				dbStatus = 0
-				status = "manual_review"
-			}
-
-			notes := fmt.Sprintf("Batch %s by %s: %s", action, reviewer, reason)
-
-			// Update venue status
-			if err := repo.UpdateVenueStatusCtx(r.Context(), id, dbStatus, notes, &reviewer); err != nil {
-				log.Printf("Failed to update venue %d: %v", id, err)
-				continue
-			}
-
-			// Create audit log for approved/rejected venues
-			if status == "approved" || status == "rejected" {
-				history, err := repo.GetVenueValidationHistoryCtx(r.Context(), id)
-				if err == nil && len(history) > 0 {
-					// Find the most recent history entry
-					latestHistory := history[0]
-					for _, h := range history {
-						if h.ProcessedAt.After(latestHistory.ProcessedAt) {
-							latestHistory = h
-						}
-					}
-
-					// Create audit log entry
-					histID := latestHistory.ID
-					auditLog := domain.NewAuditLog(id, &histID, &adminID, status, &notes)
-					if err := repo.CreateAuditLogCtx(r.Context(), auditLog); err != nil {
-						log.Printf("Failed to create audit log for batch operation venue %d: %v", id, err)
-					}
+				// Apply the same validation as single venue approval
+				if err := processBatchApproval(r.Context(), repo, cfg, id, adminID, reviewer, venueWithUser); err != nil {
+					result.Status = "Failed"
+					result.Reason = err.Error()
+					batchResults = append(batchResults, result)
+					log.Printf("Batch approval failed for venue %d: %v", id, err)
+					continue
 				}
+				result.Status = "Approved"
+				result.Success = true
+				successCount++
+				mAdminApproved.Inc(1)
+
+			case "reject":
+				// Apply the same validation as single venue rejection
+				if err := processBatchRejection(r.Context(), repo, id, adminID, reviewer, reason); err != nil {
+					result.Status = "Failed"
+					result.Reason = err.Error()
+					batchResults = append(batchResults, result)
+					log.Printf("Batch rejection failed for venue %d: %v", id, err)
+					continue
+				}
+				result.Status = "Rejected"
+				result.Reason = reason
+				result.Success = true
+				successCount++
+				mAdminRejected.Inc(1)
+
+			default:
+				// manual_review or other actions (basic status update)
+				notes := fmt.Sprintf("Batch %s by %s: %s", action, reviewer, reason)
+				if err := repo.UpdateVenueStatusCtx(r.Context(), id, 0, notes, &reviewer); err != nil {
+					result.Status = "Failed"
+					result.Reason = fmt.Sprintf("Failed to update status: %v", err)
+					batchResults = append(batchResults, result)
+					log.Printf("Batch operation failed for venue %d: %v", id, err)
+					continue
+				}
+				result.Status = "Updated"
+				result.Success = true
+				successCount++
 			}
 
-			successCount++
+			batchResults = append(batchResults, result)
 		}
 
-		results["success_count"] = successCount
-		results["total_count"] = len(ids)
-		results["action"] = action
-		// metrics for batch decisions
-		switch action {
-		case "approve":
-			mAdminApproved.Inc(int64(successCount))
-		case "reject":
-			mAdminRejected.Inc(int64(successCount))
+		response := map[string]interface{}{
+			"results":       batchResults,
+			"success_count": successCount,
+			"total_count":   len(ids),
+			"action":        action,
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(results)
+		json.NewEncoder(w).Encode(response)
 	}
+}
+
+// processBatchApproval handles approval for a single venue in a batch operation
+// Applies the same validation rules as single venue approval
+func processBatchApproval(ctx context.Context, repo domain.Repository, cfg *config.Config, venueID int64, adminID int, reviewer string, venueWithUser *models.VenueWithUser) error {
+	approvalThreshold := cfg.ApprovalThreshold
+
+	// Validate approval eligibility (same as single approval)
+	if err := repo.ValidateApprovalEligibility(venueID, approvalThreshold); err != nil {
+		return fmt.Errorf("cannot approve venue: %v", err)
+	}
+
+	// Get validation history
+	history, err := repo.GetVenueValidationHistoryCtx(ctx, venueID)
+	if err != nil || len(history) == 0 {
+		return fmt.Errorf("cannot approve venue: no validation history found")
+	}
+
+	// Find the most recent history entry
+	latestHistory := history[0]
+	for _, h := range history {
+		if h.ProcessedAt.After(latestHistory.ProcessedAt) {
+			latestHistory = h
+		}
+	}
+
+	// Ensure latest status is "approved"
+	if latestHistory.ValidationStatus != "approved" {
+		return fmt.Errorf("cannot approve venue: latest validation status is '%s' (not 'approved')", latestHistory.ValidationStatus)
+	}
+
+	venue := venueWithUser.Venue
+
+	// Build Combined Information using trust-based merging
+	if latestHistory.GooglePlaceData != nil {
+		venue.GoogleData = latestHistory.GooglePlaceData
+	}
+	tc := trust.NewDefault()
+	assessment := tc.Assess(venueWithUser.User, *venue.Path)
+	combined, cerr := models.GetCombinedVenueInfo(venue, venueWithUser.User, assessment.Trust)
+	if cerr != nil {
+		log.Printf("Warning: failed to build combined info for venue %d: %v", venueID, cerr)
+	}
+
+	// Extract AI suggestions from validation history
+	var nameSuggestion, descSuggestion, closedDaysSuggestion string
+	if latestHistory.AIOutputData != nil && *latestHistory.AIOutputData != "" {
+		var raw map[string]interface{}
+		if err := json.Unmarshal([]byte(*latestHistory.AIOutputData), &raw); err == nil {
+			if qualityMap, ok := raw["quality"].(map[string]interface{}); ok {
+				if name, ok := qualityMap["name"].(string); ok {
+					nameSuggestion = strings.TrimSpace(name)
+				}
+				if desc, ok := qualityMap["description"].(string); ok {
+					descSuggestion = strings.TrimSpace(desc)
+				}
+				if closed, ok := qualityMap["closed_days"].(string); ok {
+					closedDaysSuggestion = strings.TrimSpace(closed)
+				}
+			}
+		}
+	}
+
+	// Build approval data with notes
+	notes := fmt.Sprintf("Batch approval by %s", reviewer)
+	approvalData := domain.NewApprovalData(venueID, adminID, notes)
+
+	// Name: Use NameSuggestion if available, otherwise Combined.Name
+	finalName := combined.Name
+	if nameSuggestion != "" {
+		finalName = nameSuggestion
+	}
+	if finalName != "" && finalName != venue.Name {
+		approvalData.Name = &finalName
+	}
+
+	// Address: Use Combined.Address
+	if combined.Address != "" && combined.Address != venue.Location {
+		approvalData.Address = &combined.Address
+	}
+
+	// Description: Use DescriptionSuggestion if available, otherwise Combined.Description
+	finalDesc := combined.Description
+	if descSuggestion != "" {
+		finalDesc = descSuggestion
+	}
+	if finalDesc != "" {
+		approvalData.Description = &finalDesc
+	}
+
+	// Lat/Lng: Use Combined coordinates
+	if combined.Lat != nil && combined.Lng != nil {
+		approvalData.Lat = combined.Lat
+		approvalData.Lng = combined.Lng
+	}
+
+	// Phone: Use Combined.Phone
+	if combined.Phone != "" {
+		approvalData.Phone = &combined.Phone
+	}
+
+	// Website: Use Combined.Website
+	if combined.Website != "" {
+		approvalData.Website = &combined.Website
+	}
+
+	// OpenHours: Format from Combined.Hours
+	if len(combined.Hours) > 0 {
+		formattedHours, err := FormatOpenHoursFromCombined(combined.Hours)
+		if err != nil {
+			log.Printf("Warning: failed to format open hours for venue %d: %v", venueID, err)
+		} else if formattedHours != "" {
+			approvalData.OpenHours = &formattedHours
+		}
+	}
+
+	// OpenHoursNote: Use ClosedDaysSuggestion if available
+	if closedDaysSuggestion != "" {
+		approvalData.OpenHoursNote = &closedDaysSuggestion
+	}
+
+	// Build data replacements for audit trail
+	approvalData.Replacements = domain.BuildVenueDataReplacements(&venue, approvalData)
+
+	// Approve venue with data replacement
+	if err := repo.ApproveVenueWithDataReplacement(ctx, approvalData); err != nil {
+		return fmt.Errorf("error approving venue: %v", err)
+	}
+
+	// Create audit log with data replacements
+	histID := latestHistory.ID
+	var auditLog *domain.VenueValidationAuditLog
+	if approvalData.Replacements != nil && approvalData.Replacements.HasReplacements() {
+		replacementsJSON, err := approvalData.Replacements.ToJSON()
+		if err != nil {
+			log.Printf("Failed to serialize data replacements: %v", err)
+			auditLog = domain.NewAuditLog(venueID, &histID, &adminID, "approved", &notes)
+		} else {
+			auditLog = domain.NewAuditLogWithReplacements(venueID, &histID, &adminID, "approved", &notes, &replacementsJSON)
+		}
+	} else {
+		auditLog = domain.NewAuditLog(venueID, &histID, &adminID, "approved", &notes)
+	}
+	if err := repo.CreateAuditLogCtx(ctx, auditLog); err != nil {
+		log.Printf("Failed to create audit log for batch approval venue %d: %v", venueID, err)
+	}
+
+	// Publish event
+	if eventSink != nil {
+		_ = eventSink.Append(ctx, events.VenueApproved{
+			Base:   events.Base{Ts: time.Now(), VID: venueID, Adm: &reviewer},
+			Reason: notes,
+			Score:  latestHistory.ValidationScore,
+		})
+	}
+
+	return nil
+}
+
+// processBatchRejection handles rejection for a single venue in a batch operation
+// Applies the same validation rules as single venue rejection
+func processBatchRejection(ctx context.Context, repo domain.Repository, venueID int64, adminID int, reviewer string, reason string) error {
+	// Format rejection reason
+	fullReason := fmt.Sprintf("Batch rejection by %s: %s", reviewer, reason)
+
+	// Update venue status
+	if err := repo.UpdateVenueStatusCtx(ctx, venueID, -1, fullReason, &reviewer); err != nil {
+		return fmt.Errorf("error updating venue: %v", err)
+	}
+
+	// Get the validation history ID to create audit log
+	history, err := repo.GetVenueValidationHistoryCtx(ctx, venueID)
+	if err == nil && len(history) > 0 {
+		// Find the most recent history entry
+		latestHistory := history[0]
+		for _, h := range history {
+			if h.ProcessedAt.After(latestHistory.ProcessedAt) {
+				latestHistory = h
+			}
+		}
+
+		// Create audit log entry
+		histID := latestHistory.ID
+		auditLog := domain.NewAuditLog(venueID, &histID, &adminID, "rejected", &fullReason)
+		if err := repo.CreateAuditLogCtx(ctx, auditLog); err != nil {
+			log.Printf("Failed to create audit log for batch rejection venue %d: %v", venueID, err)
+		}
+
+		// Publish event
+		if eventSink != nil {
+			_ = eventSink.Append(ctx, events.VenueRejected{
+				Base:   events.Base{Ts: time.Now(), VID: venueID, Adm: &reviewer},
+				Reason: fullReason,
+				Score:  latestHistory.ValidationScore,
+			})
+		}
+	}
+
+	return nil
 }
 
 // ValidationHistoryHandler shows comprehensive validation history
@@ -924,18 +1147,4 @@ func APIStatsHandler(db *database.DB, engine *processor.ProcessingEngine) http.H
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(stats)
 	}
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func max(a, b int64) int64 {
-	if a > b {
-		return a
-	}
-	return b
 }

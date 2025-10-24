@@ -202,7 +202,7 @@ func main() {
 	router.HandleFunc("/venues/{id}/feedback", admin.SubmitFeedbackHandler(db)).Methods("POST")
 	router.HandleFunc("/venues/{id}/feedback", admin.VenueFeedbackHandler(db)).Methods("GET")
 
-	router.HandleFunc("/venues/batch-operation", admin.BatchOperationHandler(repo)).Methods("POST")
+	router.HandleFunc("/venues/batch-operation", admin.BatchOperationHandler(repo, cfg)).Methods("POST")
 	router.HandleFunc("/validation/history", admin.ValidationHistoryHandler(db)).Methods("GET")
 	router.HandleFunc("/editorial-feedback", admin.EditorialFeedbackListHandler(db)).Methods("GET")
 
