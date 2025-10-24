@@ -12,7 +12,7 @@ type VenueRepository interface {
 	GetVenuesFilteredCtx(ctx context.Context, status string, search string, limit int, offset int) ([]models.VenueWithUser, int, error)
 	GetVenueWithUserByIDCtx(ctx context.Context, venueID int64) (*models.VenueWithUser, error)
 	GetSimilarVenuesCtx(ctx context.Context, venue models.Venue, limit int) ([]models.Venue, error)
-	GetManualReviewVenuesCtx(ctx context.Context, search string, limit int, offset int) ([]models.VenueWithUser, []int, int, error)
+	GetManualReviewVenuesCtx(ctx context.Context, search string, minScore int, limit int, offset int) ([]models.VenueWithUser, []int, int, error)
 	GetVenueStatisticsCtx(ctx context.Context) (*models.VenueStats, error)
 	CountVenuesByPathCtx(ctx context.Context, path string, excludeVenueID int64) (int, error)
 

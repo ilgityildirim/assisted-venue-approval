@@ -84,7 +84,7 @@ func HomeHandler(repo domain.Repository, engine *processor.ProcessingEngine) htt
 		pendingTotal := len(venuesWithUser)
 
 		// Count pending venues that already have AI-assisted review results (validation history)
-		_, _, assistedTotal, err := repo.GetManualReviewVenuesCtx(r.Context(), "", 1, 0)
+		_, _, assistedTotal, err := repo.GetManualReviewVenuesCtx(r.Context(), "", 0, 1, 0)
 		if err != nil {
 			log.Printf("Error fetching manual review count: %v", err)
 			assistedTotal = 0
@@ -161,7 +161,15 @@ func ManualReviewHandler(db *database.DB) http.HandlerFunc {
 		limit := 50
 		offset := (page - 1) * limit
 
-		venues, scores, total, err := db.GetManualReviewVenuesCtx(r.Context(), search, limit, offset)
+		// Check if "high scores only" filter is enabled
+		highScoresOnly := r.URL.Query().Get("high_scores_only") == "true"
+		minScore := 0
+		cfg := config.Load()
+		if highScoresOnly {
+			minScore = cfg.ApprovalThreshold
+		}
+
+		venues, scores, total, err := db.GetManualReviewVenuesCtx(r.Context(), search, minScore, limit, offset)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Error fetching manual review venues: %v", err), http.StatusInternalServerError)
 			return
@@ -180,17 +188,21 @@ func ManualReviewHandler(db *database.DB) http.HandlerFunc {
 		}
 
 		data := struct {
-			Items      []Item
-			Total      int
-			Page       int
-			TotalPages int
-			Search     string
+			Items             []Item
+			Total             int
+			Page              int
+			TotalPages        int
+			Search            string
+			HighScoresOnly    bool
+			ApprovalThreshold int
 		}{
-			Items:      items,
-			Total:      total,
-			Page:       page,
-			TotalPages: (total + limit - 1) / limit,
-			Search:     search,
+			Items:             items,
+			Total:             total,
+			Page:              page,
+			TotalPages:        (total + limit - 1) / limit,
+			Search:            search,
+			HighScoresOnly:    highScoresOnly,
+			ApprovalThreshold: cfg.ApprovalThreshold,
 		}
 
 		if err := ExecuteTemplate(w, "manual_review.tmpl", data); err != nil {

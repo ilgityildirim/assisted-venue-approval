@@ -1850,7 +1850,8 @@ func (db *DB) GetValidationHistoryPaginatedCtx(ctx context.Context, limit, offse
 }
 
 // GetManualReviewVenuesCtx returns pending venues with validation history (search/pagination) with context.
-func (db *DB) GetManualReviewVenuesCtx(ctx context.Context, search string, limit, offset int) ([]models.VenueWithUser, []int, int, error) {
+// If minScore > 0, only returns venues with validation score >= minScore.
+func (db *DB) GetManualReviewVenuesCtx(ctx context.Context, search string, minScore, limit, offset int) ([]models.VenueWithUser, []int, int, error) {
 	ctx, cancel := db.withReadTimeout(ctx)
 	defer cancel()
 	where := "WHERE v.active = 0 AND EXISTS (SELECT 1 FROM venue_validation_histories h WHERE h.venue_id = v.id)"
@@ -1859,6 +1860,11 @@ func (db *DB) GetManualReviewVenuesCtx(ctx context.Context, search string, limit
 		where += " AND (v.name LIKE ? OR v.location LIKE ? OR m.username LIKE ?)"
 		pat := "%" + search + "%"
 		args = append(args, pat, pat, pat)
+	}
+	// Filter by minimum score if specified
+	if minScore > 0 {
+		where += " AND EXISTS (SELECT 1 FROM venue_validation_histories h WHERE h.venue_id = v.id AND h.validation_score >= ? ORDER BY h.processed_at DESC LIMIT 1)"
+		args = append(args, minScore)
 	}
 	countQuery := fmt.Sprintf(`SELECT COUNT(*) FROM venues v
         LEFT JOIN members m ON v.user_id = m.id
