@@ -1861,9 +1861,9 @@ func (db *DB) GetManualReviewVenuesCtx(ctx context.Context, search string, minSc
 		pat := "%" + search + "%"
 		args = append(args, pat, pat, pat)
 	}
-	// Filter by minimum score if specified
+	// Filter by minimum score if specified (only check the latest validation history)
 	if minScore > 0 {
-		where += " AND EXISTS (SELECT 1 FROM venue_validation_histories h WHERE h.venue_id = v.id AND h.validation_score >= ? ORDER BY h.processed_at DESC LIMIT 1)"
+		where += " AND (SELECT h.validation_score FROM venue_validation_histories h WHERE h.venue_id = v.id ORDER BY h.processed_at DESC LIMIT 1) >= ?"
 		args = append(args, minScore)
 	}
 	countQuery := fmt.Sprintf(`SELECT COUNT(*) FROM venues v
