@@ -64,6 +64,13 @@ var (
 		Code:        "ambassador_only_mode",
 		Description: "Ambassador-only mode enabled - non-ambassador submission requires manual review",
 	}
+
+	NonGenericRestaurant = func(entryType, category int) EarlyExitReason {
+		return EarlyExitReason{
+			Code:        "non_generic_restaurant",
+			Description: fmt.Sprintf("Non-generic restaurant (EntryType=%d, Category=%d) - requires manual review", entryType, category),
+		}
+	}
 )
 
 // checkMinimumPoints verifies user meets minimum ambassador points requirement
@@ -126,6 +133,17 @@ func checkAmbassadorRequirement(user *models.User, onlyAmbassadors bool) (skip b
 
 	if !isAmbassador && !isVenuePrivileged {
 		return true, AmbassadorOnlyMode
+	}
+
+	return false, EarlyExitReason{}
+}
+
+// checkRestaurantCategory verifies venue is a generic restaurant (EntryType=1, Category=0)
+func checkRestaurantCategory(venue *models.Venue) (skip bool, reason EarlyExitReason) {
+	// Only generic restaurants (EntryType=1, Category=0) can proceed to automated review
+	// This excludes: Stores (EntryType=2), Food Trucks, Bakeries, Ice Cream, etc. (Category!=0)
+	if venue.EntryType != 1 || venue.Category != 0 {
+		return true, NonGenericRestaurant(venue.EntryType, venue.Category)
 	}
 
 	return false, EarlyExitReason{}

@@ -736,6 +736,10 @@ func (e *ProcessingEngine) requiresManualReviewEarly(venue *models.Venue, user *
 		return true, reason
 	}
 
+	if skip, reason := checkRestaurantCategory(venue); skip {
+		return true, reason
+	}
+
 	if skip, reason := checkAmbassadorRequirement(user, onlyAmbassadors); skip {
 		return true, reason
 	}
