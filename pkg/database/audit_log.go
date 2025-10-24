@@ -178,3 +178,68 @@ func (db *DB) GetAuditLogsByAdminIDCtx(ctx context.Context, adminID int, limit i
 
 	return logs, total, nil
 }
+
+// GetAuditLogsByVenueIDCtx retrieves all audit logs for a specific venue
+func (db *DB) GetAuditLogsByVenueIDCtx(ctx context.Context, venueID int64) ([]domain.VenueValidationAuditLog, error) {
+	ctx, cancel := db.withReadTimeout(ctx)
+	defer cancel()
+
+	query := `SELECT id, venue_id, history_id, admin_id, status, reason, data_replacements, created_at
+	          FROM venue_validation_audit_logs
+	          WHERE venue_id = ?
+	          ORDER BY created_at DESC`
+
+	rows, err := db.conn.QueryContext(ctx, query, venueID)
+	if err != nil {
+		return nil, errs.NewDB("GetAuditLogsByVenueIDCtx", "failed to query audit logs", err)
+	}
+	defer rows.Close()
+
+	var logs []domain.VenueValidationAuditLog
+	for rows.Next() {
+		var log domain.VenueValidationAuditLog
+		var historyID sql.NullInt64
+		var adminID sql.NullInt32
+		var reason sql.NullString
+		var dataReplacements sql.NullString
+
+		if err := rows.Scan(
+			&log.ID,
+			&log.VenueID,
+			&historyID,
+			&adminID,
+			&log.Status,
+			&reason,
+			&dataReplacements,
+			&log.CreatedAt,
+		); err != nil {
+			return nil, errs.NewDB("GetAuditLogsByVenueIDCtx", "failed to scan audit log", err)
+		}
+
+		if historyID.Valid {
+			hid := historyID.Int64
+			log.HistoryID = &hid
+		}
+
+		if adminID.Valid {
+			id := int(adminID.Int32)
+			log.AdminID = &id
+		}
+
+		if reason.Valid {
+			log.Reason = &reason.String
+		}
+
+		if dataReplacements.Valid {
+			log.DataReplacements = &dataReplacements.String
+		}
+
+		logs = append(logs, log)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, errs.NewDB("GetAuditLogsByVenueIDCtx", "row iteration error", err)
+	}
+
+	return logs, nil
+}

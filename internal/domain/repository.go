@@ -53,6 +53,7 @@ type AuditLogRepository interface {
 	CreateAuditLogCtx(ctx context.Context, log *VenueValidationAuditLog) error
 	GetAuditLogsByHistoryIDCtx(ctx context.Context, historyID int64) ([]VenueValidationAuditLog, error)
 	GetAuditLogsByAdminIDCtx(ctx context.Context, adminID int, limit int, offset int) ([]VenueValidationAuditLog, int, error)
+	GetAuditLogsByVenueIDCtx(ctx context.Context, venueID int64) ([]VenueValidationAuditLog, error)
 }
 
 // Repository aggregates the repos commonly required by services.

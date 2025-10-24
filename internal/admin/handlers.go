@@ -516,6 +516,13 @@ func VenueDetailHandler(db *database.DB) http.HandlerFunc {
 			history = []models.ValidationHistory{}
 		}
 
+		// Get audit logs for this venue
+		auditLogs, err := db.GetAuditLogsByVenueIDCtx(r.Context(), id)
+		if err != nil {
+			log.Printf("Error fetching audit logs: %v", err)
+			auditLogs = []domain.VenueValidationAuditLog{}
+		}
+
 		// Get similar venues for comparison (will be removed from UI, still fetched safely)
 		similarVenues, err := db.GetSimilarVenuesCtx(r.Context(), venue.Venue, 5)
 		if err != nil {
@@ -561,6 +568,7 @@ func VenueDetailHandler(db *database.DB) http.HandlerFunc {
 		data := struct {
 			Venue              models.VenueWithUser
 			History            []models.ValidationHistory
+			AuditLogs          []domain.VenueValidationAuditLog
 			SimilarVenues      []models.Venue
 			GoogleData         *models.GooglePlaceData
 			Combined           models.CombinedInfo
@@ -594,6 +602,7 @@ func VenueDetailHandler(db *database.DB) http.HandlerFunc {
 		}{
 			Venue:          *venue,
 			History:        history,
+			AuditLogs:      auditLogs,
 			SimilarVenues:  similarVenues,
 			GoogleData:     googleData,
 			Combined:       combined,

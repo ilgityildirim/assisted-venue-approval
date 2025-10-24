@@ -109,6 +109,10 @@ func (r *SQLRepository) GetAuditLogsByAdminIDCtx(ctx context.Context, adminID in
 	return r.db.GetAuditLogsByAdminIDCtx(ctx, adminID, limit, offset)
 }
 
+func (r *SQLRepository) GetAuditLogsByVenueIDCtx(ctx context.Context, venueID int64) ([]domain.VenueValidationAuditLog, error) {
+	return r.db.GetAuditLogsByVenueIDCtx(ctx, venueID)
+}
+
 // FilterPendingBySpecCtx fetches pending venues and filters them using a Specification.
 // Note: This applies the spec in-memory. For large datasets, consider adding SQL translations.
 func (r *SQLRepository) FilterPendingBySpecCtx(ctx context.Context, s specs.Specification[models.Venue]) ([]models.VenueWithUser, error) {
