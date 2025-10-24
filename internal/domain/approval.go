@@ -3,40 +3,29 @@ package domain
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
+
+	"assisted-venue-approval/internal/models"
 )
 
+// VenueFieldData represents venue field values (used for original or replacement data)
+type VenueFieldData struct {
+	Name          *string  `json:"name,omitempty"`
+	Address       *string  `json:"address,omitempty"`
+	Description   *string  `json:"description,omitempty"`
+	Lat           *float64 `json:"lat,omitempty"`
+	Lng           *float64 `json:"lng,omitempty"`
+	Phone         *string  `json:"phone,omitempty"`
+	Website       *string  `json:"website,omitempty"`
+	OpenHours     *string  `json:"openhours,omitempty"`
+	OpenHoursNote *string  `json:"openhours_note,omitempty"`
+}
+
 // VenueDataReplacement tracks original vs replaced values for audit purposes
-// Only fields that were actually replaced should be non-nil
+// Contains two nested objects: original venue data and replacement data
 type VenueDataReplacement struct {
-	// Name replacement (AI suggestion)
-	OriginalName *string `json:"original_name,omitempty"`
-	ReplacedName *string `json:"replaced_name,omitempty"`
-
-	// Address replacement (Google data with user fallback)
-	OriginalAddress *string `json:"original_address,omitempty"`
-	ReplacedAddress *string `json:"replaced_address,omitempty"`
-
-	// Description replacement (AI suggestion)
-	OriginalDescription *string `json:"original_description,omitempty"`
-	ReplacedDescription *string `json:"replaced_description,omitempty"`
-
-	// Coordinates replacement (Google data)
-	OriginalLat *float64 `json:"original_lat,omitempty"`
-	ReplacedLat *float64 `json:"replaced_lat,omitempty"`
-	OriginalLng *float64 `json:"original_lng,omitempty"`
-	ReplacedLng *float64 `json:"replaced_lng,omitempty"`
-
-	// Phone replacement (Google data with user fallback)
-	OriginalPhone *string `json:"original_phone,omitempty"`
-	ReplacedPhone *string `json:"replaced_phone,omitempty"`
-
-	// Open hours replacement (Google data formatted to JSON)
-	OriginalOpenHours *string `json:"original_openhours,omitempty"`
-	ReplacedOpenHours *string `json:"replaced_openhours,omitempty"`
-
-	// Open hours note replacement (AI closed days suggestion)
-	OriginalOpenHoursNote *string `json:"original_openhours_note,omitempty"`
-	ReplacedOpenHoursNote *string `json:"replaced_openhours_note,omitempty"`
+	Original    *VenueFieldData `json:"original,omitempty"`
+	Replacement *VenueFieldData `json:"replacement,omitempty"`
 }
 
 // ToJSON serializes the replacement data to JSON string for audit log storage
@@ -59,13 +48,7 @@ func (vdr *VenueDataReplacement) HasReplacements() bool {
 		return false
 	}
 
-	return vdr.OriginalName != nil ||
-		vdr.OriginalAddress != nil ||
-		vdr.OriginalDescription != nil ||
-		vdr.OriginalLat != nil ||
-		vdr.OriginalPhone != nil ||
-		vdr.OriginalOpenHours != nil ||
-		vdr.OriginalOpenHoursNote != nil
+	return vdr.Original != nil && vdr.Replacement != nil
 }
 
 // ApprovalData contains all data needed to approve a venue with data replacement
@@ -94,5 +77,126 @@ func NewApprovalData(venueID int64, adminID int, notes string) *ApprovalData {
 		AdminID:      adminID,
 		Notes:        notes,
 		Replacements: &VenueDataReplacement{},
+	}
+}
+
+// BuildVenueDataReplacements compares original venue data with approval changes
+// and returns a VenueDataReplacement object tracking what changed.
+// Returns nil if no fields were modified.
+func BuildVenueDataReplacements(venue *models.Venue, approvalData *ApprovalData) *VenueDataReplacement {
+	if venue == nil || approvalData == nil {
+		return nil
+	}
+
+	original := &VenueFieldData{}
+	replacement := &VenueFieldData{}
+	hasChanges := false
+
+	// Helper to normalize strings for comparison (trim whitespace, treat empty as nil)
+	normalizeStr := func(s *string) *string {
+		if s == nil {
+			return nil
+		}
+		trimmed := strings.TrimSpace(*s)
+		if trimmed == "" {
+			return nil
+		}
+		return &trimmed
+	}
+
+	// Helper to check if strings are different (handles nil and empty)
+	strDiffers := func(orig, new *string) bool {
+		normOrig := normalizeStr(orig)
+		normNew := normalizeStr(new)
+		if normOrig == nil && normNew == nil {
+			return false
+		}
+		if normOrig == nil || normNew == nil {
+			return true
+		}
+		return *normOrig != *normNew
+	}
+
+	// Name: venue.Name (string) vs approvalData.Name (*string)
+	if approvalData.Name != nil {
+		origName := venue.Name
+		if strDiffers(&origName, approvalData.Name) {
+			original.Name = &origName
+			replacement.Name = approvalData.Name
+			hasChanges = true
+		}
+	}
+
+	// Address: venue.Location (string) vs approvalData.Address (*string)
+	if approvalData.Address != nil {
+		origAddr := venue.Location
+		if strDiffers(&origAddr, approvalData.Address) {
+			original.Address = &origAddr
+			replacement.Address = approvalData.Address
+			hasChanges = true
+		}
+	}
+
+	// Description: venue.AdditionalInfo (*string) vs approvalData.Description (*string)
+	if approvalData.Description != nil && strDiffers(venue.AdditionalInfo, approvalData.Description) {
+		original.Description = venue.AdditionalInfo
+		replacement.Description = approvalData.Description
+		hasChanges = true
+	}
+
+	// Lat: venue.Lat (*float64) vs approvalData.Lat (*float64)
+	if approvalData.Lat != nil {
+		if venue.Lat == nil || *venue.Lat != *approvalData.Lat {
+			original.Lat = venue.Lat
+			replacement.Lat = approvalData.Lat
+			hasChanges = true
+		}
+	}
+
+	// Lng: venue.Lng (*float64) vs approvalData.Lng (*float64)
+	if approvalData.Lng != nil {
+		if venue.Lng == nil || *venue.Lng != *approvalData.Lng {
+			original.Lng = venue.Lng
+			replacement.Lng = approvalData.Lng
+			hasChanges = true
+		}
+	}
+
+	// Phone: venue.Phone (*string) vs approvalData.Phone (*string)
+	if approvalData.Phone != nil && strDiffers(venue.Phone, approvalData.Phone) {
+		original.Phone = venue.Phone
+		replacement.Phone = approvalData.Phone
+		hasChanges = true
+	}
+
+	// Website: venue.URL (*string) vs approvalData.Website (*string)
+	if approvalData.Website != nil && strDiffers(venue.URL, approvalData.Website) {
+		original.Website = venue.URL
+		replacement.Website = approvalData.Website
+		hasChanges = true
+	}
+
+	// OpenHours: venue.OpenHours (*string) vs approvalData.OpenHours (*string)
+	if approvalData.OpenHours != nil && strDiffers(venue.OpenHours, approvalData.OpenHours) {
+		original.OpenHours = venue.OpenHours
+		replacement.OpenHours = approvalData.OpenHours
+		hasChanges = true
+	}
+
+	// OpenHoursNote: venue.OpenHoursNote (*string) vs approvalData.OpenHoursNote (*string)
+	if approvalData.OpenHoursNote != nil && strDiffers(venue.OpenHoursNote, approvalData.OpenHoursNote) {
+		original.OpenHoursNote = venue.OpenHoursNote
+		replacement.OpenHoursNote = approvalData.OpenHoursNote
+		hasChanges = true
+	}
+
+	// Return nil if no changes detected
+	if !hasChanges {
+		return nil
+	}
+
+	return &VenueDataReplacement{
+		Original:    original,
+		Replacement: replacement,
 	}
 }

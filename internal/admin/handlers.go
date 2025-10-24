@@ -370,6 +370,9 @@ func ApproveVenueHandler(repo domain.Repository, cfg *config.Config) http.Handle
 			approvalData.OpenHoursNote = &closedDaysSuggestion
 		}
 
+		// Build data replacements for audit trail
+		approvalData.Replacements = domain.BuildVenueDataReplacements(&venue, approvalData)
+
 		// Approve venue
 		if err := repo.ApproveVenueWithDataReplacement(r.Context(), approvalData); err != nil {
 			w.Header().Set("Content-Type", "application/json")
@@ -384,9 +387,20 @@ func ApproveVenueHandler(repo domain.Repository, cfg *config.Config) http.Handle
 		// metrics
 		mAdminApproved.Inc(1)
 
-		// Create simple audit log
+		// Create audit log with data replacements
 		histID := latestHistory.ID
-		auditLog := domain.NewAuditLog(id, &histID, &adminID, "approved", &notes)
+		var auditLog *domain.VenueValidationAuditLog
+		if approvalData.Replacements != nil && approvalData.Replacements.HasReplacements() {
+			replacementsJSON, err := approvalData.Replacements.ToJSON()
+			if err != nil {
+				log.Printf("Failed to serialize data replacements: %v", err)
+				auditLog = domain.NewAuditLog(id, &histID, &adminID, "approved", &notes)
+			} else {
+				auditLog = domain.NewAuditLogWithReplacements(id, &histID, &adminID, "approved", &notes, &replacementsJSON)
+			}
+		} else {
+			auditLog = domain.NewAuditLog(id, &histID, &adminID, "approved", &notes)
+		}
 		if err := repo.CreateAuditLogCtx(r.Context(), auditLog); err != nil {
 			log.Printf("Failed to create audit log for venue approval: %v", err)
 		}
