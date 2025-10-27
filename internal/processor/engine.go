@@ -724,6 +724,10 @@ func (e *ProcessingEngine) requiresManualReviewEarly(venue *models.Venue, user *
 	e.avaConfigMu.RUnlock()
 
 	// Run all early exit checks using helper functions
+	if skip, reason := checkAmbassadorRequirement(user, onlyAmbassadors); skip {
+		return true, reason
+	}
+
 	if skip, reason := checkMinimumPoints(user, minUserPointsForAVA); skip {
 		return true, reason
 	}
@@ -737,10 +741,6 @@ func (e *ProcessingEngine) requiresManualReviewEarly(venue *models.Venue, user *
 	}
 
 	if skip, reason := checkRestaurantCategory(venue); skip {
-		return true, reason
-	}
-
-	if skip, reason := checkAmbassadorRequirement(user, onlyAmbassadors); skip {
 		return true, reason
 	}
 
