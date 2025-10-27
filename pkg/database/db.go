@@ -840,23 +840,24 @@ func (db *DB) GetVenuesFiltered(status, search string, limit, offset int) ([]mod
 
 // GetVenueWithUserByID returns a venue with user data by ID
 func (db *DB) GetVenueWithUserByID(venueID int64) (*models.VenueWithUser, error) {
-	query := `SELECT v.id, v.path, v.entrytype, v.name, v.url, v.fburl, v.instagram_url, 
-        v.location, v.zipcode, v.phone, v.other_food_type, v.price, v.additionalinfo, 
-        v.vdetails, v.openhours, v.openhours_note, v.timezone, v.hash, v.email, 
-        v.ownername, v.sentby, v.user_id, v.active, v.vegonly, v.vegan, 
-        v.sponsor_level, v.crossstreet, v.lat, v.lng, v.created_at, v.date_added, 
-        v.date_updated, v.admin_last_update, v.admin_note, v.admin_hold, 
-        v.admin_hold_email_note, v.updated_by_id, v.made_active_by_id, 
-        v.made_active_at, v.show_premium, v.category, v.pretty_url, v.edit_lock, 
+	query := `SELECT v.id, v.path, v.entrytype, v.name, v.url, v.fburl, v.instagram_url,
+        v.location, v.zipcode, v.phone, v.other_food_type, v.price, v.additionalinfo,
+        v.vdetails, v.openhours, v.openhours_note, v.timezone, v.hash, v.email,
+        v.ownername, v.sentby, v.user_id, v.active, v.vegonly, v.vegan,
+        v.sponsor_level, v.crossstreet, v.lat, v.lng, v.created_at, v.date_added,
+        v.date_updated, v.admin_last_update, v.admin_note, v.admin_hold,
+        v.admin_hold_email_note, v.updated_by_id, v.made_active_by_id,
+        v.made_active_at, v.show_premium, v.category, v.pretty_url, v.edit_lock,
         v.request_vegan_decal_at, v.request_excellent_decal_at, v.source,
         m.id as member_id, m.username, m.email as user_email, m.trusted, m.contributions,
         CASE WHEN va.venue_id IS NOT NULL THEN 1 ELSE 0 END as is_venue_admin,
-        a.level as ambassador_level, a.points as ambassador_points, a.path as ambassador_region,
+        (SELECT MAX(level) FROM ambassadors WHERE user_id = m.id) as ambassador_level,
+        (SELECT MAX(points) FROM ambassadors WHERE user_id = m.id) as ambassador_points,
+        (SELECT path FROM ambassadors WHERE user_id = m.id ORDER BY points DESC, level DESC LIMIT 1) as ambassador_region,
         (SELECT COUNT(*) FROM venues v2 WHERE v2.user_id = m.id AND v2.active = 1) as approved_venue_count
-        FROM venues v 
-        JOIN members m ON v.user_id = m.id 
+        FROM venues v
+        JOIN members m ON v.user_id = m.id
         LEFT JOIN venue_admin va ON v.id = va.venue_id AND m.id = va.user_id
-        LEFT JOIN ambassadors a ON m.id = a.user_id
         WHERE v.id = ?`
 
 	var venueWithUser models.VenueWithUser
@@ -1649,8 +1650,8 @@ func (db *DB) GetVenuesFilteredCtx(ctx context.Context, status, search string, l
 func (db *DB) GetVenueWithUserByIDCtx(ctx context.Context, venueID int64) (*models.VenueWithUser, error) {
 	ctx, cancel := db.withReadTimeout(ctx)
 	defer cancel()
-	query := `SELECT 
-        v.id, v.path, v.entrytype, v.name, v.url, v.fburl, v.instagram_url, 
+	query := `SELECT
+        v.id, v.path, v.entrytype, v.name, v.url, v.fburl, v.instagram_url,
         v.location, v.zipcode, v.phone, v.other_food_type, v.price, v.additionalinfo,
         v.vdetails, v.openhours, v.openhours_note, v.timezone, v.hash, v.email,
         v.ownername, v.sentby, v.user_id, v.active, v.vegonly, v.vegan,
@@ -1661,12 +1662,13 @@ func (db *DB) GetVenueWithUserByIDCtx(ctx context.Context, venueID int64) (*mode
         v.request_vegan_decal_at, v.request_excellent_decal_at, v.source,
         m.username, m.email as user_email, m.trusted, m.contributions,
         CASE WHEN va.venue_id IS NOT NULL THEN 1 ELSE 0 END as is_venue_admin,
-        a.level as ambassador_level, a.points as ambassador_points, a.path as ambassador_region,
+        (SELECT MAX(level) FROM ambassadors WHERE user_id = v.user_id) as ambassador_level,
+        (SELECT MAX(points) FROM ambassadors WHERE user_id = v.user_id) as ambassador_points,
+        (SELECT path FROM ambassadors WHERE user_id = v.user_id ORDER BY points DESC, level DESC LIMIT 1) as ambassador_region,
         (SELECT COUNT(*) FROM venues v2 WHERE v2.user_id = m.id AND v2.active = 1) as approved_venue_count
         FROM venues v
         LEFT JOIN members m ON v.user_id = m.id
         LEFT JOIN venue_admin va ON v.id = va.venue_id AND v.user_id = va.user_id
-        LEFT JOIN ambassadors a ON v.user_id = a.user_id
         WHERE v.id = ?`
 	row := db.conn.QueryRowContext(ctx, query, venueID)
 	var vu models.VenueWithUser

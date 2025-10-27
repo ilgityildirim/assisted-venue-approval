@@ -728,6 +728,8 @@ func (e *ProcessingEngine) requiresManualReviewEarly(venue *models.Venue, user *
 		return true, reason
 	}
 
+	fmt.Println("User is ambassador:", user.AmbassadorLevel, user.AmbassadorPoints)
+
 	if skip, reason := checkMinimumPoints(user, minUserPointsForAVA); skip {
 		return true, reason
 	}

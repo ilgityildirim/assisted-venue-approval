@@ -28,16 +28,15 @@ func (r EarlyExitReason) String() string {
 var (
 	InsufficientPoints = func(required, actual int) EarlyExitReason {
 		return EarlyExitReason{
-			Code: "insufficient_points",
-			Description: fmt.Sprintf("User has insufficient points for automated review (required: %d, actual: %d)",
-				required, actual),
+			Code:        "insufficient_points",
+			Description: fmt.Sprintf("User has insufficient ambassador points (required: %d, has: %d)", required, actual),
 		}
 	}
 
 	NoAmbassadorPoints = func(required int) EarlyExitReason {
 		return EarlyExitReason{
 			Code:        "no_ambassador_points",
-			Description: fmt.Sprintf("User has insufficient points for automated review (required: %d, actual: none)", required),
+			Description: fmt.Sprintf("User is not an ambassador (required: %d points minimum)", required),
 		}
 	}
 
