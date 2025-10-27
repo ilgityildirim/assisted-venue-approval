@@ -399,6 +399,12 @@ func (app *App) validateSingleHandler(w http.ResponseWriter, r *http.Request) {
 	if result.ValidationResult != nil {
 		response["aiStatus"] = result.ValidationResult.Status
 		response["aiScore"] = result.ValidationResult.Score
+		// Include detailed reason for manual_review or rejected status
+		if result.ValidationResult.Status == "manual_review" || result.ValidationResult.Status == "rejected" {
+			if result.ValidationResult.Notes != "" {
+				response["reason"] = result.ValidationResult.Notes
+			}
+		}
 	}
 
 	json.NewEncoder(w).Encode(response)

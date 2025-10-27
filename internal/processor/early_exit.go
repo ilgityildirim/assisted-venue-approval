@@ -66,9 +66,24 @@ var (
 	}
 
 	NonGenericRestaurant = func(entryType, category int) EarlyExitReason {
+		categoryName := map[int]string{
+			0: "Generic Restaurant", 1: "Health Store", 2: "Veg Store", 3: "Bakery", 4: "B&B",
+			5: "Delivery", 6: "Catering", 7: "Organization", 8: "Farmer's Market",
+			10: "Food Truck", 11: "Market Vendor", 12: "Ice Cream", 13: "Juice Bar",
+			14: "Professional", 15: "Coffee & Tea", 16: "Spa", 99: "Other",
+		}[category]
+		if categoryName == "" {
+			categoryName = fmt.Sprintf("Category %d", category)
+		}
+
+		entryTypeName := "Restaurant"
+		if entryType == 2 {
+			entryTypeName = "Store"
+		}
+
 		return EarlyExitReason{
 			Code:        "non_generic_restaurant",
-			Description: fmt.Sprintf("Non-generic restaurant (EntryType=%d, Category=%d) - requires manual review", entryType, category),
+			Description: fmt.Sprintf("Only generic restaurants can be viewed by AVA. Given Entry Type: %s (%d), Category: %s (%d) ", entryTypeName, entryType, categoryName, category),
 		}
 	}
 )

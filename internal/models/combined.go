@@ -35,6 +35,40 @@ type CombinedInfo struct {
 	Path         string   `json:"path"`
 }
 
+// ExtractStreetAddress extracts only the street address (number + name) from Google AddressComponents
+// Returns street-only address (e.g., "123 Main St") excluding city, state, country, postal code
+// Falls back to FormattedAddress if street components are not available
+func ExtractStreetAddress(gd *GooglePlaceData) string {
+	if gd == nil {
+		return ""
+	}
+
+	var streetNumber, route string
+
+	// Extract street_number and route from AddressComponents
+	for _, component := range gd.AddressComponents {
+		for _, typ := range component.Types {
+			if typ == "street_number" {
+				streetNumber = component.LongName
+			}
+			if typ == "route" {
+				route = component.LongName
+			}
+		}
+	}
+
+	// Combine street number and route
+	if streetNumber != "" && route != "" {
+		return streetNumber + " " + route
+	}
+	if route != "" {
+		return route
+	}
+
+	// Fallback to full address if no street components found
+	return gd.FormattedAddress
+}
+
 // GetCombinedVenueInfo merges venue data from user submission and Google data
 // using trust-based prioritization and validation rules.
 //
@@ -63,9 +97,16 @@ func GetCombinedVenueInfo(v Venue, u User, trust float64) (CombinedInfo, error) 
 		ci.Sources["name"] = "user"
 	}
 
-	// Address - always prefer Google for standardized formatting (St, Ln, Rd abbreviations)
+	// Address - always prefer Google street address (number + name only, no city/state/country/postal)
 	// User address only used as fallback when Google is unavailable
-	ci.Address, ci.Sources["address"] = pickStringPrefer(false, &v.Location, getGoogleStringPtr(gd, func(g GooglePlaceData) string { return g.FormattedAddress }))
+	var googleStreetAddr *string
+	if gd != nil {
+		streetAddr := ExtractStreetAddress(gd)
+		if streetAddr != "" {
+			googleStreetAddr = &streetAddr
+		}
+	}
+	ci.Address, ci.Sources["address"] = pickStringPrefer(false, &v.Location, googleStreetAddr)
 
 	// Phone - ALWAYS prefer Google data, fallback to user data
 	userPhone := v.Phone
