@@ -728,8 +728,6 @@ func (e *ProcessingEngine) requiresManualReviewEarly(venue *models.Venue, user *
 		return true, reason
 	}
 
-	fmt.Println("User is ambassador:", user.AmbassadorLevel, user.AmbassadorPoints)
-
 	if skip, reason := checkMinimumPoints(user, minUserPointsForAVA); skip {
 		return true, reason
 	}
@@ -738,11 +736,11 @@ func (e *ProcessingEngine) requiresManualReviewEarly(venue *models.Venue, user *
 		return true, reason
 	}
 
-	if skip, reason := checkVenueType(venue); skip {
+	if skip, reason := checkRestaurantCategory(venue); skip {
 		return true, reason
 	}
 
-	if skip, reason := checkRestaurantCategory(venue); skip {
+	if skip, reason := checkVenueType(venue); skip {
 		return true, reason
 	}
 

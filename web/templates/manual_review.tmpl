@@ -17,7 +17,7 @@
         .filters { background: white; padding: 20px; border-radius: 8px; margin-bottom: 30px; }
         .filters form { display: flex; gap: 15px; align-items: center; flex-wrap: wrap; }
         .filters input { padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px; }
-        .btn { display: inline-block; padding: 8px 16px; background: #3498db; color: white; text-decoration: none; border-radius: 4px; border: none; cursor: pointer; }
+        .btn { display: inline-block; padding: 8px 16px; background: #3498db; color: white; text-decoration: none; border-radius: 4px; border: none; cursor: pointer; min-width: 80px; text-align: center; font-size: 14px; font-family: inherit; line-height: 1.5; box-sizing: border-box; }
         .btn:hover { background: #2980b9; }
         .btn-sm { padding: 4px 8px; font-size: 12px; }
         .btn-success { background: #27ae60; }
@@ -63,12 +63,20 @@
         </nav>
 
         <div class="filters">
-            <form method="GET">
+            <form method="GET" id="filter-form">
                 <input type="text" name="search" value="{{.Search}}" placeholder="Search...">
                 <label style="display: inline-flex; align-items: center; gap: 5px; cursor: pointer;">
                     <input type="checkbox" name="high_scores_only" value="true" {{if .HighScoresOnly}}checked{{end}}>
                     <span>Show only high scores (≥ {{.ApprovalThreshold}})</span>
                 </label>
+                <select name="sort" id="sort-select" style="padding: 8px 12px; border: 1px solid #ddd; border-radius: 4px;" onchange="document.getElementById('filter-form').submit();">
+                    <option value="created_at" {{if eq .Sort "created_at"}}selected{{end}}>Sort by: Created At (Oldest First)</option>
+                    <option value="last_updated" {{if eq .Sort "last_updated"}}selected{{end}}>Sort by: Last Updated At (Newest First)</option>
+                    <option value="venue_id_asc" {{if eq .Sort "venue_id_asc"}}selected{{end}}>Sort by: Venue ID (Ascending)</option>
+                    <option value="venue_id_desc" {{if eq .Sort "venue_id_desc"}}selected{{end}}>Sort by: Venue ID (Descending)</option>
+                    <option value="score_desc" {{if eq .Sort "score_desc"}}selected{{end}}>Sort by: Score (Highest First)</option>
+                    <option value="score_asc" {{if eq .Sort "score_asc"}}selected{{end}}>Sort by: Score (Lowest First)</option>
+                </select>
                 <button type="submit" class="btn">Filter</button>
                 <a href="{{basePath}}venues/manual-review" class="btn">Clear</a>
             </form>
@@ -138,17 +146,17 @@
 
         <div class="pagination">
             {{if gt .Page 1}}
-                <a href="{{basePath}}venues/manual-review?page={{add .Page -1}}&search={{.Search}}{{if .HighScoresOnly}}&high_scores_only=true{{end}}">« Previous</a>
+                <a href="{{basePath}}venues/manual-review?page={{add .Page -1}}&search={{.Search}}{{if .HighScoresOnly}}&high_scores_only=true{{end}}&sort={{.Sort}}">« Previous</a>
             {{end}}
             {{range $i := seq 1 .TotalPages}}
                 {{if eq $i $.Page}}
                     <a href="#" class="active">{{$i}}</a>
                 {{else if or (le $i 3) (ge $i (add $.TotalPages -2)) (and (ge $i (add $.Page -1)) (le $i (add $.Page 1)))}}
-                    <a href="{{basePath}}venues/manual-review?page={{$i}}&search={{$.Search}}{{if $.HighScoresOnly}}&high_scores_only=true{{end}}">{{$i}}</a>
+                    <a href="{{basePath}}venues/manual-review?page={{$i}}&search={{$.Search}}{{if $.HighScoresOnly}}&high_scores_only=true{{end}}&sort={{$.Sort}}">{{$i}}</a>
                 {{end}}
             {{end}}
             {{if lt .Page .TotalPages}}
-                <a href="{{basePath}}venues/manual-review?page={{add .Page 1}}&search={{.Search}}{{if .HighScoresOnly}}&high_scores_only=true{{end}}">Next »</a>
+                <a href="{{basePath}}venues/manual-review?page={{add .Page 1}}&search={{.Search}}{{if .HighScoresOnly}}&high_scores_only=true{{end}}&sort={{.Sort}}">Next »</a>
             {{end}}
         </div>
     </div>

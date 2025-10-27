@@ -1853,7 +1853,8 @@ func (db *DB) GetValidationHistoryPaginatedCtx(ctx context.Context, limit, offse
 
 // GetManualReviewVenuesCtx returns pending venues with validation history (search/pagination) with context.
 // If minScore > 0, only returns venues with validation score >= minScore.
-func (db *DB) GetManualReviewVenuesCtx(ctx context.Context, search string, minScore, limit, offset int) ([]models.VenueWithUser, []int, int, error) {
+// sort parameter determines ordering: created_at, last_updated, venue_id_asc, venue_id_desc, score_asc, score_desc
+func (db *DB) GetManualReviewVenuesCtx(ctx context.Context, search string, minScore int, sort string, limit, offset int) ([]models.VenueWithUser, []int, int, error) {
 	ctx, cancel := db.withReadTimeout(ctx)
 	defer cancel()
 	where := "WHERE v.active = 0 AND EXISTS (SELECT 1 FROM venue_validation_histories h WHERE h.venue_id = v.id)"
@@ -1875,7 +1876,27 @@ func (db *DB) GetManualReviewVenuesCtx(ctx context.Context, search string, minSc
 	if err := db.conn.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
 		return nil, nil, 0, fmt.Errorf("failed to count manual review venues: %w", err)
 	}
-	query := fmt.Sprintf(`SELECT 
+
+	// Build ORDER BY clause based on sort parameter (validated whitelist)
+	var orderBy string
+	switch sort {
+	case "last_updated":
+		orderBy = "(SELECT h.processed_at FROM venue_validation_histories h WHERE h.venue_id = v.id ORDER BY h.processed_at DESC LIMIT 1) DESC"
+	case "venue_id_asc":
+		orderBy = "v.id ASC"
+	case "venue_id_desc":
+		orderBy = "v.id DESC"
+	case "score_asc":
+		orderBy = "(SELECT h.validation_score FROM venue_validation_histories h WHERE h.venue_id = v.id ORDER BY h.processed_at DESC LIMIT 1) ASC"
+	case "score_desc":
+		orderBy = "(SELECT h.validation_score FROM venue_validation_histories h WHERE h.venue_id = v.id ORDER BY h.processed_at DESC LIMIT 1) DESC"
+	case "created_at":
+		fallthrough
+	default:
+		orderBy = "v.created_at ASC"
+	}
+
+	query := fmt.Sprintf(`SELECT
         v.id, v.path, v.entrytype, v.name, v.url, v.fburl, v.instagram_url, v.location, v.zipcode, v.phone,
         v.other_food_type, v.price, v.additionalinfo, v.vdetails, v.openhours, v.openhours_note,
         v.timezone, v.hash, v.email, v.ownername, v.sentby, v.user_id, v.active, v.vegonly, v.vegan,
@@ -1887,8 +1908,8 @@ func (db *DB) GetManualReviewVenuesCtx(ctx context.Context, search string, minSc
         FROM venues v
         LEFT JOIN members m ON v.user_id = m.id
         %s
-        ORDER BY v.created_at ASC
-        LIMIT ? OFFSET ?`, where)
+        ORDER BY %s
+        LIMIT ? OFFSET ?`, where, orderBy)
 	args = append(args, limit, offset)
 	rows, err := db.conn.QueryContext(ctx, query, args...)
 	if err != nil {

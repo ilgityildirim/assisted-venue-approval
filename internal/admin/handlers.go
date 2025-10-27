@@ -85,7 +85,7 @@ func HomeHandler(repo domain.Repository, engine *processor.ProcessingEngine) htt
 		pendingTotal := len(venuesWithUser)
 
 		// Count pending venues that already have AI-assisted review results (validation history)
-		_, _, assistedTotal, err := repo.GetManualReviewVenuesCtx(r.Context(), "", 0, 1, 0)
+		_, _, assistedTotal, err := repo.GetManualReviewVenuesCtx(r.Context(), "", 0, "created_at", 1, 0)
 		if err != nil {
 			log.Printf("Error fetching manual review count: %v", err)
 			assistedTotal = 0
@@ -170,7 +170,13 @@ func ManualReviewHandler(db *database.DB) http.HandlerFunc {
 			minScore = cfg.ApprovalThreshold
 		}
 
-		venues, scores, total, err := db.GetManualReviewVenuesCtx(r.Context(), search, minScore, limit, offset)
+		// Get sort parameter (default: created_at)
+		sort := r.URL.Query().Get("sort")
+		if sort == "" {
+			sort = "created_at"
+		}
+
+		venues, scores, total, err := db.GetManualReviewVenuesCtx(r.Context(), search, minScore, sort, limit, offset)
 		if err != nil {
 			http.Error(w, fmt.Sprintf("Error fetching manual review venues: %v", err), http.StatusInternalServerError)
 			return
@@ -196,6 +202,7 @@ func ManualReviewHandler(db *database.DB) http.HandlerFunc {
 			Search            string
 			HighScoresOnly    bool
 			ApprovalThreshold int
+			Sort              string
 		}{
 			Items:             items,
 			Total:             total,
@@ -204,6 +211,7 @@ func ManualReviewHandler(db *database.DB) http.HandlerFunc {
 			Search:            search,
 			HighScoresOnly:    highScoresOnly,
 			ApprovalThreshold: cfg.ApprovalThreshold,
+			Sort:              sort,
 		}
 
 		if err := ExecuteTemplate(w, "manual_review.tmpl", data); err != nil {
