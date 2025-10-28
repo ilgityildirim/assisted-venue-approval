@@ -6,15 +6,10 @@ tasks:
     cmds:
       - docker compose build
 
-  up:
+  dev:
     desc: Start all services in detached mode
     cmds:
       - docker compose up -d
-
-  up-logs:
-    desc: Start all services and follow logs
-    cmds:
-      - docker compose up
 
   down:
     desc: Stop and remove all containers

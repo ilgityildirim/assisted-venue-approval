@@ -170,10 +170,10 @@ func ManualReviewHandler(db *database.DB) http.HandlerFunc {
 			minScore = cfg.ApprovalThreshold
 		}
 
-		// Get sort parameter (default: created_at)
+		// Get sort parameter (default: last_updated)
 		sort := r.URL.Query().Get("sort")
 		if sort == "" {
-			sort = "created_at"
+			sort = "last_updated"
 		}
 
 		venues, scores, total, err := db.GetManualReviewVenuesCtx(r.Context(), search, minScore, sort, limit, offset)

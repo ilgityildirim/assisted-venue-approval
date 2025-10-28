@@ -720,14 +720,9 @@ func (e *ProcessingEngine) requiresManualReviewEarly(venue *models.Venue, user *
 	// Thread-safe read of AVA configuration
 	e.avaConfigMu.RLock()
 	minUserPointsForAVA := e.minUserPointsForAVA
-	onlyAmbassadors := e.onlyAmbassadors
 	e.avaConfigMu.RUnlock()
 
 	// Run all early exit checks using helper functions
-	if skip, reason := checkAmbassadorRequirement(user, onlyAmbassadors); skip {
-		return true, reason
-	}
-
 	if skip, reason := checkMinimumPoints(user, minUserPointsForAVA); skip {
 		return true, reason
 	}
