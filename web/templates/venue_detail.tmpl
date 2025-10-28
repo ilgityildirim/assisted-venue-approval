@@ -35,6 +35,20 @@
         .similar-venue:hover { background: #f8f9fa; }
         .action-form { margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 5px; }
         .action-form textarea { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; resize: vertical; }
+        .section-collapsible { position: relative; }
+        .section-collapsible .section-heading { margin-bottom: 0; }
+        .section-toggle { all: unset; display: flex; align-items: center; justify-content: space-between; width: 100%; cursor: pointer; color: #2c3e50; font-size: 22px; font-weight: 600; }
+        .section-toggle span { pointer-events: none; }
+        .section-icon { transition: transform 0.2s ease; font-size: 20px; color: #7f8c8d; margin-left: 12px; }
+        .section-collapsible .section-body { margin-top: 15px; }
+        .section-collapsible:not(.open) .section-body { display: none; }
+        .section-collapsible:not(.open) .section-icon { transform: rotate(-90deg); }
+        .compare-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; }
+        .compare-col { background: #fafbfc; padding: 12px; border: 1px solid #eee; border-radius: 6px; }
+        .compare-col h3 { margin-bottom: 10px; color: #2c3e50; font-size: 16px; }
+        .compare-row { margin-bottom: 10px; }
+        .compare-row .field-label { font-size: 12px; color: #888; margin-bottom: 2px; }
+        .compare-row .field-value { font-size: 14px; color: #333; word-break: break-word; }
         @media (max-width: 768px) {
             .venue-grid { grid-template-columns: 1fr; }
             .field-grid { grid-template-columns: 1fr; }
@@ -62,46 +76,188 @@
         
         <div class="venue-grid">
             <div>
-                {{if or .GoogleData .LatestHist (or .AIReviewNote .AIOutputNotes) }}
-                <div class="section">
-                    <h2>Current Status</h2>
-                    <div style="text-align: center; margin-bottom: 20px;">
-                        {{if eq (intVal .Venue.Venue.Active 0) 1}}
-                            <span class="status-badge status-approved" style="font-size: 18px;">✅ APPROVED</span>
-                        {{else if eq (intVal .Venue.Venue.Active 0) -1}}
-                            <span class="status-badge status-rejected" style="font-size: 18px;">❌ REJECTED</span>
-                            {{if .Venue.Venue.AdminNote}}
-                                <div style="margin-top: 15px; padding: 12px; background: #f8d7da; border-left: 4px solid #dc3545; border-radius: 5px; color: #721c24; text-align: left;">
-                                    <strong>Rejection Reason:</strong><br>
-                                    {{.Venue.Venue.AdminNote}}
+                {{if .GoogleData}}
+                    <div class="section section-collapsible open" data-default-open="true">
+                        <h2 class="section-heading">
+                            <button type="button" class="section-toggle" aria-expanded="true">
+                                <span>Combined Information</span>
+                                <span class="section-icon" aria-hidden="true">▾</span>
+                            </button>
+                        </h2>
+                        <div class="section-body">
+                            <div class="field-grid">
+                                <div class="field">
+                                    <div class="field-label">Name <span style="color:#999; font-weight:normal">({{index .Combined.Sources "name"}})</span></div>
+                                    <div class="field-value"><strong>{{.Combined.Name}}</strong></div>
                                 </div>
+                                {{if .NameSuggestion}}
+                                    <div class="field" style="grid-column: 1 / -1;">
+                                        <div class="field-label">Suggested Name Format</div>
+                                        <div class="field-value" style="background: #fff3cd; padding: 12px; border-radius: 5px; border-left: 4px solid #ffc107;">
+                                            <code style="background: white; padding: 4px 8px; border-radius: 3px; font-size: 14px;">{{.NameSuggestion}}</code>
+                                        </div>
+                                    </div>
+                                {{end}}
+                                <div class="field">
+                                    <div class="field-label">Submitted By</div>
+                                    <div class="field-value">
+                                        {{.Venue.User.Username}} <br>
+                                        {{if .Venue.User.Trusted}}<span style="color: green;">✅ Trusted User ({{.TrustPercent}}%)</span><br>{{end}}
+                                        {{if .Venue.IsVenueAdmin}}<span style="color: gold;">👑 Venue Owner </span><br>{{end}}
+                                        {{if .Venue.AmbassadorLevel}}<span style="color: blue;">🌟 Ambassador (Level {{.Venue.AmbassadorLevel}})</span>{{end}}
+                                        {{if not (or .Venue.User.Trusted .Venue.IsVenueAdmin .Venue.AmbassadorLevel)}}<span style="color: #666;">Regular User ({{.TrustPercent}}%)</span>{{end}}
+                                    </div>
+                                </div>
+                                <div class="field">
+                                    <div class="field-label">Address <span style="color:#999; font-weight:normal">({{index .Combined.Sources "address"}})</span></div>
+                                    <div class="field-value">{{if .Combined.Address}}{{.Combined.Address}}{{else}}N/A{{end}}</div>
+                                </div>
+                                <div class="field">
+                                    <div class="field-label">Phone <span style="color:#999; font-weight:normal">({{index .Combined.Sources "phone"}})</span></div>
+                                    <div class="field-value">{{if .Combined.Phone}}{{.Combined.Phone}}{{else}}N/A{{end}}</div>
+                                </div>
+                                <div class="field">
+                                    <div class="field-label">Website <span style="color:#999; font-weight:normal">({{index .Combined.Sources "website"}})</span></div>
+                                    <div class="field-value">{{if .Combined.Website}}<a href="{{.Combined.Website}}" target="_blank">{{.Combined.Website}}</a>{{else}}N/A{{end}}</div>
+                                </div>
+                                <div class="field">
+                                    <div class="field-label">Opening Hours <span style="color:#999; font-weight:normal">({{index .Combined.Sources "hours"}})</span></div>
+                                    <div class="field-value">
+                                        {{if .Combined.Hours}}
+                                            {{range .Combined.Hours}}<div>{{.}}</div>{{end}}
+                                        {{else}}N/A{{end}}
+                                    </div>
+                                </div>
+                                <div class="field">
+                                    <div class="field-label">Type</div>
+                                    <div class="field-value">{{.VenueTypeLabel}}</div>
+                                </div>
+                                <div class="field">
+                                    <div class="field-label">Vegan</div>
+                                    <div class="field-value">{{.VeganStatusLabel}}</div>
+                                </div>
+                                <div class="field">
+                                    <div class="field-label">Category</div>
+                                    <div class="field-value">{{if .CategoryLabel}}{{.CategoryLabel}}{{else}}N/A{{end}}</div>
+                                </div>
+                                <div class="field">
+                                    <div class="field-label">Location (Lat, Lng) <span style="color:#999; font-weight:normal">({{index .Combined.Sources "latlng"}})</span></div>
+                                    <div class="field-value">{{if and .Combined.Lat .Combined.Lng}}{{fmtFloat .Combined.Lat}} , {{fmtFloat .Combined.Lng}}{{else}}N/A{{end}}</div>
+                                </div>
+                                <div class="field">
+                                    <div class="field-label">Path <span style="color:#999; font-weight:normal">({{index .Combined.Sources "path"}})</span></div>
+                                    <div class="field-value">{{if .Combined.Path}}{{.Combined.Path}}{{else}}N/A{{end}}</div>
+                                </div>
+                                {{if .Combined.Types}}
+                                    <div class="field">
+                                        <div class="field-label">Types <span style="color:#999; font-weight:normal">({{index .Combined.Sources "types"}})</span></div>
+                                        <div class="field-value">{{range .Combined.Types}}<code style="background:#eef; padding:2px 6px; border-radius:3px; margin-right:4px; display:inline-block;">{{.}}</code>{{end}}</div>
+                                    </div>
+                                {{end}}
+                                {{if .TypeMismatchAlert}}
+                                    <div class="field" style="grid-column: 1 / -1;">
+                                        <div class="field-label">⚠️ Classification Warning</div>
+                                        <div class="field-value" style="background: #fff3cd; padding: 12px; border-radius: 5px; color: #856404; border-left: 4px solid #ffc107;">
+                                            <strong>Type Mismatch Detected:</strong> The venue's classification may not align with Google's business types. This may indicate data quality issues.
+                                        </div>
+                                    </div>
+                                {{end}}
+                                {{if .Combined.Description}}
+                                    <div class="field" style="grid-column: 1 / -1;">
+                                        <div class="field-label">Description <span style="color:#999; font-weight:normal">({{index .Combined.Sources "description"}})</span></div>
+                                        <div class="field-value" style="background: #f8f9fa; padding: 12px; border-radius: 5px;">{{.Combined.Description}}</div>
+                                    </div>
+                                {{end}}
+                                {{if .DescriptionSuggestion}}
+                                    <div class="field" style="grid-column: 1 / -1;">
+                                        <div class="field-label">Suggested Description</div>
+                                        <div class="field-value" style="background: #e8f5e9; padding: 15px; border-radius: 5px; border-left: 4px solid #27ae60;">
+                                            {{.DescriptionSuggestion}}
+                                        </div>
+                                    </div>
+                                {{end}}
+                                {{if .ClosedDaysSuggestion}}
+                                    <div class="field" style="grid-column: 1 / -1;">
+                                        <div class="field-label">Hours Note (Closed Days)</div>
+                                        <div class="field-value" style="background: #e3f2fd; padding: 12px; border-radius: 5px; border-left: 4px solid #2196f3;">
+                                            <code style="background: white; padding: 4px 8px; border-radius: 3px; font-size: 14px;">{{.ClosedDaysSuggestion}}</code>
+                                        </div>
+                                    </div>
+                                {{end}}
+                                <div class="field" style="grid-column: 1 / -1;">
+                                    <div class="field-label">Admin Note</div>
+                                    <div class="field-value" style="background: #f8f9fa; padding: 12px; border-radius: 5px;">{{if .Venue.Venue.AdminNote}}{{.Venue.Venue.AdminNote}}{{else}}N/A{{end}}</div>
+                                </div>
+                                <div class="field" style="grid-column: 1 / -1;">
+                                    <div class="field-label">Admin Hold</div>
+                                    <div class="field-value" style="background: #f8f9fa; padding: 12px; border-radius: 5px;">{{if .Venue.Venue.AdminHold}}{{.Venue.Venue.AdminHold.Format "2006-01-02 15:04"}}{{else}}—{{end}}</div>
+                                </div>
+                                <div class="field" style="grid-column: 1 / -1;">
+                                    <div class="field-label">Admin Hold Email Notes</div>
+                                    <div class="field-value" style="background: #f8f9fa; padding: 12px; border-radius: 5px;">{{if .Venue.Venue.AdminHoldEmailNote}}{{.Venue.Venue.AdminHoldEmailNote}}{{else}}N/A{{end}}</div>
+                                </div>
+                                <div class="field">
+                                    <div class="field-label">AI Score</div>
+                                    <div class="field-value"><strong>{{if .LatestHist}}{{.AIScoreFormatted}}{{else}}—{{end}}</strong></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                {{end}}
+                
+                {{if or .GoogleData .LatestHist (or .AIReviewNote .AIOutputNotes) }}
+                <div class="section section-collapsible{{if .GoogleData}} open{{end}}" data-default-open="{{if .GoogleData}}true{{else}}false{{end}}">
+                    <h2 class="section-heading">
+                        <button type="button" class="section-toggle" aria-expanded="{{if .GoogleData}}true{{else}}false{{end}}">
+                            <span>Current Status</span>
+                            <span class="section-icon" aria-hidden="true">▾</span>
+                        </button>
+                    </h2>
+                    <div class="section-body">
+                        <div style="text-align: center; margin-bottom: 20px;">
+                            {{if eq (intVal .Venue.Venue.Active 0) 1}}
+                                <span class="status-badge status-approved" style="font-size: 18px;">✅ APPROVED</span>
+                            {{else if eq (intVal .Venue.Venue.Active 0) -1}}
+                                <span class="status-badge status-rejected" style="font-size: 18px;">❌ REJECTED</span>
+                                {{if .Venue.Venue.AdminNote}}
+                                    <div style="margin-top: 15px; padding: 12px; background: #f8d7da; border-left: 4px solid #dc3545; border-radius: 5px; color: #721c24; text-align: left;">
+                                        <strong>Rejection Reason:</strong><br>
+                                        {{.Venue.Venue.AdminNote}}
+                                    </div>
+                                {{end}}
+                            {{else}}
+                                <span class="status-badge status-pending" style="font-size: 18px;">⏳ PENDING</span>
                             {{end}}
-                        {{else}}
-                            <span class="status-badge status-pending" style="font-size: 18px;">⏳ PENDING</span>
+                        </div>
+                        {{if eq (intVal .Venue.Venue.Active 0) 0}}
+                            <div class="action-form">
+                                <h3>Manual Review</h3>
+                                <!-- Status message area for errors/success -->
+                                <div id="approval-status" style="display: none; margin-bottom: 15px; padding: 12px; border-radius: 5px;"></div>
+                                <form id="approval-form">
+                                    <div style="margin-bottom: 15px; display: flex; flex-wrap: wrap; gap: 10px;">
+                                        <button type="button" class="btn" onclick="startAIReview()">🚀 {{if .GoogleData}}Refresh AI-Assisted Review{{else}}Start AI-Assisted Review{{end}}</button>
+                                        <button type="button" class="btn btn-success" onclick="approveVenue()">✅ Approve</button>
+                                        <button type="button" class="btn btn-danger" onclick="rejectVenue()">❌ Reject</button>
+                                    </div>
+                                    <div style="margin-bottom: 10px;">
+                                        <label for="notes">Notes/Reason:</label>
+                                    </div>
+                                    <textarea id="notes" placeholder="Enter your reason or notes..." rows="3"></textarea>
+                                </form>
+                            </div>
                         {{end}}
                     </div>
-                    {{if eq (intVal .Venue.Venue.Active 0) 0}}
-                        <div class="action-form">
-                            <h3>Manual Review</h3>
-                            <!-- Status message area for errors/success -->
-                            <div id="approval-status" style="display: none; margin-bottom: 15px; padding: 12px; border-radius: 5px;"></div>
-                            <form id="approval-form">
-                                <div style="margin-bottom: 15px; display: flex; flex-wrap: wrap; gap: 10px;">
-                                    <button type="button" class="btn" onclick="startAIReview()">🚀 {{if .GoogleData}}Refresh AI-Assisted Review{{else}}Start AI-Assisted Review{{end}}</button>
-                                    <button type="button" class="btn btn-success" onclick="approveVenue()">✅ Approve</button>
-                                    <button type="button" class="btn btn-danger" onclick="rejectVenue()">❌ Reject</button>
-                                </div>
-                                <div style="margin-bottom: 10px;">
-                                    <label for="notes">Notes/Reason:</label>
-                                </div>
-                                <textarea id="notes" placeholder="Enter your reason or notes..." rows="3"></textarea>
-                            </form>
-                        </div>
-                    {{end}}
                 </div>
                 <!-- Editor Feedback -->
-                <div class="section" id="feedback-section">
-                    <h2>Editor Feedback</h2>
+                <div class="section section-collapsible" id="feedback-section" data-default-open="false">
+                    <h2 class="section-heading">
+                        <button type="button" class="section-toggle" aria-expanded="false">
+                            <span>Editor Feedback</span>
+                            <span class="section-icon" aria-hidden="true">▾</span>
+                        </button>
+                    </h2>
+                    <div class="section-body">
                     <div id="feedback-summary" style="margin: 10px 0; color:#555;">
                         <span id="fb-up-count">0</span> 👍 · <span id="fb-down-count">0</span> 👎
                     </div>
@@ -116,134 +272,19 @@
                     </div>
                     <div id="fb-status" style="margin-top:10px; display:none;"></div>
                     <ul id="fb-list" style="list-style:none; padding:0; margin:0; gap:0.75rem;"></ul>
-                </div>
-                {{end}}
-                
-                {{if .GoogleData}}
-                <div class="section">
-                    <h2>Combined Information</h2>
-                    <div class="field-grid">
-                        <div class="field">
-                            <div class="field-label">Name <span style="color:#999; font-weight:normal">({{index .Combined.Sources "name"}})</span></div>
-                            <div class="field-value"><strong>{{.Combined.Name}}</strong></div>
-                        </div>
-                        {{if .NameSuggestion}}
-                        <div class="field" style="grid-column: 1 / -1;">
-                            <div class="field-label">Suggested Name Format</div>
-                            <div class="field-value" style="background: #fff3cd; padding: 12px; border-radius: 5px; border-left: 4px solid #ffc107;">
-                                <code style="background: white; padding: 4px 8px; border-radius: 3px; font-size: 14px;">{{.NameSuggestion}}</code>
-                            </div>
-                        </div>
-                        {{end}}
-                        <div class="field">
-                            <div class="field-label">Submitted By</div>
-                            <div class="field-value">
-                                {{.Venue.User.Username}} <br>
-                                {{if .Venue.User.Trusted}}<span style="color: green;">✅ Trusted User ({{.TrustPercent}}%)</span><br>{{end}}
-                                {{if .Venue.IsVenueAdmin}}<span style="color: gold;">👑 Venue Owner </span><br>{{end}}
-                                {{if .Venue.AmbassadorLevel}}<span style="color: blue;">🌟 Ambassador (Level {{.Venue.AmbassadorLevel}})</span>{{end}}
-                                {{if not (or .Venue.User.Trusted .Venue.IsVenueAdmin .Venue.AmbassadorLevel)}}<span style="color: #666;">Regular User ({{.TrustPercent}}%)</span>{{end}}
-                            </div>
-                        </div>
-                        <div class="field">
-                            <div class="field-label">Address <span style="color:#999; font-weight:normal">({{index .Combined.Sources "address"}})</span></div>
-                            <div class="field-value">{{if .Combined.Address}}{{.Combined.Address}}{{else}}N/A{{end}}</div>
-                        </div>
-                        <div class="field">
-                            <div class="field-label">Phone <span style="color:#999; font-weight:normal">({{index .Combined.Sources "phone"}})</span></div>
-                            <div class="field-value">{{if .Combined.Phone}}{{.Combined.Phone}}{{else}}N/A{{end}}</div>
-                        </div>
-                        <div class="field">
-                            <div class="field-label">Website <span style="color:#999; font-weight:normal">({{index .Combined.Sources "website"}})</span></div>
-                            <div class="field-value">{{if .Combined.Website}}<a href="{{.Combined.Website}}" target="_blank">{{.Combined.Website}}</a>{{else}}N/A{{end}}</div>
-                        </div>
-                        <div class="field">
-                            <div class="field-label">Opening Hours <span style="color:#999; font-weight:normal">({{index .Combined.Sources "hours"}})</span></div>
-                            <div class="field-value">
-                                {{if .Combined.Hours}}
-                                    {{range .Combined.Hours}}<div>{{.}}</div>{{end}}
-                                {{else}}N/A{{end}}
-                            </div>
-                        </div>
-                        <div class="field">
-                            <div class="field-label">Type</div>
-                            <div class="field-value">{{.VenueTypeLabel}}</div>
-                        </div>
-                        <div class="field">
-                            <div class="field-label">Vegan</div>
-                            <div class="field-value">{{.VeganStatusLabel}}</div>
-                        </div>
-                        <div class="field">
-                            <div class="field-label">Category</div>
-                            <div class="field-value">{{if .CategoryLabel}}{{.CategoryLabel}}{{else}}N/A{{end}}</div>
-                        </div>
-                        <div class="field">
-                            <div class="field-label">Location (Lat, Lng) <span style="color:#999; font-weight:normal">({{index .Combined.Sources "latlng"}})</span></div>
-                            <div class="field-value">{{if and .Combined.Lat .Combined.Lng}}{{fmtFloat .Combined.Lat}} , {{fmtFloat .Combined.Lng}}{{else}}N/A{{end}}</div>
-                        </div>
-                        <div class="field">
-                            <div class="field-label">Path <span style="color:#999; font-weight:normal">({{index .Combined.Sources "path"}})</span></div>
-                            <div class="field-value">{{if .Combined.Path}}{{.Combined.Path}}{{else}}N/A{{end}}</div>
-                        </div>
-                        {{if .Combined.Types}}
-                        <div class="field">
-                            <div class="field-label">Types <span style="color:#999; font-weight:normal">({{index .Combined.Sources "types"}})</span></div>
-                            <div class="field-value">{{range .Combined.Types}}<code style="background:#eef; padding:2px 6px; border-radius:3px; margin-right:4px; display:inline-block;">{{.}}</code>{{end}}</div>
-                        </div>
-                        {{end}}
-                        {{if .TypeMismatchAlert}}
-                            <div class="field" style="grid-column: 1 / -1;">
-                                <div class="field-label">⚠️ Classification Warning</div>
-                                <div class="field-value" style="background: #fff3cd; padding: 12px; border-radius: 5px; color: #856404; border-left: 4px solid #ffc107;">
-                                    <strong>Type Mismatch Detected:</strong> The venue's classification may not align with Google's business types. This may indicate data quality issues.
-                                </div>
-                            </div>
-                        {{end}}
-                        {{if .Combined.Description}}
-                        <div class="field" style="grid-column: 1 / -1;">
-                            <div class="field-label">Description <span style="color:#999; font-weight:normal">({{index .Combined.Sources "description"}})</span></div>
-                            <div class="field-value" style="background: #f8f9fa; padding: 12px; border-radius: 5px;">{{.Combined.Description}}</div>
-                        </div>
-                        {{end}}
-                        {{if .DescriptionSuggestion}}
-                        <div class="field" style="grid-column: 1 / -1;">
-                            <div class="field-label">Suggested Description</div>
-                            <div class="field-value" style="background: #e8f5e9; padding: 15px; border-radius: 5px; border-left: 4px solid #27ae60;">
-                                {{.DescriptionSuggestion}}
-                            </div>
-                        </div>
-                        {{end}}
-                        {{if .ClosedDaysSuggestion}}
-                        <div class="field" style="grid-column: 1 / -1;">
-                            <div class="field-label">Hours Note (Closed Days)</div>
-                            <div class="field-value" style="background: #e3f2fd; padding: 12px; border-radius: 5px; border-left: 4px solid #2196f3;">
-                                <code style="background: white; padding: 4px 8px; border-radius: 3px; font-size: 14px;">{{.ClosedDaysSuggestion}}</code>
-                            </div>
-                        </div>
-                        {{end}}
-                        <div class="field" style="grid-column: 1 / -1;">
-                            <div class="field-label">Admin Note</div>
-                            <div class="field-value" style="background: #f8f9fa; padding: 12px; border-radius: 5px;">{{if .Venue.Venue.AdminNote}}{{.Venue.Venue.AdminNote}}{{else}}N/A{{end}}</div>
-                        </div>
-                        <div class="field" style="grid-column: 1 / -1;">
-                            <div class="field-label">Admin Hold</div>
-                            <div class="field-value" style="background: #f8f9fa; padding: 12px; border-radius: 5px;">{{if .Venue.Venue.AdminHold}}{{.Venue.Venue.AdminHold.Format "2006-01-02 15:04"}}{{else}}—{{end}}</div>
-                        </div>
-                        <div class="field" style="grid-column: 1 / -1;">
-                            <div class="field-label">Admin Hold Email Notes</div>
-                            <div class="field-value" style="background: #f8f9fa; padding: 12px; border-radius: 5px;">{{if .Venue.Venue.AdminHoldEmailNote}}{{.Venue.Venue.AdminHoldEmailNote}}{{else}}N/A{{end}}</div>
-                        </div>
-                        <div class="field">
-                            <div class="field-label">AI Score</div>
-                            <div class="field-value"><strong>{{if .LatestHist}}{{.AIScoreFormatted}}{{else}}—{{end}}</strong></div>
-                        </div>
                     </div>
                 </div>
                 {{end}}
 
                 {{if or .LatestHist (or .AIReviewNote .AIOutputNotes) }}
-                <div class="section">
-                    <h2>AI Review</h2>
+                <div class="section section-collapsible" data-default-open="false">
+                    <h2 class="section-heading">
+                        <button type="button" class="section-toggle" aria-expanded="false">
+                            <span>AI Review</span>
+                            <span class="section-icon" aria-hidden="true">▾</span>
+                        </button>
+                    </h2>
+                    <div class="section-body">
                     <div class="field-grid">
                         <div class="field" style="grid-column: 1 / -1;">
                             <div class="field-label">Decision Engine</div>
@@ -274,20 +315,19 @@
                             <pre style="background:#f8f9fa; padding:12px; border-radius:6px; overflow:auto; max-height:300px;">{{if .LatestHist}}{{if .PrettyBreakdown}}{{.PrettyBreakdown}}{{else}}{}{{end}}{{else}}{}{{end}}</pre>
                         </div>
                     </div>
+                    </div>
                 </div>
                 {{end}}
 
                 {{if .GoogleData}}
-                <div class="section">
-                    <h2>Original vs Google Places</h2>
-                    <style>
-                        .compare-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
-                        .compare-col { background: #fafbfc; padding: 12px; border: 1px solid #eee; border-radius: 6px; }
-                        .compare-col h3 { margin-bottom: 10px; color: #2c3e50; font-size: 16px; }
-                        .compare-row { margin-bottom: 10px; }
-                        .compare-row .field-label { font-size: 12px; color: #888; margin-bottom: 2px; }
-                        .compare-row .field-value { font-size: 14px; color: #333; word-break: break-word; }
-                    </style>
+                <div class="section section-collapsible" data-default-open="false">
+                    <h2 class="section-heading">
+                        <button type="button" class="section-toggle" aria-expanded="false">
+                            <span>Original vs Google Places</span>
+                            <span class="section-icon" aria-hidden="true">▾</span>
+                        </button>
+                    </h2>
+                    <div class="section-body">
                     <div class="compare-grid">
                         <div class="compare-col">
                             <h3>Original (Submitted)</h3>
@@ -421,10 +461,17 @@
                             </div>
                         </div>
                     </div>
+                    </div>
                 </div>
                 {{end}}
-                <div class="section">
-                    <h2>Venue Information</h2>
+                <div class="section section-collapsible{{if not .GoogleData}} open{{end}}" data-default-open="{{if not .GoogleData}}true{{else}}false{{end}}">
+                    <h2 class="section-heading">
+                        <button type="button" class="section-toggle" aria-expanded="{{if not .GoogleData}}true{{else}}false{{end}}">
+                            <span>Venue Information</span>
+                            <span class="section-icon" aria-hidden="true">▾</span>
+                        </button>
+                    </h2>
+                    <div class="section-body">
                     <div class="field-grid">
                         <div class="field">
                             <div class="field-label">Name</div>
@@ -490,10 +537,17 @@
                             </div>
                         </div>
                     {{end}}
+                    </div>
                 </div>
                 
-                <div class="section">
-                    <h2>Submitter Information</h2>
+                <div class="section section-collapsible" data-default-open="false">
+                    <h2 class="section-heading">
+                        <button type="button" class="section-toggle" aria-expanded="false">
+                            <span>Submitter Information</span>
+                            <span class="section-icon" aria-hidden="true">▾</span>
+                        </button>
+                    </h2>
+                    <div class="section-body">
                     <div class="field-grid">
                         <div class="field">
                             <div class="field-label">Username</div>
@@ -509,11 +563,18 @@
                             </div>
                         </div>
                     </div>
+                    </div>
                 </div>
                 
                 {{if not .GoogleData}}
-                <div class="section">
-                    <h2>Current Status</h2>
+                <div class="section section-collapsible open" data-default-open="true">
+                    <h2 class="section-heading">
+                        <button type="button" class="section-toggle" aria-expanded="true">
+                            <span>Current Status</span>
+                            <span class="section-icon" aria-hidden="true">▾</span>
+                        </button>
+                    </h2>
+                    <div class="section-body">
                     <div style="text-align: center; margin-bottom: 20px;">
                         {{if eq (intVal .Venue.Venue.Active 0) 1}}
                             <span class="status-badge status-approved" style="font-size: 18px;">✅ APPROVED</span>
@@ -547,12 +608,19 @@
                         </form>
                     </div>
                     {{end}}
+                    </div>
                 </div>
                 {{end}}
 
                 {{if .History}}
-                <div class="section">
-                    <h2>Validation History</h2>
+                <div class="section section-collapsible" data-default-open="false">
+                    <h2 class="section-heading">
+                        <button type="button" class="section-toggle" aria-expanded="false">
+                            <span>Validation History</span>
+                            <span class="section-icon" aria-hidden="true">▾</span>
+                        </button>
+                    </h2>
+                    <div class="section-body">
                     <table class="history-table">
                         <thead>
                             <tr>
@@ -583,12 +651,19 @@
                             {{end}}
                         </tbody>
                     </table>
+                    </div>
                 </div>
                 {{end}}
 
                 {{if .AuditLogs}}
-                <div class="section">
-                    <h2>Audit Logs</h2>
+                <div class="section section-collapsible" data-default-open="false">
+                    <h2 class="section-heading">
+                        <button type="button" class="section-toggle" aria-expanded="false">
+                            <span>Audit Logs</span>
+                            <span class="section-icon" aria-hidden="true">▾</span>
+                        </button>
+                    </h2>
+                    <div class="section-body">
                     <table class="history-table">
                         <thead>
                             <tr>
@@ -628,6 +703,7 @@
                             {{end}}
                         </tbody>
                     </table>
+                    </div>
                 </div>
                 {{end}}
             </div>
@@ -637,6 +713,33 @@
     </div>
     
     <script>
+        const collapsibleSections = document.querySelectorAll('.section-collapsible');
+        collapsibleSections.forEach((section, index) => {
+            const toggle = section.querySelector('.section-toggle');
+            const body = section.querySelector('.section-body');
+            if (!toggle || !body) {
+                return;
+            }
+
+            if (!body.id) {
+                body.id = `section-body-${index}`;
+            }
+            toggle.setAttribute('aria-controls', body.id);
+
+            const shouldOpen = section.dataset.defaultOpen === 'true';
+            if (shouldOpen) {
+                section.classList.add('open');
+            } else {
+                section.classList.remove('open');
+            }
+            toggle.setAttribute('aria-expanded', section.classList.contains('open') ? 'true' : 'false');
+
+            toggle.addEventListener('click', () => {
+                const isOpen = section.classList.toggle('open');
+                toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+            });
+        });
+
         const basePath = '{{basePath}}';
         function startAIReview() {
             const btn = event.target;
