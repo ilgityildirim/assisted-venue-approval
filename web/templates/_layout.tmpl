@@ -1,0 +1,105 @@
+{{define "global_header_style"}}
+<style>
+    :root {
+        --nav-bg: #1f2933;
+        --nav-bg-sub: #111922;
+        --nav-text: #f9fafb;
+        --nav-muted: #9aa5b1;
+        --nav-border: rgba(255, 255, 255, 0.08);
+        --nav-active: #2c7be5;
+        --nav-hover: rgba(255, 255, 255, 0.08);
+    }
+    html, body { margin: 0; padding: 0; }
+    .layout-shell { min-height: 100vh; background: #f4f5f7; color: #1f2933; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    .layout-header { background: var(--nav-bg); color: var(--nav-text); box-shadow: 0 1px 3px rgba(15, 23, 42, 0.4); position: sticky; top: 0; z-index: 100; }
+    .layout-header-inner { max-width: 1200px; margin: 0 auto; padding: 16px 24px; display: flex; align-items: center; justify-content: flex-start; gap: 32px; }
+    .layout-brand { display: flex; flex-direction: column; gap: 2px; }
+    .layout-brand a { text-decoration: none; color: inherit; display: inline-flex; flex-direction: column; gap: 2px; }
+    .layout-brand span { font-size: 11px; color: var(--nav-muted); text-transform: uppercase; letter-spacing: 0.16em; font-weight: 700; }
+    .layout-brand h1 { font-size: 22px; font-weight: 700; margin: 0; color: var(--nav-text); letter-spacing: 0.04em; }
+    .layout-nav { display: flex; align-items: center; gap: 12px; margin-left: auto; }
+    .nav-item { position: relative; }
+    .nav-link { display: inline-flex; align-items: center; gap: 8px; padding: 10px 14px; border-radius: 8px; color: var(--nav-text); font-weight: 500; text-decoration: none; transition: background 0.15s ease; }
+    .nav-link:hover, .nav-item:hover > .nav-link, .nav-item:focus-within > .nav-link { background: var(--nav-hover); }
+    .nav-link.active { background: var(--nav-active); color: #fff; }
+    .nav-link .nav-icon { opacity: 0.75; font-size: 16px; }
+    .nav-link .nav-caret { font-size: 12px; opacity: 0.6; transform: translateY(1px); }
+    .nav-children { position: absolute; top: 100%; left: 0; min-width: 220px; background: var(--nav-bg-sub); border: 1px solid var(--nav-border); border-radius: 10px; padding: 16px 12px 12px; display: none; flex-direction: column; gap: 6px; box-shadow: 0 10px 30px rgba(15, 23, 42, 0.4); pointer-events: none; }
+    .nav-children::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 12px; transform: translateY(-100%); }
+    .nav-item:hover .nav-children, .nav-item:focus-within .nav-children { display: flex; pointer-events: auto; }
+    .nav-child-link { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; border-radius: 6px; color: var(--nav-text); font-weight: 500; text-decoration: none; background: transparent; transition: background 0.15s ease; }
+    .nav-child-link:hover { background: var(--nav-hover); }
+    .nav-pill { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; padding: 2px 6px; border-radius: 999px; background: rgba(255,255,255,0.08); color: var(--nav-muted); }
+    .layout-content { max-width: 1200px; margin: 0 auto; padding: 32px 24px 64px; }
+    @media (max-width: 900px) {
+        .layout-header-inner { flex-direction: column; align-items: flex-start; }
+        .layout-nav { flex-wrap: wrap; }
+        .nav-item { width: 100%; }
+        .nav-link { width: 100%; justify-content: space-between; }
+        .nav-children { position: relative; top: 8px; border: none; border-radius: 8px; background: rgba(17, 25, 34, 0.95); width: 100%; box-shadow: none; }
+    }
+</style>
+{{end}}
+
+{{define "global_header"}}
+    <div class="layout-header">
+        <div class="layout-header-inner">
+            <div class="layout-brand">
+                <a href="{{basePath}}">
+                    <span>HappyCow</span>
+                    <h1>AVA</h1>
+                </a>
+            </div>
+            <nav class="layout-nav">
+                <div class="nav-item">
+                    <a href="{{basePath}}venues/pending" class="nav-link" data-prefix="/venues">
+                        <span class="nav-icon">🆕</span>New Venues<span class="nav-caret">▾</span>
+                    </a>
+                    <div class="nav-children">
+                        <a href="{{basePath}}venues/pending" class="nav-child-link" data-match="/venues/pending">
+                            <span>List</span>
+                        </a>
+                        <a href="{{basePath}}venues/manual-review" class="nav-child-link" data-match="/venues/manual-review">
+                            <span>Review</span>
+                        </a>
+                    </div>
+                </div>
+                <div class="nav-item">
+                    <span class="nav-link" style="cursor: not-allowed; opacity: 0.6;">
+                        <span class="nav-icon">🛠️</span>Venue Updates
+                    </span>
+                </div>
+                <div class="nav-item">
+                    <a href="{{basePath}}editorial-feedback" class="nav-link" data-match="/editorial-feedback">
+                        <span class="nav-icon">💬</span>Feedback
+                    </a>
+                </div>
+                <div class="nav-item">
+                    <a href="{{basePath}}validation/history" class="nav-link" data-match="/validation/history">
+                        <span class="nav-icon">🗂️</span>History
+                    </a>
+                </div>
+                <div class="nav-item">
+                    <a href="{{basePath}}analytics" class="nav-link" data-match="/analytics">
+                        <span class="nav-icon">📈</span>Analytics
+                    </a>
+                </div>
+            </nav>
+        </div>
+    </div>
+    <script>
+        (function() {
+            const current = window.location.pathname.replace(/\/+$/, '') || '/';
+            const links = document.querySelectorAll('.layout-nav [data-match], .layout-nav [data-prefix]');
+            links.forEach(link => {
+                const match = link.dataset.match;
+                const prefix = link.dataset.prefix;
+                if (match && current === match.replace(/\/+$/, '')) {
+                    link.classList.add('active');
+                } else if (prefix && current.startsWith(prefix)) {
+                    link.classList.add('active');
+                }
+            });
+        })();
+    </script>
+{{end}}

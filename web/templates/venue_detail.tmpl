@@ -5,500 +5,164 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <base href="{{basePath}}">
     <title>Venue Details - {{.Venue.Venue.Name}}</title>
+    {{template "global_header_style" .}}
     <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f7fa; }
-        .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
-        .header { background: #2c3e50; color: white; padding: 20px 0; margin-bottom: 30px; }
-        .nav { display: flex; gap: 20px; margin-bottom: 30px; }
-        .nav a { padding: 10px 20px; background: white; color: #2c3e50; text-decoration: none; border-radius: 5px; }
-        .nav a:hover { background: #3498db; color: white; }
-        .venue-grid { display: grid; grid-template-columns: 1fr; gap: 30px; }
-        .section { background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-        .section h2 { color: #2c3e50; margin-bottom: 15px; }
-        .field-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; }
-        .field { margin-bottom: 15px; }
-        .field-label { font-weight: bold; color: #666; margin-bottom: 5px; }
-        .field-value { color: #333; }
-        .btn { display: inline-block; padding: 12px 24px; background: #3498db; color: white; text-decoration: none; border-radius: 5px; border: none; cursor: pointer; margin-right: 10px; }
-        .btn-success { background: #27ae60; }
-        .btn-danger { background: #e74c3c; }
-        .btn-warning { background: #f39c12; }
-        .status-badge { padding: 6px 12px; border-radius: 4px; font-weight: bold; }
-        .status-approved { background: #d4edda; color: #155724; }
-        .status-rejected { background: #f8d7da; color: #721c24; }
-        .status-pending { background: #fff3cd; color: #856404; }
-        .history-table { width: 100%; border-collapse: collapse; }
-        .history-table th, .history-table td { padding: 10px; text-align: left; border-bottom: 1px solid #ddd; }
-        .history-table th { background: #f8f9fa; }
-        .similar-venue { padding: 10px; border: 1px solid #ddd; border-radius: 5px; margin-bottom: 10px; }
-        .similar-venue:hover { background: #f8f9fa; }
-        .action-form { margin-top: 20px; padding: 15px; background: #f8f9fa; border-radius: 5px; }
-        .action-form textarea { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; resize: vertical; }
-        .section-collapsible { position: relative; }
-        .section-collapsible .section-heading { margin-bottom: 0; }
-        .section-toggle { all: unset; display: flex; align-items: center; justify-content: space-between; width: 100%; cursor: pointer; color: #2c3e50; font-size: 22px; font-weight: 600; }
-        .section-toggle span { pointer-events: none; }
-        .section-icon { transition: transform 0.2s ease; font-size: 20px; color: #7f8c8d; margin-left: 12px; }
-        .section-collapsible .section-body { margin-top: 15px; }
-        .section-collapsible:not(.open) .section-body { display: none; }
-        .section-collapsible:not(.open) .section-icon { transform: rotate(-90deg); }
-        .compare-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 16px; }
-        .compare-col { background: #fafbfc; padding: 12px; border: 1px solid #eee; border-radius: 6px; }
-        .compare-col h3 { margin-bottom: 10px; color: #2c3e50; font-size: 16px; }
-        .compare-row { margin-bottom: 10px; }
-        .compare-row .field-label { font-size: 12px; color: #888; margin-bottom: 2px; }
-        .compare-row .field-value { font-size: 14px; color: #333; word-break: break-word; }
-        @media (max-width: 768px) {
-            .venue-grid { grid-template-columns: 1fr; }
-            .field-grid { grid-template-columns: 1fr; }
+        :root {
+            --bg: #f4f5f7;
+            --card-bg: #ffffff;
+            --border: #e0e6ed;
+            --text: #1f2933;
+            --muted: #6b7b8a;
+            --accent: #2c7be5;
+            --accent-soft: #ecf3ff;
+            --danger: #d64545;
+            --success: #1f8a4c;
+            --shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+        }
+        *, *::before, *::after { box-sizing: border-box; }
+        body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--text); line-height: 1.5; }
+        h1, h2, h3, h4, h5, h6 { margin: 0; }
+        p { margin: 0; }
+        a { color: var(--accent); text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        button { font-family: inherit; }
+        .page-shell { max-width: 1200px; margin: 0 auto; padding: 32px 24px 64px; }
+        .page-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 24px; margin-bottom: 24px; }
+        .page-title { font-size: 32px; font-weight: 600; }
+        .page-meta { color: var(--muted); margin-top: 8px; font-size: 14px; }
+        .detail-layout { display: grid; grid-template-columns: minmax(260px, 300px) 1fr; gap: 24px; align-items: flex-start; }
+        .side-column, .main-column { display: flex; flex-direction: column; gap: 16px; }
+        .card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; padding: 20px; box-shadow: var(--shadow); }
+        .card h2, .card h3 { font-size: 18px; font-weight: 600; margin-bottom: 12px; }
+        .status-pill { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px; font-weight: 600; font-size: 14px; }
+        .status-pill.approved { background: #e6f4ea; color: var(--success); }
+        .status-pill.rejected { background: #fdecea; color: var(--danger); }
+        .status-pill.pending { background: #fff5d1; color: #8a6d1f; }
+        .status-note { margin-top: 16px; padding: 12px; border-radius: 10px; background: #fdecea; border: 1px solid #f3b8b8; color: #903939; font-size: 14px; }
+        .action-form { margin-top: 20px; padding: 16px; border-radius: 12px; border: 1px dashed var(--border); background: var(--bg); }
+        .action-buttons { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
+        .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 10px 16px; border-radius: 8px; border: none; cursor: pointer; font-weight: 600; font-size: 14px; }
+        .btn-primary { background: var(--accent); color: #fff; }
+        .btn-success { background: #34a853; color: #fff; }
+        .btn-danger { background: #ea4335; color: #fff; }
+        .btn-subtle { background: var(--card-bg); color: var(--accent); border: 1px solid var(--accent); }
+        .action-form textarea { width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 8px; resize: vertical; font-family: inherit; font-size: 14px; }
+        .action-form label { color: var(--muted); font-size: 13px; font-weight: 600; display: block; margin-bottom: 6px; }
+        .status-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 16px; }
+        .status-label { font-size: 13px; font-weight: 600; letter-spacing: 0.08em; color: var(--muted); text-transform: uppercase; }
+        .status-meta { list-style: none; padding: 0; margin: 20px 0 0; display: flex; flex-direction: column; gap: 12px; font-size: 14px; }
+        .status-meta li { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; color: var(--muted); }
+        .status-meta strong { color: var(--text); font-weight: 600; }
+        details.details-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); overflow: hidden; }
+        details.details-card summary { list-style: none; cursor: pointer; padding: 18px 20px; display: flex; align-items: center; justify-content: space-between; font-size: 18px; font-weight: 600; color: var(--text); }
+        details.details-card summary::-webkit-details-marker { display: none; }
+        details.details-card summary::after { content: '▾'; font-size: 16px; color: var(--muted); transition: transform 0.2s ease; }
+        details.details-card[open] summary::after { transform: rotate(180deg); }
+        details.details-card > .details-body { padding: 0 20px 20px; }
+        .field-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+        .field { display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+        .field-label { color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; font-size: 12px; }
+        .field-source { margin-left: 6px; font-size: 11px; color: var(--muted); font-weight: 500; text-transform: none; letter-spacing: normal; }
+        .field-value { color: var(--text); }
+        .badge { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); font-size: 12px; font-weight: 600; }
+        .submitted-by { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+        .submitted-name { font-weight: 600; color: var(--text); font-size: 15px; }
+        .badge-trust { background: #e7f7ef; color: var(--success); }
+        .callout { padding: 12px 14px; border-radius: 10px; border: 1px solid var(--border); background: var(--bg); font-size: 14px; }
+        .callout.warning { border-color: #f1c16f; background: #fff7e6; color: #8a5a11; }
+        .callout.success { border-color: #6bc38b; background: #e6f4ea; color: #24613d; }
+        .callout.info { border-color: #8fb5f5; background: #eef4ff; color: #2c5cc5; }
+        .callout.danger { border-color: #f3b8b8; background: #fdecea; color: #903939; }
+        pre { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 12px; overflow-x: auto; font-size: 13px; }
+        code { background: var(--bg); border-radius: 6px; padding: 2px 6px; font-size: 13px; }
+        .compare-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px; }
+        .compare-col { border: 1px solid var(--border); border-radius: 10px; padding: 16px; background: var(--bg); }
+        .compare-col h3 { margin: 0 0 12px; font-size: 16px; font-weight: 600; color: var(--text); }
+        .compare-row { margin-bottom: 12px; }
+        .compare-row:last-child { margin-bottom: 0; }
+        .compare-row .field-label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 4px; }
+        .compare-row .field-value { font-size: 14px; color: var(--text); word-break: break-word; }
+        .history-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+        .history-table th, .history-table td { padding: 10px; border-bottom: 1px solid var(--border); text-align: left; }
+        .history-table th { color: var(--muted); font-weight: 600; text-transform: uppercase; font-size: 12px; background: var(--bg); }
+        .feedback-summary { color: var(--muted); margin-bottom: 12px; font-size: 14px; }
+        .feedback-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; }
+        #fb-comment { width: 100%; padding: 12px; border: 1px solid var(--border); border-radius: 10px; font-family: inherit; font-size: 14px; resize: vertical; }
+        .feedback-list { list-style: none; padding: 0; margin: 16px 0 0; display: flex; flex-direction: column; gap: 12px; }
+        .feedback-item { padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--card-bg); }
+        @media (max-width: 1024px) {
+            .page-header { flex-direction: column; }
+            .detail-layout { grid-template-columns: 1fr; }
+            .side-column { order: 2; }
+            .main-column { order: 1; }
+        }
+        @media (max-width: 640px) {
+            .page-shell { padding: 24px 16px 48px; }
+            details.details-card summary { font-size: 16px; padding: 16px; }
+            details.details-card > .details-body { padding: 0 16px 16px; }
+            .btn { width: 100%; }
+            .action-buttons { flex-direction: column; align-items: stretch; }
         }
     </style>
 </head>
-<body>
-    <div class="header">
-        <div class="container">
-            <h1>🌱 {{.Venue.Venue.Name}}</h1>
-            <p>Venue ID: {{.Venue.Venue.ID}}</p>
-        </div>
-    </div>
-    
-    <div class="container">
-        <nav class="nav">
-            <a href="{{basePath}}">Dashboard</a>
-            <a href="{{basePath}}venues/pending">Pending Venues</a>
-            <a href="{{basePath}}venues/manual-review">Pending Manual Review</a>
-            <a href="{{basePath}}validation/history">History</a>
-            <a href="{{basePath}}analytics">Analytics</a>
-            <a href="{{basePath}}editorial-feedback">Editorial Feedback</a>
-            <a href="#" onclick="history.back()">← Back</a>
-        </nav>
-        
-        <div class="venue-grid">
+<body class="layout-shell">
+    {{template "global_header" .}}
+    <div class="page-shell layout-content">
+        <header class="page-header">
             <div>
-                {{if .GoogleData}}
-                    <div class="section section-collapsible open" data-default-open="true">
-                        <h2 class="section-heading">
-                            <button type="button" class="section-toggle" aria-expanded="true">
-                                <span>Combined Information</span>
-                                <span class="section-icon" aria-hidden="true">▾</span>
-                            </button>
-                        </h2>
-                        <div class="section-body">
-                            <div class="field-grid">
-                                <div class="field">
-                                    <div class="field-label">Name <span style="color:#999; font-weight:normal">({{index .Combined.Sources "name"}})</span></div>
-                                    <div class="field-value"><strong>{{.Combined.Name}}</strong></div>
-                                </div>
-                                {{if .NameSuggestion}}
-                                    <div class="field" style="grid-column: 1 / -1;">
-                                        <div class="field-label">Suggested Name Format</div>
-                                        <div class="field-value" style="background: #fff3cd; padding: 12px; border-radius: 5px; border-left: 4px solid #ffc107;">
-                                            <code style="background: white; padding: 4px 8px; border-radius: 3px; font-size: 14px;">{{.NameSuggestion}}</code>
-                                        </div>
-                                    </div>
-                                {{end}}
-                                <div class="field">
-                                    <div class="field-label">Submitted By</div>
-                                    <div class="field-value">
-                                        {{.Venue.User.Username}} <br>
-                                        {{if .Venue.User.Trusted}}<span style="color: green;">✅ Trusted User ({{.TrustPercent}}%)</span><br>{{end}}
-                                        {{if .Venue.IsVenueAdmin}}<span style="color: gold;">👑 Venue Owner </span><br>{{end}}
-                                        {{if .Venue.AmbassadorLevel}}<span style="color: blue;">🌟 Ambassador (Level {{.Venue.AmbassadorLevel}})</span>{{end}}
-                                        {{if not (or .Venue.User.Trusted .Venue.IsVenueAdmin .Venue.AmbassadorLevel)}}<span style="color: #666;">Regular User ({{.TrustPercent}}%)</span>{{end}}
-                                    </div>
-                                </div>
-                                <div class="field">
-                                    <div class="field-label">Address <span style="color:#999; font-weight:normal">({{index .Combined.Sources "address"}})</span></div>
-                                    <div class="field-value">{{if .Combined.Address}}{{.Combined.Address}}{{else}}N/A{{end}}</div>
-                                </div>
-                                <div class="field">
-                                    <div class="field-label">Phone <span style="color:#999; font-weight:normal">({{index .Combined.Sources "phone"}})</span></div>
-                                    <div class="field-value">{{if .Combined.Phone}}{{.Combined.Phone}}{{else}}N/A{{end}}</div>
-                                </div>
-                                <div class="field">
-                                    <div class="field-label">Website <span style="color:#999; font-weight:normal">({{index .Combined.Sources "website"}})</span></div>
-                                    <div class="field-value">{{if .Combined.Website}}<a href="{{.Combined.Website}}" target="_blank">{{.Combined.Website}}</a>{{else}}N/A{{end}}</div>
-                                </div>
-                                <div class="field">
-                                    <div class="field-label">Opening Hours <span style="color:#999; font-weight:normal">({{index .Combined.Sources "hours"}})</span></div>
-                                    <div class="field-value">
-                                        {{if .Combined.Hours}}
-                                            {{range .Combined.Hours}}<div>{{.}}</div>{{end}}
-                                        {{else}}N/A{{end}}
-                                    </div>
-                                </div>
-                                <div class="field">
-                                    <div class="field-label">Type</div>
-                                    <div class="field-value">{{.VenueTypeLabel}}</div>
-                                </div>
-                                <div class="field">
-                                    <div class="field-label">Vegan</div>
-                                    <div class="field-value">{{.VeganStatusLabel}}</div>
-                                </div>
-                                <div class="field">
-                                    <div class="field-label">Category</div>
-                                    <div class="field-value">{{if .CategoryLabel}}{{.CategoryLabel}}{{else}}N/A{{end}}</div>
-                                </div>
-                                <div class="field">
-                                    <div class="field-label">Location (Lat, Lng) <span style="color:#999; font-weight:normal">({{index .Combined.Sources "latlng"}})</span></div>
-                                    <div class="field-value">{{if and .Combined.Lat .Combined.Lng}}{{fmtFloat .Combined.Lat}} , {{fmtFloat .Combined.Lng}}{{else}}N/A{{end}}</div>
-                                </div>
-                                <div class="field">
-                                    <div class="field-label">Path <span style="color:#999; font-weight:normal">({{index .Combined.Sources "path"}})</span></div>
-                                    <div class="field-value">{{if .Combined.Path}}{{.Combined.Path}}{{else}}N/A{{end}}</div>
-                                </div>
-                                {{if .Combined.Types}}
-                                    <div class="field">
-                                        <div class="field-label">Types <span style="color:#999; font-weight:normal">({{index .Combined.Sources "types"}})</span></div>
-                                        <div class="field-value">{{range .Combined.Types}}<code style="background:#eef; padding:2px 6px; border-radius:3px; margin-right:4px; display:inline-block;">{{.}}</code>{{end}}</div>
-                                    </div>
-                                {{end}}
-                                {{if .TypeMismatchAlert}}
-                                    <div class="field" style="grid-column: 1 / -1;">
-                                        <div class="field-label">⚠️ Classification Warning</div>
-                                        <div class="field-value" style="background: #fff3cd; padding: 12px; border-radius: 5px; color: #856404; border-left: 4px solid #ffc107;">
-                                            <strong>Type Mismatch Detected:</strong> The venue's classification may not align with Google's business types. This may indicate data quality issues.
-                                        </div>
-                                    </div>
-                                {{end}}
-                                {{if .Combined.Description}}
-                                    <div class="field" style="grid-column: 1 / -1;">
-                                        <div class="field-label">Description <span style="color:#999; font-weight:normal">({{index .Combined.Sources "description"}})</span></div>
-                                        <div class="field-value" style="background: #f8f9fa; padding: 12px; border-radius: 5px;">{{.Combined.Description}}</div>
-                                    </div>
-                                {{end}}
-                                {{if .DescriptionSuggestion}}
-                                    <div class="field" style="grid-column: 1 / -1;">
-                                        <div class="field-label">Suggested Description</div>
-                                        <div class="field-value" style="background: #e8f5e9; padding: 15px; border-radius: 5px; border-left: 4px solid #27ae60;">
-                                            {{.DescriptionSuggestion}}
-                                        </div>
-                                    </div>
-                                {{end}}
-                                {{if .ClosedDaysSuggestion}}
-                                    <div class="field" style="grid-column: 1 / -1;">
-                                        <div class="field-label">Hours Note (Closed Days)</div>
-                                        <div class="field-value" style="background: #e3f2fd; padding: 12px; border-radius: 5px; border-left: 4px solid #2196f3;">
-                                            <code style="background: white; padding: 4px 8px; border-radius: 3px; font-size: 14px;">{{.ClosedDaysSuggestion}}</code>
-                                        </div>
-                                    </div>
-                                {{end}}
-                                <div class="field" style="grid-column: 1 / -1;">
-                                    <div class="field-label">Admin Note</div>
-                                    <div class="field-value" style="background: #f8f9fa; padding: 12px; border-radius: 5px;">{{if .Venue.Venue.AdminNote}}{{.Venue.Venue.AdminNote}}{{else}}N/A{{end}}</div>
-                                </div>
-                                <div class="field" style="grid-column: 1 / -1;">
-                                    <div class="field-label">Admin Hold</div>
-                                    <div class="field-value" style="background: #f8f9fa; padding: 12px; border-radius: 5px;">{{if .Venue.Venue.AdminHold}}{{.Venue.Venue.AdminHold.Format "2006-01-02 15:04"}}{{else}}—{{end}}</div>
-                                </div>
-                                <div class="field" style="grid-column: 1 / -1;">
-                                    <div class="field-label">Admin Hold Email Notes</div>
-                                    <div class="field-value" style="background: #f8f9fa; padding: 12px; border-radius: 5px;">{{if .Venue.Venue.AdminHoldEmailNote}}{{.Venue.Venue.AdminHoldEmailNote}}{{else}}N/A{{end}}</div>
-                                </div>
-                                <div class="field">
-                                    <div class="field-label">AI Score</div>
-                                    <div class="field-value"><strong>{{if .LatestHist}}{{.AIScoreFormatted}}{{else}}—{{end}}</strong></div>
-                                </div>
-                            </div>
+                <h1 class="page-title">🌱 {{.Venue.Venue.Name}}</h1>
+                <p class="page-meta">Venue ID: {{.Venue.Venue.ID}}</p>
+            </div>
+        </header>
+        <div class="detail-layout">
+            <aside class="side-column">
+                {{$state := intVal .Venue.Venue.Active 0}}
+                <section class="card status-card">
+                    <div class="status-header">
+                        <div>
+                            <h2>Current Status</h2>
+                            <div class="status-label">Review overview</div>
+                        </div>
+                        <div class="status-pill {{if eq $state 1}}approved{{else if eq $state -1}}rejected{{else}}pending{{end}}">
+                            {{if eq $state 1}}✅ Approved{{else if eq $state -1}}❌ Rejected{{else}}⏳ Pending{{end}}
                         </div>
                     </div>
-                {{end}}
-                
-                {{if or .GoogleData .LatestHist (or .AIReviewNote .AIOutputNotes) }}
-                <div class="section section-collapsible{{if .GoogleData}} open{{end}}" data-default-open="{{if .GoogleData}}true{{else}}false{{end}}">
-                    <h2 class="section-heading">
-                        <button type="button" class="section-toggle" aria-expanded="{{if .GoogleData}}true{{else}}false{{end}}">
-                            <span>Current Status</span>
-                            <span class="section-icon" aria-hidden="true">▾</span>
-                        </button>
-                    </h2>
-                    <div class="section-body">
-                        <div style="text-align: center; margin-bottom: 20px;">
-                            {{if eq (intVal .Venue.Venue.Active 0) 1}}
-                                <span class="status-badge status-approved" style="font-size: 18px;">✅ APPROVED</span>
-                            {{else if eq (intVal .Venue.Venue.Active 0) -1}}
-                                <span class="status-badge status-rejected" style="font-size: 18px;">❌ REJECTED</span>
-                                {{if .Venue.Venue.AdminNote}}
-                                    <div style="margin-top: 15px; padding: 12px; background: #f8d7da; border-left: 4px solid #dc3545; border-radius: 5px; color: #721c24; text-align: left;">
-                                        <strong>Rejection Reason:</strong><br>
-                                        {{.Venue.Venue.AdminNote}}
-                                    </div>
-                                {{end}}
-                            {{else}}
-                                <span class="status-badge status-pending" style="font-size: 18px;">⏳ PENDING</span>
-                            {{end}}
-                        </div>
-                        {{if eq (intVal .Venue.Venue.Active 0) 0}}
-                            <div class="action-form">
-                                <h3>Manual Review</h3>
-                                <!-- Status message area for errors/success -->
-                                <div id="approval-status" style="display: none; margin-bottom: 15px; padding: 12px; border-radius: 5px;"></div>
-                                <form id="approval-form">
-                                    <div style="margin-bottom: 15px; display: flex; flex-wrap: wrap; gap: 10px;">
-                                        <button type="button" class="btn" onclick="startAIReview()">🚀 {{if .GoogleData}}Refresh AI-Assisted Review{{else}}Start AI-Assisted Review{{end}}</button>
-                                        <button type="button" class="btn btn-success" onclick="approveVenue()">✅ Approve</button>
-                                        <button type="button" class="btn btn-danger" onclick="rejectVenue()">❌ Reject</button>
-                                    </div>
-                                    <div style="margin-bottom: 10px;">
-                                        <label for="notes">Notes/Reason:</label>
-                                    </div>
-                                    <textarea id="notes" placeholder="Enter your reason or notes..." rows="3"></textarea>
-                                </form>
+                    {{if and (eq $state -1) .Venue.Venue.AdminNote}}
+                    <div class="status-note">
+                        <strong>Rejection Reason:</strong><br>
+                        {{.Venue.Venue.AdminNote}}
+                    </div>
+                    {{end}}
+                    {{if and (eq $state 0) .LatestHist}}
+                    <div class="action-form">
+                        <h3>Manual Review</h3>
+                        <div id="approval-status" style="display:none; margin-bottom:12px; padding:10px 12px; border-radius:8px;"></div>
+                        <form id="approval-form">
+                            <div class="action-buttons">
+                                <button type="button" class="btn btn-primary" onclick="startAIReview()">🚀 {{if .GoogleData}}Refresh AI-Assisted Review{{else}}Start AI-Assisted Review{{end}}</button>
+                                <button type="button" class="btn btn-success" onclick="approveVenue()">✅ Approve</button>
+                                <button type="button" class="btn btn-danger" onclick="rejectVenue()">❌ Reject</button>
                             </div>
+                            <label for="notes">Notes / Reason</label>
+                            <textarea id="notes" rows="3" placeholder="Add context for your decision"></textarea>
+                        </form>
+                    </div>
+                    {{end}}
+                    <ul class="status-meta">
+                        <li><span>AI Score</span><strong>{{if .LatestHist}}{{.AIScoreFormatted}}{{else}}—{{end}}</strong></li>
+                        {{if .LatestHist}}
+                        <li><span>Last AI Review</span><strong>{{.LatestHist.ProcessedAt.Format "2006-01-02 15:04"}}</strong></li>
                         {{end}}
-                    </div>
-                </div>
-                <!-- Editor Feedback -->
-                <div class="section section-collapsible" id="feedback-section" data-default-open="false">
-                    <h2 class="section-heading">
-                        <button type="button" class="section-toggle" aria-expanded="false">
-                            <span>Editor Feedback</span>
-                            <span class="section-icon" aria-hidden="true">▾</span>
-                        </button>
-                    </h2>
-                    <div class="section-body">
-                    <div id="feedback-summary" style="margin: 10px 0; color:#555;">
-                        <span id="fb-up-count">0</span> 👍 · <span id="fb-down-count">0</span> 👎
-                    </div>
-                    <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
-                        <button class="btn" id="btn-thumbs-up" onclick="submitFeedback('thumbs_up')">👍 Thumbs Up</button>
-                        <button class="btn btn-danger" id="btn-thumbs-down" onclick="submitFeedback('thumbs_down')">👎 Thumbs Down</button>
-                        <input type="hidden" id="prompt_version" value="{{if .LatestHist}}{{if .LatestHist.PromptVersion}}{{.LatestHist.PromptVersion}}{{end}}{{end}}" />
-                    </div>
-                    <div style="margin-top:10px;">
-                        <label for="fb-comment" style="display:block; color:#666; margin-bottom:6px;">Optional comment</label>
-                        <textarea id="fb-comment" rows="5" style="width:100%; padding:10px; border:1px solid #ddd; border-radius:4px; resize:vertical;" placeholder="Write your feedback here; both right and / or wrong things"></textarea>
-                    </div>
-                    <div id="fb-status" style="margin-top:10px; display:none;"></div>
-                    <ul id="fb-list" style="list-style:none; padding:0; margin:0; gap:0.75rem;"></ul>
-                    </div>
-                </div>
-                {{end}}
-
-                {{if or .LatestHist (or .AIReviewNote .AIOutputNotes) }}
-                <div class="section section-collapsible" data-default-open="false">
-                    <h2 class="section-heading">
-                        <button type="button" class="section-toggle" aria-expanded="false">
-                            <span>AI Review</span>
-                            <span class="section-icon" aria-hidden="true">▾</span>
-                        </button>
-                    </h2>
-                    <div class="section-body">
-                    <div class="field-grid">
-                        <div class="field" style="grid-column: 1 / -1;">
-                            <div class="field-label">Decision Engine</div>
-                            <div class="field-value" style="white-space: pre-wrap; background:#f8f9fa; padding:12px; border-radius:6px;">{{if .LatestHist}}{{.AIReviewNote}}{{else}}No AI review available yet.{{end}}</div>
-                        </div>
-                        <div class="field">
-                            <div class="field-label">AI Score</div>
-                            <div class="field-value"><strong>{{if .LatestHist}}{{.AIScore}}{{else}}—{{end}}</strong></div>
-                        </div>
-                        <div class="field" style="grid-column: 1 / -1;">
-                            <div class="field-label">AI Review Note</div>
-                            <div class="field-value" style="white-space: pre-wrap; background:#f8f9fa; padding:12px; border-radius:6px;">{{if .LatestHist}}{{if .AIOutputNotes}}{{.AIOutputNotes}}{{else}}—{{end}}{{else}}—{{end}}</div>
-                        </div>
-                        {{if .PathValidationIssue}}
-                            <div class="field" style="grid-column: 1 / -1;">
-                                <div class="field-label">⚠️ Path Validation Issue</div>
-                                <div class="field-value" style="white-space: pre-wrap; background:#fff3cd; padding:12px; border-radius:6px; border-left: 4px solid #ffc107; color: #856404;">
-                                    <strong>{{.PathValidationConfidence}} confidence:</strong> {{.PathValidationIssue}}
-                                </div>
-                            </div>
+                        <li><span>Google Sync</span><strong>{{if .GoogleData}}Available{{else}}Not fetched{{end}}</strong></li>
+                        {{if .Venue.Venue.AdminHold}}
+                        <li><span>Admin Hold</span><strong>{{.Venue.Venue.AdminHold.Format "2006-01-02 15:04"}}</strong></li>
                         {{end}}
-                        <div class="field" style="grid-column: 1 / -1;">
-                            <div class="field-label">AI Output (JSON)</div>
-                            <pre style="background:#f8f9fa; padding:12px; border-radius:6px; overflow:auto; max-height:300px;">{{if .LatestHist}}{{if .AIOutputRestPretty}}{{.AIOutputRestPretty}}{{else if .AIOutputFullPretty}}{{.AIOutputFullPretty}}{{else}}{}{{end}}{{else}}{}{{end}}</pre>
-                        </div>
-                        <div class="field" style="grid-column: 1 / -1;">
-                            <div class="field-label">AI Score Breakdown (JSON)</div>
-                            <pre style="background:#f8f9fa; padding:12px; border-radius:6px; overflow:auto; max-height:300px;">{{if .LatestHist}}{{if .PrettyBreakdown}}{{.PrettyBreakdown}}{{else}}{}{{end}}{{else}}{}{{end}}</pre>
-                        </div>
-                    </div>
-                    </div>
-                </div>
-                {{end}}
+                    </ul>
+                </section>
 
-                {{if .GoogleData}}
-                <div class="section section-collapsible" data-default-open="false">
-                    <h2 class="section-heading">
-                        <button type="button" class="section-toggle" aria-expanded="false">
-                            <span>Original vs Google Places</span>
-                            <span class="section-icon" aria-hidden="true">▾</span>
-                        </button>
-                    </h2>
-                    <div class="section-body">
-                    <div class="compare-grid">
-                        <div class="compare-col">
-                            <h3>Original (Submitted)</h3>
-                            <div class="compare-row">
-                                <div class="field-label">Name</div>
-                                <div class="field-value">{{.Venue.Venue.Name}}</div>
-                            </div>
-                            <div class="compare-row">
-                                <div class="field-label">Address/Location</div>
-                                <div class="field-value">{{.Venue.Venue.Location}}</div>
-                            </div>
-                            <div class="compare-row">
-                                <div class="field-label">Phone</div>
-                                <div class="field-value">{{if .Venue.Venue.Phone}}{{.Venue.Venue.Phone}}{{else}}N/A{{end}}</div>
-                            </div>
-                            <div class="compare-row">
-                                <div class="field-label">Website</div>
-                                <div class="field-value">{{if .Venue.Venue.URL}}<a href="{{.Venue.Venue.URL}}" target="_blank">{{.Venue.Venue.URL}}</a>{{else}}N/A{{end}}</div>
-                            </div>
-                        </div>
-                        <div class="compare-col">
-                            <h3>Google Places</h3>
-                            <div class="compare-row">
-                                <div class="field-label">Name</div>
-                                <div class="field-value">{{.GoogleData.Name}}</div>
-                            </div>
-                            <div class="compare-row">
-                                <div class="field-label">Address</div>
-                                <div class="field-value">{{.GoogleData.FormattedAddress}}</div>
-                            </div>
-                            <div class="compare-row">
-                                <div class="field-label">Phone</div>
-                                <div class="field-value">{{if .GoogleData.FormattedPhone}}{{.GoogleData.FormattedPhone}}{{else}}N/A{{end}}</div>
-                            </div>
-                            <div class="compare-row">
-                                <div class="field-label">Website</div>
-                                <div class="field-value">{{if .GoogleData.Website}}<a href="{{.GoogleData.Website}}" target="_blank">{{.GoogleData.Website}}</a>{{else}}N/A{{end}}</div>
-                            </div>
-                            <div class="compare-row">
-                                <div class="field-label">Place ID</div>
-                                <div class="field-value">{{.GoogleData.PlaceID}}</div>
-                            </div>
-                            <div class="compare-row">
-                                <div class="field-label">Business Status</div>
-                                <div class="field-value">{{if .GoogleData.BusinessStatus}}{{.GoogleData.BusinessStatus}}{{else}}N/A{{end}}</div>
-                            </div>
-                            <div class="compare-row">
-                                <div class="field-label">Rating</div>
-                                <div class="field-value">{{.GoogleData.Rating}}</div>
-                            </div>
-                            <div class="compare-row">
-                                <div class="field-label">User Ratings Total</div>
-                                <div class="field-value">{{.GoogleData.UserRatingsTotal}}</div>
-                            </div>
-                            <div class="compare-row">
-                                <div class="field-label">Location (Lat, Lng)</div>
-                                <div class="field-value">{{.GoogleData.Geometry.Location.Lat}}, {{.GoogleData.Geometry.Location.Lng}}</div>
-                            </div>
-                            <div class="compare-row">
-                                <div class="field-label">Viewport NE</div>
-                                <div class="field-value">{{.GoogleData.Geometry.Viewport.Northeast.Lat}}, {{.GoogleData.Geometry.Viewport.Northeast.Lng}}</div>
-                            </div>
-                            <div class="compare-row">
-                                <div class="field-label">Viewport SW</div>
-                                <div class="field-value">{{.GoogleData.Geometry.Viewport.Southwest.Lat}}, {{.GoogleData.Geometry.Viewport.Southwest.Lng}}</div>
-                            </div>
-                            {{if .GoogleData.OpeningHours}}
-                            <div class="compare-row">
-                                <div class="field-label">Open Now</div>
-                                <div class="field-value">{{if .GoogleData.OpeningHours.OpenNow}}Yes{{else}}No{{end}}</div>
-                            </div>
-                            {{if .GoogleData.OpeningHours.WeekdayText}}
-                            <div class="compare-row">
-                                <div class="field-label">Weekday Text</div>
-                                <div class="field-value">
-                                    <div>
-                                        {{range .GoogleData.OpeningHours.WeekdayText}}
-                                            <div>{{.}}</div>
-                                        {{end}}
-                                    </div>
-                                </div>
-                            </div>
-                            {{end}}
-                            {{if .GoogleData.OpeningHours.Periods}}
-                            <div class="compare-row">
-                                <div class="field-label">Periods</div>
-                                <div class="field-value">
-                                    <div>
-                                        {{range .GoogleData.OpeningHours.Periods}}
-                                            <div>
-                                                Open: day {{.Open.Day}} at {{.Open.Time}} — Close: day {{.Close.Day}} at {{.Close.Time}}
-                                            </div>
-                                        {{end}}
-                                    </div>
-                                </div>
-                            </div>
-                            {{end}}
-                            {{end}}
-                            {{if .GoogleData.AddressComponents}}
-                            <div class="compare-row">
-                                <div class="field-label">Address Components</div>
-                                <div class="field-value">
-                                    <div>
-                                        {{range .GoogleData.AddressComponents}}
-                                            <div style="margin-bottom:6px;">
-                                                <strong>{{.LongName}}</strong> ({{.ShortName}})
-                                                <div>
-                                                    {{if .Types}}
-                                                        {{range .Types}}<code style="background:#eef; padding:2px 6px; border-radius:3px; margin-right:4px; display:inline-block;">{{.}}</code>{{end}}
-                                                    {{else}}
-                                                        <span style="color:#888;">no types</span>
-                                                    {{end}}
-                                                </div>
-                                            </div>
-                                        {{end}}
-                                    </div>
-                                </div>
-                            </div>
-                            {{end}}
-                            {{if .GoogleData.Types}}
-                            <div class="compare-row">
-                                <div class="field-label">Types</div>
-                                <div class="field-value">
-                                    {{range .GoogleData.Types}}<code style="background:#eef; padding:2px 6px; border-radius:3px; margin-right:4px; display:inline-block;">{{.}}</code>{{end}}
-                                </div>
-                            </div>
-                            {{end}}
-                            <div class="compare-row">
-                                <div class="field-label">Fetched At</div>
-                                <div class="field-value">{{.GoogleData.FetchedAt.Format "2006-01-02 15:04"}}</div>
-                            </div>
-                        </div>
-                    </div>
-                    </div>
-                </div>
-                {{end}}
-                <div class="section section-collapsible{{if not .GoogleData}} open{{end}}" data-default-open="{{if not .GoogleData}}true{{else}}false{{end}}">
-                    <h2 class="section-heading">
-                        <button type="button" class="section-toggle" aria-expanded="{{if not .GoogleData}}true{{else}}false{{end}}">
-                            <span>Venue Information</span>
-                            <span class="section-icon" aria-hidden="true">▾</span>
-                        </button>
-                    </h2>
-                    <div class="section-body">
+                <section class="card">
+                    <h3>Venue Snapshot</h3>
                     <div class="field-grid">
-                        <div class="field">
-                            <div class="field-label">Name</div>
-                            <div class="field-value"><strong>{{.Venue.Venue.Name}}</strong></div>
-                        </div>
-                        <div class="field">
-                            <div class="field-label">Location</div>
-                            <div class="field-value">{{.Venue.Venue.Location}}</div>
-                        </div>
-                        <div class="field">
-                            <div class="field-label">Path</div>
-                            <div class="field-value">{{if .VenuePath}}{{.VenuePath}}{{else}}N/A{{end}}</div>
-                        </div>
-                        <div class="field">
-                            <div class="field-label">Phone</div>
-                            <div class="field-value">{{if .Venue.Venue.Phone}}{{.Venue.Venue.Phone}}{{else}}N/A{{end}}</div>
-                        </div>
-                        <div class="field">
-                            <div class="field-label">Website</div>
-                            <div class="field-value">
-                                {{if .Venue.Venue.URL}}
-                                    <a href="{{.Venue.Venue.URL}}" target="_blank">{{.Venue.Venue.URL}}</a>
-                                {{else}}
-                                    N/A
-                                {{end}}
-                            </div>
-                        </div>
                         <div class="field">
                             <div class="field-label">Type</div>
                             <div class="field-value">{{.VenueTypeLabel}}</div>
@@ -515,231 +179,459 @@
                             <div class="field-label">Date Added</div>
                             <div class="field-value">{{.Venue.Venue.CreatedAt.Format "2006-01-02 15:04"}}</div>
                         </div>
-                        <div class="field" style="grid-column: 1 / -1;">
-                            <div class="field-label">Admin Note</div>
-                            <div class="field-value" style="background: #f8f9fa; padding: 12px; border-radius: 5px;">{{if .Venue.Venue.AdminNote}}{{.Venue.Venue.AdminNote}}{{else}}N/A{{end}}</div>
-                        </div>
-                        <div class="field" style="grid-column: 1 / -1;">
-                            <div class="field-label">Admin Hold</div>
-                            <div class="field-value" style="background: #f8f9fa; padding: 12px; border-radius: 5px;">{{if .Venue.Venue.AdminHold}}{{.Venue.Venue.AdminHold.Format "2006-01-02 15:04"}}{{else}}—{{end}}</div>
+                        <div class="field">
+                            <div class="field-label">Path</div>
+                            <div class="field-value">{{if .VenuePath}}{{.VenuePath}}{{else}}N/A{{end}}</div>
                         </div>
                         <div class="field" style="grid-column: 1 / -1;">
-                            <div class="field-label">Admin Hold Email Notes</div>
-                            <div class="field-value" style="background: #f8f9fa; padding: 12px; border-radius: 5px;">{{if .Venue.Venue.AdminHoldEmailNote}}{{.Venue.Venue.AdminHoldEmailNote}}{{else}}N/A{{end}}</div>
-                        </div>
-                    </div>
-                    
-                    {{if .Venue.Venue.AdditionalInfo}}
-                        <div class="field">
-                            <div class="field-label">Description</div>
-                            <div class="field-value" style="background: #f8f9fa; padding: 15px; border-radius: 5px; margin-top: 10px;">
-                                {{.Venue.Venue.AdditionalInfo}}
-                            </div>
-                        </div>
-                    {{end}}
-                    </div>
-                </div>
-                
-                <div class="section section-collapsible" data-default-open="false">
-                    <h2 class="section-heading">
-                        <button type="button" class="section-toggle" aria-expanded="false">
-                            <span>Submitter Information</span>
-                            <span class="section-icon" aria-hidden="true">▾</span>
-                        </button>
-                    </h2>
-                    <div class="section-body">
-                    <div class="field-grid">
-                        <div class="field">
-                            <div class="field-label">Username</div>
-                            <div class="field-value">{{.Venue.User.Username}}</div>
-                        </div>
-                        <div class="field">
-                            <div class="field-label">Authority Level</div>
-                            <div class="field-value">
-                                {{if .Venue.User.Trusted}}<span style="color: green;">✅ Trusted User ({{.TrustPercent}}%)</span><br>{{end}}
-                                {{if .Venue.IsVenueAdmin}}<span style="color: gold;">👑 Venue Owner</span><br>{{end}}
-                                {{if .Venue.AmbassadorLevel}}<span style="color: blue;">🌟 Ambassador (Level {{.Venue.AmbassadorLevel}})</span>{{end}}
-                                {{if not (or .Venue.User.Trusted .Venue.IsVenueAdmin .Venue.AmbassadorLevel)}}<span style="color: #666;">Regular User ({{.TrustPercent}}%)</span>{{end}}
+                            <div class="field-label">Submitted By</div>
+                            <div class="field-value submitted-by">
+                                <span class="submitted-name">{{.Venue.User.Username}}</span>
+                                {{if .Venue.User.Trusted}}<span class="badge badge-trust">Trusted {{.TrustPercent}}%</span>{{end}}
+                                {{if .Venue.IsVenueAdmin}}<span class="badge">Venue Owner</span>{{end}}
+                                {{if .Venue.AmbassadorLevel}}<span class="badge">Ambassador L{{.Venue.AmbassadorLevel}}</span>{{end}}
+                                {{if not (or .Venue.User.Trusted .Venue.IsVenueAdmin .Venue.AmbassadorLevel)}}<span class="badge">Regular {{.TrustPercent}}%</span>{{end}}
                             </div>
                         </div>
                     </div>
-                    </div>
-                </div>
-                
-                {{if not .GoogleData}}
-                <div class="section section-collapsible open" data-default-open="true">
-                    <h2 class="section-heading">
-                        <button type="button" class="section-toggle" aria-expanded="true">
-                            <span>Current Status</span>
-                            <span class="section-icon" aria-hidden="true">▾</span>
-                        </button>
-                    </h2>
-                    <div class="section-body">
-                    <div style="text-align: center; margin-bottom: 20px;">
-                        {{if eq (intVal .Venue.Venue.Active 0) 1}}
-                            <span class="status-badge status-approved" style="font-size: 18px;">✅ APPROVED</span>
-                        {{else if eq (intVal .Venue.Venue.Active 0) -1}}
-                            <span class="status-badge status-rejected" style="font-size: 18px;">❌ REJECTED</span>
-                            {{if .Venue.Venue.AdminNote}}
-                                <div style="margin-top: 15px; padding: 12px; background: #f8d7da; border-left: 4px solid #dc3545; border-radius: 5px; color: #721c24; text-align: left;">
-                                    <strong>Rejection Reason:</strong><br>
-                                    {{.Venue.Venue.AdminNote}}
-                                </div>
-                            {{end}}
-                        {{else}}
-                            <span class="status-badge status-pending" style="font-size: 18px;">⏳ PENDING</span>
+                </section>
+            </aside>
+
+            <main class="main-column">
+                {{if .GoogleData}}
+                <details class="details-card" open>
+                    <summary>Combined Information</summary>
+                    <div class="details-body">
+                        {{if .NameSuggestion}}
+                        <div class="callout info" style="margin-bottom:16px;">
+                            <strong>Suggested Name Format:</strong>
+                            <div style="margin-top:6px;"><code>{{.NameSuggestion}}</code></div>
+                        </div>
                         {{end}}
-                    </div>
-                    {{if eq (intVal .Venue.Venue.Active 0) 0}}
-                    <div class="action-form">
-                        <h3>Manual Review</h3>
-                        <!-- Status message area for errors/success -->
-                        <div id="approval-status-alt" style="display: none; margin-bottom: 15px; padding: 12px; border-radius: 5px;"></div>
-                        <form id="approval-form">
-                            <div style="margin-bottom: 15px; display: flex; flex-wrap: wrap; gap: 10px;">
-                                <button type="button" class="btn" onclick="startAIReview()">🚀 Start AI-Assisted Review</button>
-                                <button type="button" class="btn btn-success" onclick="approveVenue()">✅ Approve</button>
-                                <button type="button" class="btn btn-danger" onclick="rejectVenue()">❌ Reject</button>
+                        <div class="field-grid">
+                            <div class="field">
+                                <div class="field-label">Name{{with index .Combined.Sources "name"}}<span class="field-source">source: {{.}}</span>{{end}}</div>
+                                <div class="field-value"><strong>{{.Combined.Name}}</strong></div>
                             </div>
-                            <div style="margin-bottom: 10px;">
-                                <label for="notes">Notes/Reason:</label>
+                            <div class="field">
+                                <div class="field-label">Address{{with index .Combined.Sources "address"}}<span class="field-source">source: {{.}}</span>{{end}}</div>
+                                <div class="field-value">{{if .Combined.Address}}{{.Combined.Address}}{{else}}N/A{{end}}</div>
                             </div>
-                            <textarea id="notes" placeholder="Enter your reason or notes..." rows="3"></textarea>
-                        </form>
+                            <div class="field">
+                                <div class="field-label">Phone{{with index .Combined.Sources "phone"}}<span class="field-source">source: {{.}}</span>{{end}}</div>
+                                <div class="field-value">{{if .Combined.Phone}}{{.Combined.Phone}}{{else}}N/A{{end}}</div>
+                            </div>
+                            <div class="field">
+                                <div class="field-label">Website{{with index .Combined.Sources "website"}}<span class="field-source">source: {{.}}</span>{{end}}</div>
+                                <div class="field-value">{{if .Combined.Website}}<a href="{{.Combined.Website}}" target="_blank">{{.Combined.Website}}</a>{{else}}N/A{{end}}</div>
+                            </div>
+                            <div class="field">
+                                <div class="field-label">Opening Hours{{with index .Combined.Sources "hours"}}<span class="field-source">source: {{.}}</span>{{end}}</div>
+                                <div class="field-value">
+                                    {{if .Combined.Hours}}
+                                        {{range .Combined.Hours}}<div>{{.}}</div>{{end}}
+                                    {{else}}N/A{{end}}
+                                </div>
+                            </div>
+                            <div class="field">
+                                <div class="field-label">Type</div>
+                                <div class="field-value">{{.VenueTypeLabel}}</div>
+                            </div>
+                            <div class="field">
+                                <div class="field-label">Vegan</div>
+                                <div class="field-value">{{.VeganStatusLabel}}</div>
+                            </div>
+                            <div class="field">
+                                <div class="field-label">Category</div>
+                                <div class="field-value">{{if .CategoryLabel}}{{.CategoryLabel}}{{else}}N/A{{end}}</div>
+                            </div>
+                            <div class="field">
+                                <div class="field-label">Location{{with index .Combined.Sources "latlng"}}<span class="field-source">source: {{.}}</span>{{end}}</div>
+                                <div class="field-value">{{if and .Combined.Lat .Combined.Lng}}{{fmtFloat .Combined.Lat}}, {{fmtFloat .Combined.Lng}}{{else}}N/A{{end}}</div>
+                            </div>
+                            <div class="field">
+                                <div class="field-label">Path{{with index .Combined.Sources "path"}}<span class="field-source">source: {{.}}</span>{{end}}</div>
+                                <div class="field-value">{{if .Combined.Path}}{{.Combined.Path}}{{else}}N/A{{end}}</div>
+                            </div>
+                            {{if .Combined.Types}}
+                            <div class="field" style="grid-column: 1 / -1;">
+                                <div class="field-label">Types{{with index .Combined.Sources "types"}}<span class="field-source">source: {{.}}</span>{{end}}</div>
+                                <div class="field-value">{{range .Combined.Types}}<code>{{.}}</code>{{end}}</div>
+                            </div>
+                            {{end}}
+                            {{if .TypeMismatchAlert}}
+                            <div class="field" style="grid-column: 1 / -1;">
+                                <div class="callout warning">
+                                    <strong>Classification warning:</strong> The venue's classification may not align with Google's business types. This may indicate data quality issues.
+                                </div>
+                            </div>
+                            {{end}}
+                            {{if .Combined.Description}}
+                            <div class="field" style="grid-column: 1 / -1;">
+                                <div class="field-label">Description{{with index .Combined.Sources "description"}}<span class="field-source">source: {{.}}</span>{{end}}</div>
+                                <div class="field-value"><div class="callout">{{.Combined.Description}}</div></div>
+                            </div>
+                            {{end}}
+                            {{if .DescriptionSuggestion}}
+                            <div class="field" style="grid-column: 1 / -1;">
+                                <div class="field-label">Suggested Description</div>
+                                <div class="field-value"><div class="callout success">{{.DescriptionSuggestion}}</div></div>
+                            </div>
+                            {{end}}
+                            {{if .ClosedDaysSuggestion}}
+                            <div class="field" style="grid-column: 1 / -1;">
+                                <div class="field-label">Hours Note (Closed Days)</div>
+                                <div class="field-value"><div class="callout info"><code>{{.ClosedDaysSuggestion}}</code></div></div>
+                            </div>
+                            {{end}}
+                        </div>
                     </div>
-                    {{end}}
-                    </div>
-                </div>
+                </details>
                 {{end}}
 
-                {{if .History}}
-                <div class="section section-collapsible" data-default-open="false">
-                    <h2 class="section-heading">
-                        <button type="button" class="section-toggle" aria-expanded="false">
-                            <span>Validation History</span>
-                            <span class="section-icon" aria-hidden="true">▾</span>
-                        </button>
-                    </h2>
-                    <div class="section-body">
-                    <table class="history-table">
-                        <thead>
-                            <tr>
-                                <th>Date</th>
-                                <th>Action</th>
-                                <th>Score</th>
-                                <th>Notes</th>
-                                <th>Reviewer</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {{range .History}}
-                            <tr>
-                                <td>{{.ProcessedAt.Format "2006-01-02 15:04"}}</td>
-                                <td>
-                                    {{if eq .ValidationStatus "approved"}}
-                                        <span class="status-badge status-approved">Approved</span>
-                                    {{else if eq .ValidationStatus "rejected"}}
-                                        <span class="status-badge status-rejected">Rejected</span>
-                                    {{else}}
-                                        <span class="status-badge status-pending">Review</span>
-                                    {{end}}
-                                </td>
-                                <td>{{.ValidationScore}}</td>
-                                <td>{{.ValidationNotes}}</td>
-                                <td>System</td>
-                            </tr>
+                <details class="details-card" {{if not .GoogleData}}open{{end}}>
+                    <summary>Original Submission</summary>
+                    <div class="details-body">
+                        <div class="field-grid">
+                            <div class="field">
+                                <div class="field-label">Name</div>
+                                <div class="field-value"><strong>{{.Venue.Venue.Name}}</strong></div>
+                            </div>
+                            <div class="field">
+                                <div class="field-label">Location</div>
+                                <div class="field-value">{{.Venue.Venue.Location}}</div>
+                            </div>
+                            <div class="field">
+                                <div class="field-label">Path</div>
+                                <div class="field-value">{{if .VenuePath}}{{.VenuePath}}{{else}}N/A{{end}}</div>
+                            </div>
+                            <div class="field">
+                                <div class="field-label">Phone</div>
+                                <div class="field-value">{{if .Venue.Venue.Phone}}{{.Venue.Venue.Phone}}{{else}}N/A{{end}}</div>
+                            </div>
+                            <div class="field">
+                                <div class="field-label">Website</div>
+                                <div class="field-value">{{if .Venue.Venue.URL}}<a href="{{.Venue.Venue.URL}}" target="_blank">{{.Venue.Venue.URL}}</a>{{else}}N/A{{end}}</div>
+                            </div>
+                            <div class="field">
+                                <div class="field-label">Type</div>
+                                <div class="field-value">{{.VenueTypeLabel}}</div>
+                            </div>
+                            <div class="field">
+                                <div class="field-label">Vegan</div>
+                                <div class="field-value">{{.VeganStatusLabel}}</div>
+                            </div>
+                            <div class="field">
+                                <div class="field-label">Category</div>
+                                <div class="field-value">{{if .CategoryLabel}}{{.CategoryLabel}}{{else}}N/A{{end}}</div>
+                            </div>
+                            <div class="field">
+                                <div class="field-label">Admin Note</div>
+                                <div class="field-value">{{if .Venue.Venue.AdminNote}}{{.Venue.Venue.AdminNote}}{{else}}N/A{{end}}</div>
+                            </div>
+                            <div class="field">
+                                <div class="field-label">Admin Hold</div>
+                                <div class="field-value">{{if .Venue.Venue.AdminHold}}{{.Venue.Venue.AdminHold.Format "2006-01-02 15:04"}}{{else}}—{{end}}</div>
+                            </div>
+                            <div class="field">
+                                <div class="field-label">Admin Hold Email Notes</div>
+                                <div class="field-value">{{if .Venue.Venue.AdminHoldEmailNote}}{{.Venue.Venue.AdminHoldEmailNote}}{{else}}N/A{{end}}</div>
+                            </div>
+                            {{if .Venue.Venue.AdditionalInfo}}
+                            <div class="field" style="grid-column: 1 / -1;">
+                                <div class="field-label">Additional Information</div>
+                                <div class="field-value"><div class="callout">{{.Venue.Venue.AdditionalInfo}}</div></div>
+                            </div>
                             {{end}}
-                        </tbody>
-                    </table>
+                        </div>
                     </div>
-                </div>
+                </details>
+
+                {{if or .LatestHist (or .AIReviewNote .AIOutputNotes) }}
+                <details class="details-card">
+                    <summary>AI Review</summary>
+                    <div class="details-body">
+                        <div class="field-grid">
+                            <div class="field" style="grid-column: 1 / -1;">
+                                <div class="field-label">Decision Engine</div>
+                                <div class="field-value"><div class="callout info" style="white-space: pre-wrap;">{{if .LatestHist}}{{.AIReviewNote}}{{else}}No AI review available yet.{{end}}</div></div>
+                            </div>
+                            <div class="field">
+                                <div class="field-label">AI Score</div>
+                                <div class="field-value"><strong>{{if .LatestHist}}{{.AIScoreFormatted}}{{else}}—{{end}}</strong></div>
+                            </div>
+                            <div class="field" style="grid-column: 1 / -1;">
+                                <div class="field-label">AI Review Note</div>
+                                <div class="field-value"><div class="callout" style="white-space: pre-wrap;">{{if .LatestHist}}{{if .AIOutputNotes}}{{.AIOutputNotes}}{{else}}—{{end}}{{else}}—{{end}}</div></div>
+                            </div>
+                            {{if .PathValidationIssue}}
+                            <div class="field" style="grid-column: 1 / -1;">
+                                <div class="callout warning">
+                                    <strong>{{.PathValidationConfidence}} confidence:</strong> {{.PathValidationIssue}}
+                                </div>
+                            </div>
+                            {{end}}
+                            <div class="field" style="grid-column: 1 / -1;">
+                                <div class="field-label">AI Output (JSON)</div>
+                                <div class="field-value"><pre>{{if .LatestHist}}{{if .AIOutputRestPretty}}{{.AIOutputRestPretty}}{{else if .AIOutputFullPretty}}{{.AIOutputFullPretty}}{{else}}{}{{end}}{{else}}{}{{end}}</pre></div>
+                            </div>
+                            <div class="field" style="grid-column: 1 / -1;">
+                                <div class="field-label">AI Score Breakdown (JSON)</div>
+                                <div class="field-value"><pre>{{if .LatestHist}}{{if .PrettyBreakdown}}{{.PrettyBreakdown}}{{else}}{}{{end}}{{else}}{}{{end}}</pre></div>
+                            </div>
+                        </div>
+                    </div>
+                </details>
+                {{end}}
+
+                {{if .GoogleData}}
+                <details class="details-card">
+                    <summary>Original vs Google Places</summary>
+                    <div class="details-body">
+                        <div class="compare-grid">
+                            <div class="compare-col">
+                                <h3>Original (Submitted)</h3>
+                                <div class="compare-row">
+                                    <div class="field-label">Name</div>
+                                    <div class="field-value">{{.Venue.Venue.Name}}</div>
+                                </div>
+                                <div class="compare-row">
+                                    <div class="field-label">Address / Location</div>
+                                    <div class="field-value">{{.Venue.Venue.Location}}</div>
+                                </div>
+                                <div class="compare-row">
+                                    <div class="field-label">Phone</div>
+                                    <div class="field-value">{{if .Venue.Venue.Phone}}{{.Venue.Venue.Phone}}{{else}}N/A{{end}}</div>
+                                </div>
+                                <div class="compare-row">
+                                    <div class="field-label">Website</div>
+                                    <div class="field-value">{{if .Venue.Venue.URL}}<a href="{{.Venue.Venue.URL}}" target="_blank">{{.Venue.Venue.URL}}</a>{{else}}N/A{{end}}</div>
+                                </div>
+                                <div class="compare-row">
+                                    <div class="field-label">Type</div>
+                                    <div class="field-value">{{.VenueTypeLabel}}</div>
+                                </div>
+                                <div class="compare-row">
+                                    <div class="field-label">Vegan</div>
+                                    <div class="field-value">{{.VeganStatusLabel}}</div>
+                                </div>
+                                <div class="compare-row">
+                                    <div class="field-label">Category</div>
+                                    <div class="field-value">{{if .CategoryLabel}}{{.CategoryLabel}}{{else}}N/A{{end}}</div>
+                                </div>
+                            </div>
+                            <div class="compare-col">
+                                <h3>Google Places</h3>
+                                <div class="compare-row">
+                                    <div class="field-label">Name</div>
+                                    <div class="field-value">{{.GoogleData.Name}}</div>
+                                </div>
+                                <div class="compare-row">
+                                    <div class="field-label">Address</div>
+                                    <div class="field-value">{{.GoogleData.FormattedAddress}}</div>
+                                </div>
+                                <div class="compare-row">
+                                    <div class="field-label">Phone</div>
+                                    <div class="field-value">{{if .GoogleData.FormattedPhone}}{{.GoogleData.FormattedPhone}}{{else}}N/A{{end}}</div>
+                                </div>
+                                <div class="compare-row">
+                                    <div class="field-label">Website</div>
+                                    <div class="field-value">{{if .GoogleData.Website}}<a href="{{.GoogleData.Website}}" target="_blank">{{.GoogleData.Website}}</a>{{else}}N/A{{end}}</div>
+                                </div>
+                                <div class="compare-row">
+                                    <div class="field-label">Place ID</div>
+                                    <div class="field-value">{{.GoogleData.PlaceID}}</div>
+                                </div>
+                                <div class="compare-row">
+                                    <div class="field-label">Business Status</div>
+                                    <div class="field-value">{{if .GoogleData.BusinessStatus}}{{.GoogleData.BusinessStatus}}{{else}}N/A{{end}}</div>
+                                </div>
+                                <div class="compare-row">
+                                    <div class="field-label">Rating</div>
+                                    <div class="field-value">{{.GoogleData.Rating}}</div>
+                                </div>
+                                <div class="compare-row">
+                                    <div class="field-label">User Ratings Total</div>
+                                    <div class="field-value">{{.GoogleData.UserRatingsTotal}}</div>
+                                </div>
+                                <div class="compare-row">
+                                    <div class="field-label">Location (Lat, Lng)</div>
+                                    <div class="field-value">{{.GoogleData.Geometry.Location.Lat}}, {{.GoogleData.Geometry.Location.Lng}}</div>
+                                </div>
+                                <div class="compare-row">
+                                    <div class="field-label">Viewport NE</div>
+                                    <div class="field-value">{{.GoogleData.Geometry.Viewport.Northeast.Lat}}, {{.GoogleData.Geometry.Viewport.Northeast.Lng}}</div>
+                                </div>
+                                <div class="compare-row">
+                                    <div class="field-label">Viewport SW</div>
+                                    <div class="field-value">{{.GoogleData.Geometry.Viewport.Southwest.Lat}}, {{.GoogleData.Geometry.Viewport.Southwest.Lng}}</div>
+                                </div>
+                                {{if .GoogleData.OpeningHours}}
+                                <div class="compare-row">
+                                    <div class="field-label">Open Now</div>
+                                    <div class="field-value">{{if .GoogleData.OpeningHours.OpenNow}}Yes{{else}}No{{end}}</div>
+                                </div>
+                                {{if .GoogleData.OpeningHours.WeekdayText}}
+                                <div class="compare-row">
+                                    <div class="field-label">Weekday Text</div>
+                                    <div class="field-value">
+                                        {{range .GoogleData.OpeningHours.WeekdayText}}<div>{{.}}</div>{{end}}
+                                    </div>
+                                </div>
+                                {{end}}
+                                {{if .GoogleData.OpeningHours.Periods}}
+                                <div class="compare-row">
+                                    <div class="field-label">Periods</div>
+                                    <div class="field-value">
+                                        {{range .GoogleData.OpeningHours.Periods}}
+                                            <div>Open: day {{.Open.Day}} at {{.Open.Time}} — Close: day {{.Close.Day}} at {{.Close.Time}}</div>
+                                        {{end}}
+                                    </div>
+                                </div>
+                                {{end}}
+                                {{end}}
+                                {{if .GoogleData.AddressComponents}}
+                                <div class="compare-row">
+                                    <div class="field-label">Address Components</div>
+                                    <div class="field-value">
+                                        {{range .GoogleData.AddressComponents}}
+                                            <div style="margin-bottom:6px;">
+                                                <strong>{{.LongName}}</strong> ({{.ShortName}})
+                                                <div>
+                                                    {{if .Types}}
+                                                        {{range .Types}}<code>{{.}}</code>{{end}}
+                                                    {{else}}
+                                                        <span style="color: var(--muted);">no types</span>
+                                                    {{end}}
+                                                </div>
+                                            </div>
+                                        {{end}}
+                                    </div>
+                                </div>
+                                {{end}}
+                                {{if .GoogleData.Types}}
+                                <div class="compare-row">
+                                    <div class="field-label">Types</div>
+                                    <div class="field-value">{{range .GoogleData.Types}}<code>{{.}}</code>{{end}}</div>
+                                </div>
+                                {{end}}
+                                <div class="compare-row">
+                                    <div class="field-label">Fetched At</div>
+                                    <div class="field-value">{{.GoogleData.FetchedAt.Format "2006-01-02 15:04"}}</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </details>
+                {{end}}
+
+                <details class="details-card" id="feedback-section">
+                    <summary>Editor Feedback</summary>
+                    <div class="details-body">
+                        <div class="feedback-summary">
+                            <span id="fb-up-count">0</span> 👍 · <span id="fb-down-count">0</span> 👎
+                        </div>
+                        <div class="feedback-actions">
+                            <button class="btn btn-subtle" id="btn-thumbs-up" onclick="submitFeedback('thumbs_up')">👍 Thumbs Up</button>
+                            <button class="btn btn-danger" id="btn-thumbs-down" onclick="submitFeedback('thumbs_down')">👎 Thumbs Down</button>
+                            <input type="hidden" id="prompt_version" value="{{if .LatestHist}}{{if .LatestHist.PromptVersion}}{{.LatestHist.PromptVersion}}{{end}}{{end}}" />
+                        </div>
+                        <label for="fb-comment" style="display:block; font-size:13px; font-weight:600; color: var(--muted); margin-bottom:6px;">Optional comment</label>
+                        <textarea id="fb-comment" rows="4" placeholder="Share what worked well or what needs attention"></textarea>
+                        <div id="fb-status" style="margin-top:10px; display:none;"></div>
+                        <ul id="fb-list" class="feedback-list"></ul>
+                    </div>
+                </details>
+
+                {{if .History}}
+                <details class="details-card">
+                    <summary>Validation History</summary>
+                    <div class="details-body">
+                        <table class="history-table">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Action</th>
+                                    <th>Score</th>
+                                    <th>Notes</th>
+                                    <th>Reviewer</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {{range .History}}
+                                <tr>
+                                    <td>{{.ProcessedAt.Format "2006-01-02 15:04"}}</td>
+                                    <td>
+                                        {{if eq .ValidationStatus "approved"}}
+                                            <span class="status-pill approved">Approved</span>
+                                        {{else if eq .ValidationStatus "rejected"}}
+                                            <span class="status-pill rejected">Rejected</span>
+                                        {{else}}
+                                            <span class="status-pill pending">Review</span>
+                                        {{end}}
+                                    </td>
+                                    <td>{{.ValidationScore}}</td>
+                                    <td>{{.ValidationNotes}}</td>
+                                    <td>System</td>
+                                </tr>
+                                {{end}}
+                            </tbody>
+                        </table>
+                    </div>
+                </details>
                 {{end}}
 
                 {{if .AuditLogs}}
-                <div class="section section-collapsible" data-default-open="false">
-                    <h2 class="section-heading">
-                        <button type="button" class="section-toggle" aria-expanded="false">
-                            <span>Audit Logs</span>
-                            <span class="section-icon" aria-hidden="true">▾</span>
-                        </button>
-                    </h2>
-                    <div class="section-body">
-                    <table class="history-table">
-                        <thead>
-                            <tr>
-                                <th>Date</th>
-                                <th>Action</th>
-                                <th>Reason</th>
-                                <th>Admin ID</th>
-                                <th>Data Replacements</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {{range .AuditLogs}}
-                            <tr>
-                                <td>{{.CreatedAt.Format "2006-01-02 15:04"}}</td>
-                                <td>
-                                    {{if eq .Status "approved"}}
-                                        <span class="status-badge status-approved">Approved</span>
-                                    {{else if eq .Status "rejected"}}
-                                        <span class="status-badge status-rejected">Rejected</span>
-                                    {{else}}
-                                        <span class="status-badge status-pending">{{.Status}}</span>
-                                    {{end}}
-                                </td>
-                                <td>{{if .Reason}}{{.Reason}}{{else}}—{{end}}</td>
-                                <td>{{if .AdminID}}{{.AdminID}}{{else}}System{{end}}</td>
-                                <td>
-                                    {{if .DataReplacements}}
-                                        <details>
-                                            <summary style="cursor: pointer; color: #3498db;">View Changes</summary>
-                                            <pre style="background: #f8f9fa; padding: 8px; border-radius: 4px; font-size: 12px; margin-top: 5px; overflow-x: auto;">{{.DataReplacements}}</pre>
-                                        </details>
-                                    {{else}}
-                                        —
-                                    {{end}}
-                                </td>
-                            </tr>
-                            {{end}}
-                        </tbody>
-                    </table>
+                <details class="details-card">
+                    <summary>Audit Logs</summary>
+                    <div class="details-body">
+                        <table class="history-table">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Action</th>
+                                    <th>Reason</th>
+                                    <th>Admin ID</th>
+                                    <th>Data Replacements</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {{range .AuditLogs}}
+                                <tr>
+                                    <td>{{.CreatedAt.Format "2006-01-02 15:04"}}</td>
+                                    <td>
+                                        {{if eq .Status "approved"}}
+                                            <span class="status-pill approved">Approved</span>
+                                        {{else if eq .Status "rejected"}}
+                                            <span class="status-pill rejected">Rejected</span>
+                                        {{else}}
+                                            <span class="status-pill pending">{{.Status}}</span>
+                                        {{end}}
+                                    </td>
+                                    <td>{{if .Reason}}{{.Reason}}{{else}}—{{end}}</td>
+                                    <td>{{if .AdminID}}{{.AdminID}}{{else}}System{{end}}</td>
+                                    <td>
+                                        {{if .DataReplacements}}
+                                            <details>
+                                                <summary style="cursor: pointer; color: var(--accent);">View Changes</summary>
+                                                <pre>{{.DataReplacements}}</pre>
+                                            </details>
+                                        {{else}}
+                                            —
+                                        {{end}}
+                                    </td>
+                                </tr>
+                                {{end}}
+                            </tbody>
+                        </table>
                     </div>
-                </div>
+                </details>
                 {{end}}
-            </div>
-
-            <!-- Sidebar removed per requirements; Similar Venues removed -->
+            </main>
         </div>
     </div>
-    
+
     <script>
-        const collapsibleSections = document.querySelectorAll('.section-collapsible');
-        collapsibleSections.forEach((section, index) => {
-            const toggle = section.querySelector('.section-toggle');
-            const body = section.querySelector('.section-body');
-            if (!toggle || !body) {
-                return;
-            }
-
-            if (!body.id) {
-                body.id = `section-body-${index}`;
-            }
-            toggle.setAttribute('aria-controls', body.id);
-
-            const shouldOpen = section.dataset.defaultOpen === 'true';
-            if (shouldOpen) {
-                section.classList.add('open');
-            } else {
-                section.classList.remove('open');
-            }
-            toggle.setAttribute('aria-expanded', section.classList.contains('open') ? 'true' : 'false');
-
-            toggle.addEventListener('click', () => {
-                const isOpen = section.classList.toggle('open');
-                toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
-            });
-        });
-
         const basePath = '{{basePath}}';
         function startAIReview() {
             const btn = event.target;
