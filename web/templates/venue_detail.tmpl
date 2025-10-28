@@ -114,9 +114,15 @@
                 <p class="page-meta">Venue ID: {{.Venue.Venue.ID}}</p>
             </div>
         </header>
+        {{$state := intVal .Venue.Venue.Active 0}}
+        {{$hasAIReview := or .LatestHist (or .AIReviewNote .AIOutputNotes)}}
+        {{if $hasAIReview}}
+        <div class="callout info" style="white-space: pre-wrap; margin-bottom:24px;">
+            {{if .LatestHist}}{{.AIReviewNote}}{{else}}No AI review available yet.{{end}}
+        </div>
+        {{end}}
         <div class="detail-layout">
             <aside class="side-column">
-                {{$state := intVal .Venue.Venue.Active 0}}
                 <section class="card status-card">
                     <div class="status-header">
                         <div>
@@ -133,15 +139,17 @@
                         {{.Venue.Venue.AdminNote}}
                     </div>
                     {{end}}
-                    {{if and (eq $state 0) .LatestHist}}
+                    {{if eq $state 0}}
                     <div class="action-form">
                         <h3>Manual Review</h3>
                         <div id="approval-status" style="display:none; margin-bottom:12px; padding:10px 12px; border-radius:8px;"></div>
                         <form id="approval-form">
                             <div class="action-buttons">
                                 <button type="button" class="btn btn-primary" onclick="startAIReview()">🚀 {{if .GoogleData}}Refresh AI-Assisted Review{{else}}Start AI-Assisted Review{{end}}</button>
+                                {{if $hasAIReview}}
                                 <button type="button" class="btn btn-success" onclick="approveVenue()">✅ Approve</button>
                                 <button type="button" class="btn btn-danger" onclick="rejectVenue()">❌ Reject</button>
+                                {{end}}
                             </div>
                             <label for="notes">Notes / Reason</label>
                             <textarea id="notes" rows="3" placeholder="Add context for your decision"></textarea>
@@ -347,7 +355,7 @@
                     </div>
                 </details>
 
-                {{if or .LatestHist (or .AIReviewNote .AIOutputNotes) }}
+                {{if $hasAIReview}}
                 <details class="details-card">
                     <summary>AI Review</summary>
                     <div class="details-body">
