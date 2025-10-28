@@ -59,6 +59,10 @@ func (r *SQLRepository) CountVenuesByPathCtx(ctx context.Context, path string, e
 	return r.db.CountVenuesByPathCtx(ctx, path, excludeVenueID)
 }
 
+func (r *SQLRepository) FindDuplicateVenuesByNameAndLocation(ctx context.Context, name string, lat, lng float64, radiusMeters int, excludeVenueID int64) ([]models.Venue, error) {
+	return r.db.FindDuplicateVenuesByNameAndLocation(ctx, name, lat, lng, radiusMeters, excludeVenueID)
+}
+
 func (r *SQLRepository) ApproveVenueWithDataReplacement(ctx context.Context, approvalData *domain.ApprovalData) error {
 	return r.db.ApproveVenueWithDataReplacementCtx(ctx, approvalData)
 }

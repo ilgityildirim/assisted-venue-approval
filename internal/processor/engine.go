@@ -716,7 +716,7 @@ func (e *ProcessingEngine) calculatePriorityWithUser(venue models.Venue, user mo
 }
 
 // requiresManualReviewEarly checks if venue should bypass automated review for cost optimization
-func (e *ProcessingEngine) requiresManualReviewEarly(venue *models.Venue, user *models.User, trustAssessment *trust.Assessment) (bool, EarlyExitReason) {
+func (e *ProcessingEngine) requiresManualReviewEarly(ctx context.Context, venue *models.Venue, user *models.User, trustAssessment *trust.Assessment) (bool, EarlyExitReason) {
 	// Thread-safe read of AVA configuration
 	e.avaConfigMu.RLock()
 	minUserPointsForAVA := e.minUserPointsForAVA
@@ -736,6 +736,11 @@ func (e *ProcessingEngine) requiresManualReviewEarly(venue *models.Venue, user *
 	}
 
 	if skip, reason := checkVenueType(venue); skip {
+		return true, reason
+	}
+
+	// Check for duplicate venues by name and location (500m radius)
+	if skip, reason := checkDuplicateVenue(ctx, e.repo, venue); skip {
 		return true, reason
 	}
 
@@ -893,7 +898,7 @@ func (e *ProcessingEngine) processJob(job *ProcessingJob) *ProcessingResult {
 
 	// Early exit check - bypass API calls if venue should go directly to manual review
 	// This prevents unnecessary costs for venues that don't meet automated review criteria
-	requiresEarlyReview, exitReason := e.requiresManualReviewEarly(&venue, &user, trustAssessment)
+	requiresEarlyReview, exitReason := e.requiresManualReviewEarly(jobCtx, &venue, &user, trustAssessment)
 	if requiresEarlyReview {
 		log.Printf("[Early Exit] Venue %d bypassing API calls: %s", venue.ID, exitReason.String())
 

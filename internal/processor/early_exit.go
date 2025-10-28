@@ -1,10 +1,15 @@
 package processor
 
 import (
+	"context"
 	"fmt"
+	"math"
+	"strings"
 
+	"assisted-venue-approval/internal/domain"
 	"assisted-venue-approval/internal/models"
 	"assisted-venue-approval/internal/trust"
+	"assisted-venue-approval/pkg/utils"
 )
 
 // Constants for early exit logic
@@ -86,6 +91,13 @@ var (
 			Description: fmt.Sprintf("Only generic restaurants can be viewed by AVA. Given Entry Type: %s (%d), Category: %s (%d) ", entryTypeName, entryType, categoryName, category),
 		}
 	}
+
+	DuplicateVenue = func(duplicateID int64, duplicateName string, distanceMeters int, similarity float64) EarlyExitReason {
+		return EarlyExitReason{
+			Code:        "duplicate_venue",
+			Description: fmt.Sprintf("Possible duplicate venue found: '%s' (ID: %d) within %dm (%.0f%% name match) - requires manual review", duplicateName, duplicateID, distanceMeters, similarity*100),
+		}
+	}
 )
 
 // checkMinimumPoints verifies user meets minimum ambassador points requirement
@@ -162,4 +174,70 @@ func checkRestaurantCategory(venue *models.Venue) (skip bool, reason EarlyExitRe
 	}
 
 	return false, EarlyExitReason{}
+}
+
+// checkDuplicateVenue searches for potential duplicate venues by name and location
+func checkDuplicateVenue(ctx context.Context, repo domain.Repository, venue *models.Venue) (skip bool, reason EarlyExitReason) {
+	// Skip check if venue doesn't have location data
+	if venue.Lat == nil || venue.Lng == nil || *venue.Lat == 0.0 || *venue.Lng == 0.0 {
+		return false, EarlyExitReason{}
+	}
+
+	// Skip check if venue name is too short (less than 3 characters)
+	if len(strings.TrimSpace(venue.Name)) < 3 {
+		return false, EarlyExitReason{}
+	}
+
+	// Search for duplicates within 500m radius (matching Google validation logic)
+	const radiusMeters = 500
+	const similarityThreshold = 0.7 // 70% name similarity
+
+	duplicates, err := repo.FindDuplicateVenuesByNameAndLocation(ctx, venue.Name, *venue.Lat, *venue.Lng, radiusMeters, venue.ID)
+	if err != nil {
+		// Log error but don't block processing - database errors shouldn't prevent validation
+		// In production, this would be logged with a proper logger
+		return false, EarlyExitReason{}
+	}
+
+	// Check each potential duplicate for name similarity
+	for _, dup := range duplicates {
+		// Calculate distance using Haversine formula
+		if dup.Lat == nil || dup.Lng == nil {
+			continue
+		}
+
+		distance := calculateHaversineDistance(*venue.Lat, *venue.Lng, *dup.Lat, *dup.Lng)
+
+		// Calculate name similarity
+		similarity := utils.CalculateStringSimilarity(
+			strings.ToLower(strings.TrimSpace(venue.Name)),
+			strings.ToLower(strings.TrimSpace(dup.Name)),
+		)
+
+		// If similarity is above threshold and within radius, mark as duplicate
+		if similarity >= similarityThreshold {
+			return true, DuplicateVenue(dup.ID, dup.Name, int(distance), similarity)
+		}
+	}
+
+	return false, EarlyExitReason{}
+}
+
+// calculateHaversineDistance computes the great-circle distance between two lat/lng points in meters
+func calculateHaversineDistance(lat1, lng1, lat2, lng2 float64) float64 {
+	const earthRadiusMeters = 6371000
+
+	// Convert to radians
+	lat1Rad := lat1 * (math.Pi / 180)
+	lat2Rad := lat2 * (math.Pi / 180)
+	deltaLatRad := (lat2 - lat1) * (math.Pi / 180)
+	deltaLngRad := (lng2 - lng1) * (math.Pi / 180)
+
+	// Haversine formula
+	a := math.Sin(deltaLatRad/2)*math.Sin(deltaLatRad/2) +
+		math.Cos(lat1Rad)*math.Cos(lat2Rad)*
+			math.Sin(deltaLngRad/2)*math.Sin(deltaLngRad/2)
+	c := 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
+
+	return earthRadiusMeters * c
 }

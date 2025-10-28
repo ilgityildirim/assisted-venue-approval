@@ -1040,6 +1040,69 @@ func (db *DB) CountVenuesByPathCtx(ctx context.Context, path string, excludeVenu
 	return count, nil
 }
 
+// FindDuplicateVenuesByNameAndLocation finds venues with similar names within a geographic radius
+// Uses name similarity (SOUNDEX + fuzzy matching) and Haversine distance formula
+func (db *DB) FindDuplicateVenuesByNameAndLocation(ctx context.Context, name string, lat, lng float64, radiusMeters int, excludeVenueID int64) ([]models.Venue, error) {
+	ctx, cancel := db.withReadTimeout(ctx)
+	defer cancel()
+
+	// Clean name for matching (remove special chars, normalize spaces)
+	cleanName := strings.ToLower(strings.TrimSpace(name))
+	cleanName = strings.ReplaceAll(cleanName, "'", "")
+	cleanName = strings.ReplaceAll(cleanName, "\"", "")
+
+	// Build fuzzy search pattern
+	fuzzyPattern := "%" + cleanName + "%"
+
+	// Query using Haversine formula for distance calculation and name similarity
+	// MySQL Haversine: 6371000 * acos(cos(radians(lat1)) * cos(radians(lat2)) * cos(radians(lng2) - radians(lng1)) + sin(radians(lat1)) * sin(radians(lat2)))
+	query := `
+		SELECT
+			id, path, entrytype, name, url, fburl, instagram_url, location, zipcode, phone,
+			other_food_type, price, additionalinfo, vdetails, openhours, openhours_note,
+			timezone, hash, email, ownername, sentby, user_id, active, vegonly, vegan,
+			sponsor_level, crossstreet, lat, lng, created_at, date_added, date_updated,
+			admin_last_update, admin_note, admin_hold, admin_hold_email_note,
+			updated_by_id, made_active_by_id, made_active_at, show_premium, category,
+			pretty_url, edit_lock, request_vegan_decal_at, request_excellent_decal_at, source
+		FROM venues
+		WHERE id != ?
+		  AND active IN (0, 1)
+		  AND lat IS NOT NULL
+		  AND lng IS NOT NULL
+		  AND (SOUNDEX(name) = SOUNDEX(?) OR LOWER(name) LIKE ?)
+		  AND (
+			6371000 * acos(
+			  cos(radians(?)) * cos(radians(lat)) * cos(radians(lng) - radians(?))
+			  + sin(radians(?)) * sin(radians(lat))
+			)
+		  ) <= ?
+		ORDER BY active DESC, date_added DESC
+		LIMIT 10
+	`
+
+	rows, err := db.conn.QueryContext(ctx, query, excludeVenueID, name, fuzzyPattern, lat, lng, lat, radiusMeters)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query duplicate venues: %w", err)
+	}
+	defer rows.Close()
+
+	var venues []models.Venue
+	for rows.Next() {
+		v, err := db.scanVenueRow(rows)
+		if err != nil {
+			return nil, fmt.Errorf("failed to scan duplicate venue row: %w", err)
+		}
+		venues = append(venues, *v)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating duplicate venue rows: %w", err)
+	}
+
+	return venues, nil
+}
+
 // GetValidationHistoryPaginated returns validation history with pagination
 func (db *DB) GetValidationHistoryPaginated(limit, offset int) ([]models.ValidationHistory, int, error) {
 	// Get total count

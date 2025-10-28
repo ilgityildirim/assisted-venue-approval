@@ -15,6 +15,7 @@ type VenueRepository interface {
 	GetManualReviewVenuesCtx(ctx context.Context, search string, minScore int, sort string, limit int, offset int) ([]models.VenueWithUser, []int, int, error)
 	GetVenueStatisticsCtx(ctx context.Context) (*models.VenueStats, error)
 	CountVenuesByPathCtx(ctx context.Context, path string, excludeVenueID int64) (int, error)
+	FindDuplicateVenuesByNameAndLocation(ctx context.Context, name string, lat, lng float64, radiusMeters int, excludeVenueID int64) ([]models.Venue, error)
 
 	UpdateVenueStatusCtx(ctx context.Context, venueID int64, active int, notes string, reviewer *string) error
 	UpdateVenueActiveCtx(ctx context.Context, venueID int64, active int) error

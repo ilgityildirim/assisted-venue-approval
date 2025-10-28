@@ -111,6 +111,10 @@ func (u *SQLUnitOfWork) CountVenuesByPathCtx(ctx context.Context, path string, e
 	return u.db.CountVenuesByPathCtx(ctx, path, excludeVenueID)
 }
 
+func (u *SQLUnitOfWork) FindDuplicateVenuesByNameAndLocation(ctx context.Context, name string, lat, lng float64, radiusMeters int, excludeVenueID int64) ([]models.Venue, error) {
+	return u.db.FindDuplicateVenuesByNameAndLocation(ctx, name, lat, lng, radiusMeters, excludeVenueID)
+}
+
 func (u *SQLUnitOfWork) ApproveVenueWithDataReplacement(ctx context.Context, approvalData *domain.ApprovalData) error {
 	return u.db.ApproveVenueWithDataReplacementCtx(ctx, approvalData)
 }
