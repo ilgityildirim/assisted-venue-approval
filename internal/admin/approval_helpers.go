@@ -213,8 +213,11 @@ func convertTo24Hour(hourStr, minuteStr, period string) string {
 // Output: {"openhours":["Mon-07:30-22:00","Tue-07:30-22:00",...],"note":""}
 func FormatOpenHoursFromCombined(hours []string) (string, error) {
 	if len(hours) == 0 {
+		fmt.Printf("[hours-format] No hours provided to format\n")
 		return "", nil
 	}
+
+	fmt.Printf("[hours-format] Formatting %d hour lines from Combined.Hours\n", len(hours))
 
 	type OpenHoursFormat struct {
 		OpenHours []string `json:"openhours"`
@@ -239,12 +242,26 @@ func FormatOpenHoursFromCombined(hours []string) (string, error) {
 
 	// Regex to parse hours format: "Monday: 7:30 AM – 10:00 PM"
 	// Also handles: "Monday: Closed", "Monday: Open 24 hours"
+	// Updated to handle various separator characters (hyphen, en-dash, em-dash)
+	// Unicode whitespace: \u202f (narrow no-break space), \u2009 (thin space), \u00A0 (non-breaking space)
 	hoursRegex := regexp.MustCompile(`^(\w+):\s*(.+)$`)
-	timeRegex := regexp.MustCompile(`(\d{1,2}):(\d{2})\s*(AM|PM)`)
+	// Match time patterns with Unicode whitespace characters
+	// Using \x{XXXX} for Unicode code points in Go regex
+	// \s = regular whitespace
+	// \x{00A0} = non-breaking space
+	// \x{202F} = narrow no-break space
+	// \x{2009} = thin space
+	timeRegex := regexp.MustCompile(`(\d{1,2}):(\d{2})[\s\x{00A0}\x{202F}\x{2009}]*(AM|PM|am|pm)`)
 
-	for _, line := range hours {
-		matches := hoursRegex.FindStringSubmatch(strings.TrimSpace(line))
+	closedDays := []string{}
+
+	for i, line := range hours {
+		lineStr := strings.TrimSpace(line)
+		fmt.Printf("[hours-format] Line %d: %q\n", i+1, lineStr)
+
+		matches := hoursRegex.FindStringSubmatch(lineStr)
 		if len(matches) != 3 {
+			fmt.Printf("[hours-format]   ⚠️  Failed to parse line (no day:hours pattern)\n")
 			continue
 		}
 
@@ -253,16 +270,20 @@ func FormatOpenHoursFromCombined(hours []string) (string, error) {
 
 		shortDay, ok := dayMap[dayName]
 		if !ok {
+			fmt.Printf("[hours-format]   ⚠️  Unknown day name: %q\n", dayName)
 			continue
 		}
 
 		// Handle closed days
 		if strings.Contains(strings.ToLower(hoursText), "closed") {
+			fmt.Printf("[hours-format]   ✓ Closed day: %s\n", shortDay)
+			closedDays = append(closedDays, shortDay)
 			continue // Skip closed days
 		}
 
 		// Handle 24-hour venues
 		if strings.Contains(strings.ToLower(hoursText), "24 hours") || strings.Contains(strings.ToLower(hoursText), "open 24") {
+			fmt.Printf("[hours-format]   ✓ 24-hour venue: %s\n", shortDay)
 			result.OpenHours = append(result.OpenHours, fmt.Sprintf("%s-00:00-24:00", shortDay))
 			continue
 		}
@@ -271,25 +292,41 @@ func FormatOpenHoursFromCombined(hours []string) (string, error) {
 		times := timeRegex.FindAllStringSubmatch(hoursText, -1)
 		if len(times) == 2 {
 			// Convert to 24-hour format
-			openTime := convertTo24Hour(times[0][1], times[0][2], times[0][3])
-			closeTime := convertTo24Hour(times[1][1], times[1][2], times[1][3])
+			openTime := convertTo24Hour(times[0][1], times[0][2], strings.ToUpper(times[0][3]))
+			closeTime := convertTo24Hour(times[1][1], times[1][2], strings.ToUpper(times[1][3]))
 
 			if openTime != "" && closeTime != "" {
-				result.OpenHours = append(result.OpenHours, fmt.Sprintf("%s-%s-%s", shortDay, openTime, closeTime))
+				formatted := fmt.Sprintf("%s-%s-%s", shortDay, openTime, closeTime)
+				fmt.Printf("[hours-format]   ✓ Parsed: %s (%s to %s)\n", formatted, times[0][0], times[1][0])
+				result.OpenHours = append(result.OpenHours, formatted)
+			} else {
+				fmt.Printf("[hours-format]   ⚠️  Failed to convert times: open=%q close=%q\n", openTime, closeTime)
+			}
+		} else {
+			fmt.Printf("[hours-format]   ⚠️  Failed to extract times (found %d time patterns, expected 2)\n", len(times))
+			if len(times) > 0 {
+				fmt.Printf("[hours-format]      Raw times found: %v\n", times)
 			}
 		}
 	}
 
 	// If no valid hours parsed, return empty string
 	if len(result.OpenHours) == 0 {
+		fmt.Printf("[hours-format] ❌ No valid hours parsed from %d input lines\n", len(hours))
 		return "", nil
 	}
+
+	fmt.Printf("[hours-format] ✓ Successfully parsed %d open hours\n", len(result.OpenHours))
 
 	// Serialize to JSON
 	jsonBytes, err := json.Marshal(result)
 	if err != nil {
+		fmt.Printf("[hours-format] ❌ Failed to marshal JSON: %v\n", err)
 		return "", fmt.Errorf("failed to marshal open hours: %w", err)
 	}
 
-	return string(jsonBytes), nil
+	jsonStr := string(jsonBytes)
+	fmt.Printf("[hours-format] ✓ Final JSON: %s\n", jsonStr)
+
+	return jsonStr, nil
 }

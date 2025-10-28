@@ -377,18 +377,30 @@ func ApproveVenueHandler(repo domain.Repository, cfg *config.Config) http.Handle
 		}
 
 		// OpenHours: Format from Combined.Hours
+		log.Printf("[approval] Venue %d: Processing opening hours (combined.Hours has %d lines, source=%s)",
+			id, len(combined.Hours), combined.Sources["hours"])
+
 		if len(combined.Hours) > 0 {
+			log.Printf("[approval] Venue %d: Formatting hours from Combined.Hours: %v", id, combined.Hours)
 			formattedHours, err := FormatOpenHoursFromCombined(combined.Hours)
 			if err != nil {
-				log.Printf("Warning: failed to format open hours for venue %d: %v", id, err)
+				log.Printf("[approval] ❌ Venue %d: Failed to format open hours: %v", id, err)
 			} else if formattedHours != "" {
 				approvalData.OpenHours = &formattedHours
+				log.Printf("[approval] ✓ Venue %d: Formatted hours set: %s", id, formattedHours)
+			} else {
+				log.Printf("[approval] ⚠️  Venue %d: Hours formatting returned empty string (no valid hours parsed)", id)
 			}
+		} else {
+			log.Printf("[approval] ⚠️  Venue %d: No hours data available in Combined.Hours (Google data may be missing)", id)
 		}
 
 		// OpenHoursNote: Use ClosedDaysSuggestion if available
 		if closedDaysSuggestion != "" {
 			approvalData.OpenHoursNote = &closedDaysSuggestion
+			log.Printf("[approval] ✓ Venue %d: Closed days note set: %s", id, closedDaysSuggestion)
+		} else {
+			log.Printf("[approval] Venue %d: No closed days suggestion from AI", id)
 		}
 
 		// Build data replacements for audit trail
@@ -969,18 +981,30 @@ func processBatchApproval(ctx context.Context, repo domain.Repository, cfg *conf
 	}
 
 	// OpenHours: Format from Combined.Hours
+	log.Printf("[batch-approval] Venue %d: Processing opening hours (combined.Hours has %d lines, source=%s)",
+		venueID, len(combined.Hours), combined.Sources["hours"])
+
 	if len(combined.Hours) > 0 {
+		log.Printf("[batch-approval] Venue %d: Formatting hours from Combined.Hours: %v", venueID, combined.Hours)
 		formattedHours, err := FormatOpenHoursFromCombined(combined.Hours)
 		if err != nil {
-			log.Printf("Warning: failed to format open hours for venue %d: %v", venueID, err)
+			log.Printf("[batch-approval] ❌ Venue %d: Failed to format open hours: %v", venueID, err)
 		} else if formattedHours != "" {
 			approvalData.OpenHours = &formattedHours
+			log.Printf("[batch-approval] ✓ Venue %d: Formatted hours set: %s", venueID, formattedHours)
+		} else {
+			log.Printf("[batch-approval] ⚠️  Venue %d: Hours formatting returned empty string (no valid hours parsed)", venueID)
 		}
+	} else {
+		log.Printf("[batch-approval] ⚠️  Venue %d: No hours data available in Combined.Hours (Google data may be missing)", venueID)
 	}
 
 	// OpenHoursNote: Use ClosedDaysSuggestion if available
 	if closedDaysSuggestion != "" {
 		approvalData.OpenHoursNote = &closedDaysSuggestion
+		log.Printf("[batch-approval] ✓ Venue %d: Closed days note set: %s", venueID, closedDaysSuggestion)
+	} else {
+		log.Printf("[batch-approval] Venue %d: No closed days suggestion from AI", venueID)
 	}
 
 	// Build data replacements for audit trail
