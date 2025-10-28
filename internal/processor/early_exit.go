@@ -10,7 +10,8 @@ import (
 // Constants for early exit logic
 const (
 	// earlyExitManualReviewScore is the score assigned to venues that bypass automated review
-	earlyExitManualReviewScore = 50
+	// Set to 0 because no AI scoring was performed during early exit
+	earlyExitManualReviewScore = 0
 )
 
 // EarlyExitReason represents a structured reason for bypassing automated review
