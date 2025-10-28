@@ -55,16 +55,7 @@ func SubmitFeedbackHandler(db *database.DB) http.HandlerFunc {
 		ip := clientIP(r)
 		ipb := models.IPToBytes(ip)
 
-		//// Prevent multiple submissions per venue/prompt_version from same IP
-		//if ok, err := db.HasVenueFeedbackFromIPCtx(r.Context(), id, ipb, pv); err != nil {
-		//    log.Printf("feedback dup check failed: %v", err)
-		//} else if ok {
-		//    w.WriteHeader(http.StatusConflict)
-		//    w.Header().Set("Content-Type", "application/json")
-		//    _ = json.NewEncoder(w).Encode(map[string]any{"status": "duplicate"})
-		//    return
-		//}
-
+		// UPSERT handles duplicate prevention: one feedback per (venue_id, ip)
 		rec := &models.EditorFeedback{VenueID: id, PromptVersion: pv, FeedbackType: ftype, Comment: cmt, IP: ipb}
 		if err := rec.Validate(); err != nil {
 			http.Error(w, fmt.Sprintf("validation error: %v", err), http.StatusBadRequest)

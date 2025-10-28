@@ -2150,16 +2150,10 @@ func (db *DB) UpsertEditorFeedbackCtx(ctx context.Context, f *models.EditorFeedb
 	ctx, cancel := db.withWriteTimeout(ctx)
 	defer cancel()
 
-	// TODO: RPoC add UNIQUE(venue_id, ip, prompt_version) and switch to real UPSERT, too tired now to deal with migrations on prod again!
+	// UPSERT based on (venue_id, ip): one feedback per IP per venue
 	var existingID int64
-	var row *sql.Row
-	if f.PromptVersion == nil {
-		q := `SELECT id FROM venue_validation_editor_feedback WHERE venue_id = ? AND ip = ? AND prompt_version IS NULL LIMIT 1`
-		row = db.conn.QueryRowContext(ctx, q, f.VenueID, f.IP)
-	} else {
-		q := `SELECT id FROM venue_validation_editor_feedback WHERE venue_id = ? AND ip = ? AND prompt_version = ? LIMIT 1`
-		row = db.conn.QueryRowContext(ctx, q, f.VenueID, f.IP, *f.PromptVersion)
-	}
+	q := `SELECT id FROM venue_validation_editor_feedback WHERE venue_id = ? AND ip = ? LIMIT 1`
+	row := db.conn.QueryRowContext(ctx, q, f.VenueID, f.IP)
 
 	switch err := row.Scan(&existingID); err {
 	case sql.ErrNoRows:
@@ -2178,10 +2172,10 @@ func (db *DB) UpsertEditorFeedbackCtx(ctx context.Context, f *models.EditorFeedb
 		// Update existing
 		f.ID = existingID
 		q := `UPDATE venue_validation_editor_feedback
-              SET feedback_type = ?, comment = ?, ip = ?, created_at = NOW()
+              SET feedback_type = ?, comment = ?, prompt_version = ?, created_at = NOW()
               WHERE id = ?`
 		if _, err := db.conn.ExecContext(ctx, q,
-			string(f.FeedbackType), f.Comment, f.IP, f.ID,
+			string(f.FeedbackType), f.Comment, f.PromptVersion, f.ID,
 		); err != nil {
 			return errs.NewDB("database.UpsertEditorFeedbackCtx", "update failed", err)
 		}
