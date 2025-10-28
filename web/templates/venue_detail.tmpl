@@ -41,6 +41,12 @@
         .status-note { margin-top: 16px; padding: 12px; border-radius: 10px; background: #fdecea; border: 1px solid #f3b8b8; color: #903939; font-size: 14px; }
         .action-form { margin-top: 20px; padding: 16px; border-radius: 12px; border: 1px dashed var(--border); background: var(--bg); }
         .action-buttons { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
+        .review-action { margin-bottom: 24px; }
+        .review-action-bar { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+        .review-action-bar .btn { flex: 1 1 0; }
+        .approval-reject-form { display: none; margin-top: 16px; }
+        .approval-reject-form.is-visible { display: block; }
+        .approval-reject-form .form-actions { display: flex; justify-content: flex-end; margin-top: 12px; }
         .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 10px 16px; border-radius: 8px; border: none; cursor: pointer; font-weight: 600; font-size: 14px; }
         .btn-primary { background: var(--accent); color: #fff; }
         .btn-success { background: #34a853; color: #fff; }
@@ -102,6 +108,7 @@
             details.details-card > .details-body { padding: 0 16px 16px; }
             .btn { width: 100%; }
             .action-buttons { flex-direction: column; align-items: stretch; }
+            .review-action-bar { flex-direction: column; }
         }
     </style>
 </head>
@@ -119,6 +126,22 @@
         {{if $hasAIReview}}
         <div class="callout info" style="white-space: pre-wrap; margin-bottom:24px;">
             {{if .LatestHist}}{{.AIReviewNote}}{{else}}No AI review available yet.{{end}}
+        </div>
+        {{end}}
+        {{if and (eq $state 0) $hasAIReview}}
+        <div class="action-form review-action">
+            <div class="review-action-bar">
+                <button type="button" class="btn btn-success" onclick="approveVenue()">✅ Approve</button>
+                <button type="button" class="btn btn-danger" onclick="openApprovalRejectForm()">❌ Reject</button>
+            </div>
+            <div id="approval-status-alt" style="display:none; margin-top:12px; padding:10px 12px; border-radius:8px;"></div>
+            <form id="approval-reject-form" class="approval-reject-form" onsubmit="handleRejectSubmit(event)">
+                <label for="notes">Notes / Reason</label>
+                <textarea id="notes" rows="3" placeholder="Add context for your decision"></textarea>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-danger">❌ Reject</button>
+                </div>
+            </form>
         </div>
         {{end}}
         <div class="detail-layout">
@@ -141,18 +164,12 @@
                     {{end}}
                     {{if eq $state 0}}
                     <div class="action-form">
-                        <h3>Manual Review</h3>
+                        <h3>AVA Controls</h3>
                         <div id="approval-status" style="display:none; margin-bottom:12px; padding:10px 12px; border-radius:8px;"></div>
                         <form id="approval-form">
                             <div class="action-buttons">
-                                <button type="button" class="btn btn-primary" onclick="startAIReview()">🚀 {{if .GoogleData}}Refresh AI-Assisted Review{{else}}Start AI-Assisted Review{{end}}</button>
-                                {{if $hasAIReview}}
-                                <button type="button" class="btn btn-success" onclick="approveVenue()">✅ Approve</button>
-                                <button type="button" class="btn btn-danger" onclick="rejectVenue()">❌ Reject</button>
-                                {{end}}
+                                <button type="button" class="btn btn-primary" onclick="startAIReview()">🚀 {{if .GoogleData}}Refresh AVA Review{{else}}Start AVA Review{{end}}</button>
                             </div>
-                            <label for="notes">Notes / Reason</label>
-                            <textarea id="notes" rows="3" placeholder="Add context for your decision"></textarea>
                         </form>
                     </div>
                     {{end}}
@@ -709,13 +726,35 @@
             }
         }
 
+        function openApprovalRejectForm() {
+            hideApprovalStatus();
+            const form = document.getElementById('approval-reject-form');
+            if (form) {
+                const willShow = !form.classList.contains('is-visible');
+                form.classList.toggle('is-visible', willShow);
+                if (willShow) {
+                    const notesField = form.querySelector('#notes');
+                    if (notesField) {
+                        notesField.focus();
+                    }
+                }
+            }
+        }
+
+        function handleRejectSubmit(event) {
+            event.preventDefault();
+            rejectVenue();
+        }
+
         function approveVenue() {
-            const notes = document.getElementById('notes').value;
+            const notesField = document.getElementById('notes');
+            const notes = notesField ? notesField.value : '';
             updateVenueStatus('approve', notes || 'Manual approval');
         }
 
         function rejectVenue() {
-            const notes = document.getElementById('notes').value;
+            const notesField = document.getElementById('notes');
+            const notes = notesField ? notesField.value : '';
             if (!notes.trim()) {
                 showApprovalStatus('Rejection reason is required.', true);
                 return;
