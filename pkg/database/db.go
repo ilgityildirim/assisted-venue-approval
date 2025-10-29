@@ -1604,7 +1604,7 @@ func (db *DB) GetVenuesFilteredCtx(ctx context.Context, status, search string, l
 	if status != "" {
 		switch status {
 		case "pending":
-			whereClause += " AND v.active = ?"
+			whereClause += " AND v.active = ? AND NOT EXISTS (SELECT 1 FROM venue_validation_histories h WHERE h.venue_id = v.id)"
 			args = append(args, 0)
 		case "approved":
 			whereClause += " AND v.active = ?"
