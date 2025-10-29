@@ -704,7 +704,7 @@
                 const errorDiv = document.createElement('div');
                 errorDiv.id = 'ai-review-error';
                 errorDiv.style.cssText = 'margin-top: 10px; padding: 12px; background: #f8d7da; color: #721c24; border-radius: 5px; border-left: 4px solid #dc3545;';
-                errorDiv.textContent = '❌ ' + (err.message || 'Failed to start AI-Assisted Review');
+                errorDiv.textContent = '❌ ' + (err.message || 'Failed to start AVA Review');
                 btn.parentElement.appendChild(errorDiv);
             });
         }

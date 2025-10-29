@@ -47,7 +47,7 @@
     <div class="layout-content" style="max-width: 1400px;">
         <header class="page-intro">
             <h1>📋 New Venues — List</h1>
-            <p>Browse new submissions, launch AI-assisted reviews, or dive into details for manual validation.</p>
+            <p>Browse new submissions, launch AVA reviews, or dive into details for manual validation.</p>
         </header>
 
         <div class="filters">
@@ -61,7 +61,7 @@
         <div class="batch-controls" id="batch-controls" style="display:none;">
             <div class="selected-count" id="selected-count">0 venues selected</div>
             <div style="margin-top: 10px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
-                <button id="start-ai-btn" class="btn btn-success" onclick="startAIForSelected()" disabled>🚀 Start AI-Assisted Reviews for selected (0) venues</button>
+                <button id="start-ai-btn" class="btn btn-success" onclick="startAIForSelected()" disabled>🚀 Start AVA Reviews for selected (0) venues</button>
                 <button class="btn" onclick="selectAll()">Select All</button>
                 <button class="btn" onclick="selectNone()">Select None</button>
             </div>
@@ -151,7 +151,7 @@
             const count = checkboxes.length;
 
             selectedCountLabel.textContent = `${count} venue${count === 1 ? '' : 's'} selected`;
-            startButton.textContent = `🚀 Start AI-Assisted Reviews for selected (${count}) venues`;
+            startButton.textContent = `🚀 Start AVA Reviews for selected (${count}) venues`;
             startButton.disabled = count === 0;
             batchControls.style.display = count > 0 ? 'block' : 'none';
         }
@@ -177,13 +177,13 @@
         }
         
         function startAIForSelected() {
-            const selected = Array.from(document.querySelectorAll('.venue-checkbox:checked')).map(cb => cb.value);
+            const selected = Array.from(document.querySelectorAll('.venue-checkbox:checked')).map(cb => parseInt(cb.value, 10));
             if (selected.length === 0) return;
             const startButton = document.getElementById('start-ai-btn');
             startButton.disabled = true;
             startButton.textContent = 'Processing...';
 
-            fetch(basePath + 'venues/batch-ai-review', {
+            fetch(basePath + 'validate/batch', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ venue_ids: selected })

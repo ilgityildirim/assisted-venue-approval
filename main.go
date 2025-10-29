@@ -328,7 +328,7 @@ func (app *App) validateHandler(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "Successfully queued %d venues for processing\n", len(filtered))
 }
 
-// validateSingleHandler starts AI-assisted review for a single venue synchronously
+// validateSingleHandler starts AVA review for a single venue synchronously
 func (app *App) validateSingleHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	idStr, ok := vars["id"]
@@ -391,7 +391,7 @@ func (app *App) validateSingleHandler(w http.ResponseWriter, r *http.Request) {
 	// Success - return detailed result
 	response := map[string]interface{}{
 		"status":    "success",
-		"message":   "AI-Assisted Review completed successfully",
+		"message":   "AVA Review completed successfully",
 		"venueId":   id,
 		"completed": true,
 	}
@@ -410,7 +410,7 @@ func (app *App) validateSingleHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
-// validateBatchHandler starts AI-assisted review for selected venues
+// validateBatchHandler starts AVA review for selected venues
 func (app *App) validateBatchHandler(w http.ResponseWriter, r *http.Request) {
 	type reqBody struct {
 		VenueIDs []int64 `json:"venue_ids"`

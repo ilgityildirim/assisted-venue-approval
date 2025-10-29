@@ -84,7 +84,7 @@ func HomeHandler(repo domain.Repository, engine *processor.ProcessingEngine) htt
 
 		pendingTotal := len(venuesWithUser)
 
-		// Count pending venues that already have AI-assisted review results (validation history)
+		// Count pending venues that already have AVA review results (validation history)
 		_, _, assistedTotal, err := repo.GetManualReviewVenuesCtx(r.Context(), "", 0, false, "created_at", 1, 0)
 		if err != nil {
 			log.Printf("Error fetching manual review count: %v", err)

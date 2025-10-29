@@ -82,7 +82,7 @@
         <div class="batch-controls" id="batch-controls" style="display:none;">
             <div class="selected-count" id="selected-count">0 venues selected</div>
             <div style="margin-top: 10px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
-                <button id="start-ai-btn" class="btn btn-success" onclick="startAIForSelected()" disabled>🚀 Start AI-Assisted Review for selected (0) venues</button>
+                <button id="start-ai-btn" class="btn btn-success" onclick="startAIForSelected()" disabled>🚀 Start AVA Review for selected (0) venues</button>
                 <button class="btn btn-success" onclick="batchApprove()">✅ Approve Selected</button>
                 <button class="btn btn-danger" onclick="batchReject()">❌ Reject Selected</button>
                 <button class="btn" onclick="selectAll()">Select All</button>
@@ -179,7 +179,7 @@
             countEl.textContent = count + ' venue' + plural + ' selected';
             if (startBtn) {
                 startBtn.disabled = count === 0;
-                startBtn.textContent = '🚀 Start AI-Assisted Review for selected (' + count + ') venue' + plural;
+                startBtn.textContent = '🚀 Start AVA Review for selected (' + count + ') venue' + plural;
             }
         }
         function toggleSelectAll() {
@@ -196,9 +196,6 @@
         async function startAIForSelected() {
             const ids = getSelectedIds();
             if (ids.length === 0) return;
-            if (!confirm('Start AI-Assisted Review for ' + ids.length + ' selected venue' + (ids.length === 1 ? '' : 's') + '?')) {
-                return;
-            }
             const btn = document.getElementById('start-ai-btn');
             btn.disabled = true;
             btn.textContent = '⏳ Queuing ' + ids.length + '...';
@@ -216,11 +213,11 @@
                 if (data.status === 'skipped' || queued === 0) {
                     alert('Nothing queued: ' + (data.reason || 'already processed or invalid IDs'));
                 } else {
-                    alert('Queued ' + queued + ' venue' + (queued === 1 ? '' : 's') + ' for AI-Assisted Review.');
+                    alert('Queued ' + queued + ' venue' + (queued === 1 ? '' : 's') + ' for AVA Review.');
                 }
             } catch (e) {
                 console.error(e);
-                alert('Failed to start AI-Assisted Reviews.');
+                alert('Failed to start AVA Reviews.');
                 btn.disabled = false;
                 updateBatchControls();
                 return;
