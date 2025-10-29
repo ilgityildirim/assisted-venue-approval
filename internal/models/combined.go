@@ -1,6 +1,7 @@
 package models
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -130,9 +131,23 @@ func GetCombinedVenueInfo(v Venue, u User, trust float64) (CombinedInfo, error) 
 	}
 
 	// Hours - use Google data if user left empty
+	// Parse JSON format if present: {"openhours":[...],"note":""}
 	var userHours []string
 	if v.OpenHours != nil && strings.TrimSpace(*v.OpenHours) != "" {
-		userHours = []string{*v.OpenHours}
+		hoursStr := strings.TrimSpace(*v.OpenHours)
+
+		// Try to parse as JSON (new format after approval)
+		var hoursData struct {
+			OpenHours []string `json:"openhours"`
+			Note      string   `json:"note"`
+		}
+		if err := json.Unmarshal([]byte(hoursStr), &hoursData); err == nil && len(hoursData.OpenHours) > 0 {
+			// Successfully parsed JSON format
+			userHours = hoursData.OpenHours
+		} else {
+			// Legacy format or plain text - treat as single entry
+			userHours = []string{hoursStr}
+		}
 	}
 	var googleHours []string
 	if gd != nil && gd.OpeningHours != nil && len(gd.OpeningHours.WeekdayText) > 0 {
@@ -428,6 +443,12 @@ func GetApprovalFieldData(
 	}
 
 	// 3. Build approval data
+	// Initialize HoursNote from database if available
+	hoursNote := ""
+	if venue.OpenHoursNote != nil && strings.TrimSpace(*venue.OpenHoursNote) != "" {
+		hoursNote = strings.TrimSpace(*venue.OpenHoursNote)
+	}
+
 	data := &ApprovalFieldData{
 		Name:        combined.Name,
 		Address:     combined.Address,
@@ -440,7 +461,7 @@ func GetApprovalFieldData(
 		Path:        combined.Path,
 		Description: combined.Description,
 		OpenHours:   combined.Hours,
-		HoursNote:   "",
+		HoursNote:   hoursNote,
 		Sources:     combined.Sources,
 	}
 

@@ -21,16 +21,18 @@ This document provides comprehensive guidelines for writing and validating venue
 - Avoid excessively long descriptions (> 300 characters)
 
 ### Non-Veg Restaurant Rule (CRITICAL)
-- For **restaurants and food trucks that serve meat or fish**:
+- Applies ONLY to **restaurants and food trucks** that offer vegan/vegetarian options but still serve meat or fish.
     - Check BOTH the data flags (vegonly, vegan) AND the description content
     - **If vegonly=1 and vegan=1**: Venue is 100% VEGAN - DO NOT add "Serves meat" or "Serves fish"
     - **If vegonly=1 and vegan=0**: Venue is 100% VEGETARIAN - DO NOT add "Serves meat" (but may add "Serves fish" if pescatarian)
-    - **If vegonly=0**: Venue serves meat/fish - MUST start with one of:
-        - "Serves meat, vegan options available, "
-        - "Serves meat, vegetarian options available, "
-        - "Serves meat, vegan and vegetarian options available, "
-        - "Serves fish, vegan options available, " (for pescatarian)
-        - "Serves fish, vegetarian options available, " (for pescatarian)
+    - **If vegonly=0**:
+        - For restaurants or food trucks: MUST start with one of:
+            - "Serves meat, vegan options available, "
+            - "Serves meat, vegetarian options available, "
+            - "Serves meat, vegan and vegetarian options available, "
+            - "Serves fish, vegan options available, " (for pescatarian)
+            - "Serves fish, vegetarian options available, " (for pescatarian)
+        - For all other venue categories (delivery, caterer, bakery, ice cream, coffee, market, etc.): DO NOT add the "Serves meat" prefix.
     - **IMPORTANT**: If description mentions meat/fish dishes BUT venue data flags show vegonly=1 and / or vegan=0 or vegan=1, this is inconsistent - keep the "Serves meat" or "Serves fish" prefix based on description content and flag for manual review
     - Coffee shops and tea houses: DO NOT require "Serves meat" prefix
 - Avoid repeating the word "options" in the remaining description
@@ -250,7 +252,7 @@ When evaluating descriptions, AI should check for:
 
 ### ✅ Required Elements
 - [ ] 2-6 sentences in length
-- [ ] Non-veg restaurants start with "Serves meat, vegan options available,"
+- [ ] Non-veg restaurants/food trucks start with "Serves meat, vegan options available,"
 - [ ] Third person perspective (no "we", "you", "they")
 - [ ] Neutral tone (no promotional language)
 - [ ] Relevant keywords included
@@ -262,7 +264,7 @@ When evaluating descriptions, AI should check for:
 - [ ] Promotional language ("best", "amazing", "delicious")
 - [ ] Too short (< 50 characters)
 - [ ] Too long (> 300 characters)
-- [ ] Missing "Serves meat" prefix for non-veg restaurants
+- [ ] Missing "Serves meat" prefix for non-veg restaurants/food trucks
 - [ ] Exclamation marks present
 - [ ] ALL CAPS usage
 - [ ] Mentions of animal products in favorable way
@@ -332,7 +334,7 @@ When evaluating descriptions, AI should check for:
 | Second person | "You can choose from..." | "Vegans can choose from..." |
 | Promotional | "Best vegan food in town!" | "Vegan restaurant serving..." |
 | Exclamation marks | "Amazing selection!" | "Wide selection" |
-| Missing prefix | [Non-veg] "Restaurant offering vegan dishes" | "Serves meat, vegan options available. Restaurant offering vegan dishes" |
+| Missing prefix | [Restaurant/Food truck serving meat] "Restaurant offering vegan dishes" | "Serves meat, vegan options available. Restaurant offering vegan dishes" |
 | "They" for venue | "They offer vegan pizza" | "Offers vegan pizza" or "It offers vegan pizza" |
 | "Home-made" | "Home-made pasta" | "House-made pasta" or "Made in-house pasta" |
 | Capitalized dishes | "Vegan Burger and Fries" | "Vegan burger and fries" |
@@ -369,7 +371,7 @@ Use "Note:" at the end:
 
 Ask yourself:
 1. Is it 2-6 sentences?
-2. Does it start with "Serves meat..." if non-veg?
+2. Does it start with "Serves meat..." only if the venue is a non-veg restaurant or food truck?
 3. Is it third person (no "we", "you", "they")?
 4. Is it neutral (no "best", "amazing")?
 5. Are relevant keywords included?

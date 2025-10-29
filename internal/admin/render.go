@@ -1,10 +1,13 @@
 package admin
 
 import (
+	"encoding/json"
 	"fmt"
 	"html/template"
 	"io/fs"
 	"net/http"
+	"strconv"
+	"strings"
 )
 
 // adminTemplates holds the parsed templates for the admin UI.
@@ -120,6 +123,89 @@ var funcMap = template.FuncMap{
 	"basePath": func() string {
 		return basePath
 	},
+	"parseOpenHoursJSON": func(input *string) map[string]interface{} {
+		if input == nil || *input == "" {
+			return nil
+		}
+
+		var parsed struct {
+			OpenHours []string `json:"openhours"`
+			Note      string   `json:"note"`
+		}
+
+		if err := json.Unmarshal([]byte(*input), &parsed); err != nil {
+			return nil // fallback to raw display
+		}
+
+		// Convert "Mon-09:00-17:00" to "Monday: 9:00 AM - 5:00 PM"
+		formatted := make([]string, len(parsed.OpenHours))
+		for i, h := range parsed.OpenHours {
+			formatted[i] = formatHourEntry(h)
+		}
+
+		return map[string]interface{}{
+			"Hours": formatted,
+			"Note":  parsed.Note,
+		}
+	},
+}
+
+// formatHourEntry converts "Mon-09:00-17:00" to "Monday: 9:00 AM - 5:00 PM"
+func formatHourEntry(entry string) string {
+	parts := strings.Split(entry, "-")
+	if len(parts) != 3 {
+		return entry // return as-is if format is unexpected
+	}
+
+	day := expandDay(parts[0])
+	start := formatTime(parts[1])
+	end := formatTime(parts[2])
+
+	return fmt.Sprintf("%s: %s - %s", day, start, end)
+}
+
+// expandDay converts day abbreviation to full name
+func expandDay(abbr string) string {
+	days := map[string]string{
+		"Mon": "Monday",
+		"Tue": "Tuesday",
+		"Wed": "Wednesday",
+		"Thu": "Thursday",
+		"Fri": "Friday",
+		"Sat": "Saturday",
+		"Sun": "Sunday",
+	}
+	if full, ok := days[abbr]; ok {
+		return full
+	}
+	return abbr
+}
+
+// formatTime converts 24-hour time to 12-hour with AM/PM
+func formatTime(time24 string) string {
+	parts := strings.Split(time24, ":")
+	if len(parts) != 2 {
+		return time24
+	}
+
+	hour, err := strconv.Atoi(parts[0])
+	if err != nil {
+		return time24
+	}
+
+	minute := parts[1]
+	period := "AM"
+
+	if hour == 0 {
+		hour = 12
+	} else if hour == 12 {
+		period = "PM"
+	} else if hour > 12 {
+		hour -= 12
+		period = "PM"
+	}
+
+	return fmt.Sprintf("%d:%s %s", hour, minute, period)
 }
 
 // LoadTemplates parses all admin templates from the provided filesystem. It should be called at application startup.

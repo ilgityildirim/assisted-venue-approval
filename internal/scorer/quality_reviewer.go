@@ -71,7 +71,20 @@ func (qr *QualityReviewer) ReviewQuality(ctx context.Context, venue models.Venue
 	}
 
 	// Parse response
-	return qr.parseResponse(resp.Choices[0].Message.Content)
+	qs, err := qr.parseResponse(resp.Choices[0].Message.Content)
+	if err != nil {
+		return nil, err
+	}
+
+	qs.Description = applyServesMeatGuard(
+		qs.Description,
+		category,
+		combinedInfo.Category,
+		combinedInfo.VenueType,
+		combinedInfo.VeganStatus,
+	)
+
+	return qs, nil
 }
 
 func (qr *QualityReviewer) buildSystemPrompt() string {
@@ -125,6 +138,77 @@ func (qr *QualityReviewer) parseResponse(response string) (*models.QualitySugges
 		return nil, fmt.Errorf("failed to parse quality suggestions response: %w", err)
 	}
 	return &qs, nil
+}
+
+func applyServesMeatGuard(desc, primaryCategory, secondaryCategory, venueType, veganStatus string) string {
+	trimmedLeading := strings.TrimLeft(desc, " \t\n\r")
+
+	if !strings.HasPrefix(trimmedLeading, "Serves meat") {
+		return desc
+	}
+
+	if servesMeatPrefixAllowed(primaryCategory, secondaryCategory, venueType, veganStatus) {
+		return desc
+	}
+
+	periodIdx := strings.Index(trimmedLeading, ".")
+	if periodIdx == -1 {
+		// Cannot safely remove prefix without a full sentence delimiter
+		return desc
+	}
+
+	remainder := strings.TrimSpace(trimmedLeading[periodIdx+1:])
+	leading := desc[:len(desc)-len(trimmedLeading)]
+
+	if remainder == "" {
+		return strings.TrimSpace(leading)
+	}
+	if leading == "" {
+		return remainder
+	}
+	return leading + remainder
+}
+
+func servesMeatPrefixAllowed(primaryCategory, secondaryCategory, venueType, veganStatus string) bool {
+	vs := strings.ToLower(strings.TrimSpace(veganStatus))
+	if vs == "vegan" || vs == "vegetarian" {
+		return false
+	}
+
+	allowed := map[string]struct{}{
+		"restaurant": {},
+		"food truck": {},
+	}
+
+	normalizedPrimary := normalizeCategory(primaryCategory)
+	if normalizedPrimary != "" {
+		_, ok := allowed[normalizedPrimary]
+		return ok
+	}
+
+	normalizedSecondary := normalizeCategory(secondaryCategory)
+	if normalizedSecondary != "" {
+		_, ok := allowed[normalizedSecondary]
+		return ok
+	}
+
+	normalizedVenueType := normalizeCategory(venueType)
+	_, ok := allowed[normalizedVenueType]
+	return ok
+}
+
+func normalizeCategory(input string) string {
+	lowered := strings.ToLower(strings.TrimSpace(input))
+	if lowered == "" {
+		return ""
+	}
+	if idx := strings.Index(lowered, "("); idx != -1 {
+		lowered = strings.TrimSpace(lowered[:idx])
+	}
+	replacer := strings.NewReplacer("/", " ", "-", " ", "&", "and")
+	lowered = replacer.Replace(lowered)
+	fields := strings.Fields(lowered)
+	return strings.Join(fields, " ")
 }
 
 const fallbackQualitySystemPrompt = `You are a content editor for HappyCow venue listings.

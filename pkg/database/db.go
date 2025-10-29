@@ -402,6 +402,31 @@ func (db *DB) ApproveVenueWithDataReplacementCtx(ctx context.Context, approvalDa
 		args = append(args, *approvalData.OpenHoursNote)
 	}
 
+	if approvalData.EntryType != nil {
+		setClauses = append(setClauses, "entrytype = ?")
+		args = append(args, *approvalData.EntryType)
+	}
+
+	if approvalData.Path != nil {
+		setClauses = append(setClauses, "path = ?")
+		args = append(args, *approvalData.Path)
+	}
+
+	if approvalData.VegOnly != nil {
+		setClauses = append(setClauses, "vegonly = ?")
+		args = append(args, *approvalData.VegOnly)
+	}
+
+	if approvalData.Vegan != nil {
+		setClauses = append(setClauses, "vegan = ?")
+		args = append(args, *approvalData.Vegan)
+	}
+
+	if approvalData.Category != nil {
+		setClauses = append(setClauses, "category = ?")
+		args = append(args, *approvalData.Category)
+	}
+
 	// Add WHERE clause
 	args = append(args, approvalData.VenueID)
 

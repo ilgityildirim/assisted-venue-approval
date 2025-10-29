@@ -1317,15 +1317,16 @@ func containsAny(s string, substrings []string) bool {
 func getCategoryFromVenue(venue models.Venue) string {
 	// Map HappyCow category IDs to display names
 	categoryMap := map[int]string{
-		1: "Restaurant",
-		2: "Health Food Store",
-		3: "Bakery",
-		4: "Caterer",
-		5: "Juice Bar",
-		6: "Market/Co-op",
-		7: "Ice Cream Shop",
-		8: "Organization",
-		9: "B&B/Hotel",
+		1:  "Restaurant",
+		2:  "Health Food Store",
+		3:  "Bakery",
+		4:  "Caterer",
+		5:  "Juice Bar",
+		6:  "Market/Co-op",
+		7:  "Ice Cream Shop",
+		8:  "Organization",
+		9:  "B&B/Hotel",
+		10: "Food Truck",
 	}
 
 	if category, ok := categoryMap[venue.Category]; ok {

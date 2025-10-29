@@ -68,6 +68,11 @@ type ApprovalData struct {
 	Website       *string  // Final website URL
 	OpenHours     *string  // Final open hours JSON
 	OpenHoursNote *string  // Final hours note (closed days)
+	EntryType     *int     // Final entry type (1=Restaurant, 2=Store)
+	Path          *string  // Final location path (e.g., north_america|usa|chicago)
+	VegOnly       *int     // Final vegetarian-only flag (0 or 1)
+	Vegan         *int     // Final vegan flag (0 or 1)
+	Category      *int     // Final category (0-99)
 }
 
 // NewApprovalData creates approval data with only the fields that need updating

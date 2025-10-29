@@ -347,20 +347,20 @@
                             </div>
 
                             <!-- Vegan Field -->
-                            <div class="field" data-field="vegan">
+                            <div class="field" data-field="vegan-status">
                                 <div class="field-label">
-                                    Vegan
-                                    <span class="field-source" id="vegan-source">source: user</span>
-                                    <button type="button" class="reset-field-btn" data-field="vegan" style="display:none;" title="Reset to original" onclick="resetField('vegan')">↺</button>
+                                    Vegan Status
+                                    <span class="field-source" id="vegan-status-source">source: user</span>
+                                    <button type="button" class="reset-field-btn" data-field="vegan-status" style="display:none;" title="Reset to original" onclick="resetField('vegan-status')">↺</button>
                                 </div>
-                                <div class="field-value-display" id="vegan-display">{{.VeganStatusLabel}}</div>
-                                <div class="field-value-edit" id="vegan-edit" style="display:none;">
-                                    <select id="vegan-input" data-original="{{.Venue.Venue.Vegan}}" data-original-source="user" style="width:100%;">
-                                        <option value="1" {{if eq .Venue.Venue.Vegan 1}}selected{{end}}>Vegan</option>
-                                        <option value="2" {{if eq .Venue.Venue.Vegan 2}}selected{{end}}>Veg Options</option>
-                                        <option value="0" {{if eq .Venue.Venue.Vegan 0}}selected{{end}}>Vegan Friendly</option>
+                                <div class="field-value-display" id="vegan-status-display">{{.Combined.VeganStatus}}</div>
+                                <div class="field-value-edit" id="vegan-status-edit" style="display:none;">
+                                    <select id="vegan-status-input" data-original-vegan="{{.Venue.Venue.Vegan}}" data-original-vegonly="{{.Venue.Venue.VegOnly}}" data-original-source="user" style="width:100%;">
+                                        <option value="veg-options" {{if and (eq .Venue.Venue.Vegan 0) (eq .Venue.Venue.VegOnly 0)}}selected{{end}}>Veg-Options</option>
+                                        <option value="vegan" {{if and (eq .Venue.Venue.Vegan 1) (eq .Venue.Venue.VegOnly 1)}}selected{{end}}>Vegan</option>
+                                        <option value="vegetarian" {{if and (eq .Venue.Venue.Vegan 0) (eq .Venue.Venue.VegOnly 1)}}selected{{end}}>Vegetarian</option>
                                     </select>
-                                    <span class="field-error" id="vegan-error" style="color:#dc3545;display:none;font-size:0.875em;"></span>
+                                    <span class="field-error" id="vegan-status-error" style="color:#dc3545;display:none;font-size:0.875em;"></span>
                                 </div>
                             </div>
 
@@ -375,11 +375,22 @@
                                 <div class="field-value-edit" id="category-edit" style="display:none;">
                                     <select id="category-input" data-original="{{.Venue.Venue.Category}}" data-original-source="user" style="width:100%;">
                                         <option value="0" {{if eq .Venue.Venue.Category 0}}selected{{end}}>Restaurant (Generic)</option>
+                                        <option value="1" {{if eq .Venue.Venue.Category 1}}selected{{end}}>Health Store</option>
+                                        <option value="2" {{if eq .Venue.Venue.Category 2}}selected{{end}}>Veg Store</option>
                                         <option value="3" {{if eq .Venue.Venue.Category 3}}selected{{end}}>Bakery</option>
+                                        <option value="4" {{if eq .Venue.Venue.Category 4}}selected{{end}}>B&B</option>
+                                        <option value="5" {{if eq .Venue.Venue.Category 5}}selected{{end}}>Delivery</option>
+                                        <option value="6" {{if eq .Venue.Venue.Category 6}}selected{{end}}>Catering</option>
+                                        <option value="7" {{if eq .Venue.Venue.Category 7}}selected{{end}}>Organization</option>
+                                        <option value="8" {{if eq .Venue.Venue.Category 8}}selected{{end}}>Farmer's Market</option>
+                                        <option value="10" {{if eq .Venue.Venue.Category 10}}selected{{end}}>Food Truck</option>
+                                        <option value="11" {{if eq .Venue.Venue.Category 11}}selected{{end}}>Market Vendor</option>
                                         <option value="12" {{if eq .Venue.Venue.Category 12}}selected{{end}}>Ice Cream</option>
                                         <option value="13" {{if eq .Venue.Venue.Category 13}}selected{{end}}>Juice Bar</option>
+                                        <option value="14" {{if eq .Venue.Venue.Category 14}}selected{{end}}>Professional</option>
                                         <option value="15" {{if eq .Venue.Venue.Category 15}}selected{{end}}>Coffee & Tea</option>
-                                        <option value="10" {{if eq .Venue.Venue.Category 10}}selected{{end}}>Food Truck</option>
+                                        <option value="16" {{if eq .Venue.Venue.Category 16}}selected{{end}}>Spa</option>
+                                        <option value="99" {{if eq .Venue.Venue.Category 99}}selected{{end}}>Other</option>
                                     </select>
                                     <span class="field-error" id="category-error" style="color:#dc3545;display:none;font-size:0.875em;"></span>
                                 </div>
@@ -411,15 +422,29 @@
                             <!-- Path Field -->
                             <div class="field" data-field="path">
                                 <div class="field-label">
-                                    Path
+                                    Location Path
                                     <span class="field-source" id="path-source">source: {{index .Combined.Sources "path"}}</span>
                                     <button type="button" class="reset-field-btn" data-field="path" style="display:none;" title="Reset to original" onclick="resetField('path')">↺</button>
                                 </div>
                                 <div class="field-value-display" id="path-display">{{if .Combined.Path}}{{.Combined.Path}}{{else}}N/A{{end}}</div>
                                 <div class="field-value-edit" id="path-edit" style="display:none;">
-                                    <input type="text" id="path-input" value="{{.Combined.Path}}" data-original="{{.Combined.Path}}" data-original-source="{{index .Combined.Sources "path"}}" maxlength="255" pattern="[a-zA-Z0-9_|\-]+" style="width:100%;">
+                                    <input type="text" id="path-input" value="{{.Combined.Path}}" data-original="{{.Combined.Path}}" data-original-source="{{index .Combined.Sources "path"}}" maxlength="255" pattern="[a-zA-Z0-9_|\-]+" style="width:100%;" placeholder="north_america|usa|chicago">
                                     <span class="field-error" id="path-error" style="color:#dc3545;display:none;font-size:0.875em;"></span>
-                                    <small style="color:#666;">Letters, numbers, hyphens, underscores, pipes</small>
+                                    <small style="color:#666;">Geographic hierarchy separated by pipes (e.g., north_america|usa|chicago)</small>
+                                </div>
+                            </div>
+
+                            <!-- Website Field -->
+                            <div class="field" data-field="website">
+                                <div class="field-label">
+                                    Website
+                                    <span class="field-source" id="website-source">source: {{index .Combined.Sources "website"}}</span>
+                                    <button type="button" class="reset-field-btn" data-field="website" style="display:none;" title="Reset to original" onclick="resetField('website')">↺</button>
+                                </div>
+                                <div class="field-value-display" id="website-display">{{if .Combined.Website}}<a href="{{.Combined.Website}}" target="_blank">{{.Combined.Website}}</a>{{else}}N/A{{end}}</div>
+                                <div class="field-value-edit" id="website-edit" style="display:none;">
+                                    <input type="url" id="website-input" value="{{.Combined.Website}}" data-original="{{.Combined.Website}}" data-original-source="{{index .Combined.Sources "website"}}" maxlength="500" style="width:100%;" placeholder="https://example.com">
+                                    <span class="field-error" id="website-error" style="color:#dc3545;display:none;font-size:0.875em;"></span>
                                 </div>
                             </div>
                             {{if .Combined.Types}}
@@ -464,10 +489,10 @@
                                     <button type="button" class="reset-field-btn" data-field="hours_note" style="display:none;" title="Reset to original" onclick="resetField('hours_note')">↺</button>
                                 </div>
                                 <div class="field-value-display" id="hours_note-display">
-                                    {{if .ClosedDaysSuggestion}}<div class="callout info"><code>{{.ClosedDaysSuggestion}}</code></div>{{else}}N/A{{end}}
+                                    {{if .Venue.Venue.OpenHoursNote}}{{.Venue.Venue.OpenHoursNote}}{{else if .ClosedDaysSuggestion}}<div class="callout info"><code>{{.ClosedDaysSuggestion}}</code></div>{{else}}N/A{{end}}
                                 </div>
                                 <div class="field-value-edit" id="hours_note-edit" style="display:none;">
-                                    <textarea id="hours_note-input" data-original="{{.ClosedDaysSuggestion}}" data-original-source="ai" maxlength="500" rows="2" style="width:100%;">{{.ClosedDaysSuggestion}}</textarea>
+                                    <textarea id="hours_note-input" data-original="{{if .Venue.Venue.OpenHoursNote}}{{.Venue.Venue.OpenHoursNote}}{{else}}{{.ClosedDaysSuggestion}}{{end}}" data-original-source="{{if .Venue.Venue.OpenHoursNote}}user{{else}}ai{{end}}" maxlength="500" rows="2" style="width:100%;">{{if .Venue.Venue.OpenHoursNote}}{{.Venue.Venue.OpenHoursNote}}{{else}}{{.ClosedDaysSuggestion}}{{end}}</textarea>
                                     <span class="field-error" id="hours_note-error" style="color:#dc3545;display:none;font-size:0.875em;"></span>
                                 </div>
                             </div>
@@ -1145,7 +1170,34 @@
             },
 
             applyDraftToInputs(draftData) {
+                // Special handling for vegan + vegonly → vegan-status
+                if (draftData.vegan && draftData.vegonly) {
+                    const vegan = draftData.vegan.value;
+                    const vegonly = draftData.vegonly.value;
+                    const input = document.getElementById('vegan-status-input');
+                    const source = document.getElementById('vegan-status-source');
+
+                    if (input) {
+                        let statusValue = 'veg-options';
+                        if (vegan === 1 && vegonly === 1) {
+                            statusValue = 'vegan';
+                        } else if (vegan === 0 && vegonly === 1) {
+                            statusValue = 'vegetarian';
+                        }
+                        input.value = statusValue;
+
+                        if (source) {
+                            source.textContent = 'source: editor';
+                        }
+                    }
+                }
+
                 Object.keys(draftData).forEach(field => {
+                    // Skip vegan and vegonly as they're handled above
+                    if (field === 'vegan' || field === 'vegonly') {
+                        return;
+                    }
+
                     const draftField = draftData[field];
                     let input, source;
 
@@ -1175,7 +1227,34 @@
             },
 
             updateDisplayWithDraft(draftData) {
+                // Special handling for vegan + vegonly → vegan-status display
+                if (draftData.vegan && draftData.vegonly) {
+                    const vegan = draftData.vegan.value;
+                    const vegonly = draftData.vegonly.value;
+                    const display = document.getElementById('vegan-status-display');
+                    const source = document.getElementById('vegan-status-source');
+
+                    if (display) {
+                        let statusLabel = 'Veg-Options';
+                        if (vegan === 1 && vegonly === 1) {
+                            statusLabel = 'Vegan';
+                        } else if (vegan === 0 && vegonly === 1) {
+                            statusLabel = 'Vegetarian';
+                        }
+                        display.textContent = statusLabel;
+
+                        if (source) {
+                            source.textContent = 'source: editor';
+                        }
+                    }
+                }
+
                 Object.keys(draftData).forEach(field => {
+                    // Skip vegan and vegonly as they're handled above
+                    if (field === 'vegan' || field === 'vegonly') {
+                        return;
+                    }
+
                     const draftField = draftData[field];
                     let display, source;
 
@@ -1208,12 +1287,16 @@
                         } else if (field === 'type') {
                             // Convert integer to label for type
                             display.textContent = getTypeLabel(draftField.value);
-                        } else if (field === 'vegan') {
-                            // Convert integer to label for vegan
-                            display.textContent = getVeganLabel(draftField.value);
                         } else if (field === 'category') {
                             // Convert integer to label for category
                             display.textContent = getCategoryLabel(draftField.value);
+                        } else if (field === 'website') {
+                            // Display website as clickable link
+                            if (draftField.value) {
+                                display.innerHTML = `<a href="${draftField.value}" target="_blank">${draftField.value}</a>`;
+                            } else {
+                                display.textContent = 'N/A';
+                            }
                         } else {
                             // Regular field
                             display.textContent = draftField.value;
@@ -1385,7 +1468,29 @@
                                 original_source: EditState.originalData[field]?.source || 'user'
                             };
                         }
-                    } else if (field === 'type' || field === 'vegan' || field === 'category') {
+                    } else if (field === 'vegan-status') {
+                        // Convert vegan status to vegan + vegonly fields
+                        const veganStatusValue = currentValue;
+                        let vegan, vegonly;
+
+                        if (veganStatusValue === 'vegan') {
+                            vegan = 1; vegonly = 1;
+                        } else if (veganStatusValue === 'vegetarian') {
+                            vegan = 0; vegonly = 1;
+                        } else { // 'veg-options'
+                            vegan = 0; vegonly = 0;
+                        }
+
+                        // Save both fields to draft
+                        draftData['vegan'] = {
+                            value: vegan,
+                            original_source: EditState.originalData[field]?.source || 'user'
+                        };
+                        draftData['vegonly'] = {
+                            value: vegonly,
+                            original_source: EditState.originalData[field]?.source || 'user'
+                        };
+                    } else if (field === 'type' || field === 'category') {
                         currentValue = parseInt(currentValue);
                         if (currentValue !== parseInt(originalValue)) {
                             draftData[field] = {
