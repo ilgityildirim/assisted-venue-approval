@@ -19,6 +19,7 @@ import (
 	"assisted-venue-approval/internal/auth"
 	"assisted-venue-approval/internal/decision"
 	"assisted-venue-approval/internal/domain"
+	"assisted-venue-approval/internal/drafts"
 	"assisted-venue-approval/internal/infrastructure/repository"
 	"assisted-venue-approval/internal/models"
 	"assisted-venue-approval/internal/processor"
@@ -128,6 +129,10 @@ func main() {
 
 	app := &App{db: db, config: cfg, engine: eng}
 
+	// Initialize in-memory draft store for editor venue modifications
+	draftStore := drafts.NewDraftStore()
+	log.Printf("Initialized in-memory draft store")
+
 	// Start config watcher for hot-reload (applies worker count, approval threshold, and AVA config)
 	cw := config.NewWatcher(time.Duration(cfg.ConfigReloadIntervalSeconds) * time.Second)
 	cw.Start()
@@ -194,10 +199,14 @@ func main() {
 
 	router.HandleFunc("/venues/pending", admin.PendingVenuesHandler(db)).Methods("GET")
 	router.HandleFunc("/venues/manual-review", admin.ManualReviewHandler(db)).Methods("GET")
-	router.HandleFunc("/venues/{id}", admin.VenueDetailHandler(db)).Methods("GET")
-	router.HandleFunc("/venues/{id}/approve", admin.ApproveVenueHandler(repo, cfg)).Methods("POST")
-	router.HandleFunc("/venues/{id}/reject", admin.RejectVenueHandler(repo)).Methods("POST")
+	router.HandleFunc("/venues/{id}", admin.VenueDetailHandler(db, draftStore)).Methods("GET")
+	router.HandleFunc("/venues/{id}/approve", admin.ApproveVenueHandler(repo, cfg, draftStore)).Methods("POST")
+	router.HandleFunc("/venues/{id}/reject", admin.RejectVenueHandler(repo, draftStore)).Methods("POST")
 	router.HandleFunc("/venues/{id}/validate", app.validateSingleHandler).Methods("POST")
+	// Draft management endpoints
+	router.HandleFunc("/venues/{id}/draft", admin.SaveVenueDraftHandler(draftStore, db)).Methods("POST")
+	router.HandleFunc("/venues/{id}/draft", admin.GetVenueDraftHandler(draftStore, db)).Methods("GET")
+	router.HandleFunc("/venues/{id}/draft", admin.ClearVenueDraftHandler(draftStore)).Methods("DELETE")
 	// Editor feedback submit/list
 	router.HandleFunc("/venues/{id}/feedback", admin.SubmitFeedbackHandler(db)).Methods("POST")
 	router.HandleFunc("/venues/{id}/feedback", admin.VenueFeedbackHandler(db)).Methods("GET")

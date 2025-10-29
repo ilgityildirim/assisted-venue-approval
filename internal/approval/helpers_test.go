@@ -1,16 +1,15 @@
-package admin
+package approval
 
 import (
 	"encoding/json"
 	"testing"
 )
 
-// TestFormatOpenHoursFromCombined tests the hours formatting function with various inputs
 func TestFormatOpenHoursFromCombined(t *testing.T) {
 	tests := []struct {
 		name           string
 		input          []string
-		expectedHours  int // number of expected hour entries
+		expectedHours  int
 		shouldHaveJSON bool
 		description    string
 	}{
@@ -107,57 +106,48 @@ func TestFormatOpenHoursFromCombined(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			result, err := FormatOpenHoursFromCombined(tt.input)
-
 			if err != nil {
-				t.Errorf("FormatOpenHoursFromCombined() error = %v, expected nil", err)
-				return
+				t.Fatalf("FormatOpenHoursFromCombined() error = %v, expected nil", err)
 			}
 
 			if !tt.shouldHaveJSON {
 				if result != "" {
-					t.Errorf("FormatOpenHoursFromCombined() = %q, expected empty string for %s", result, tt.description)
+					t.Fatalf("FormatOpenHoursFromCombined() = %q, expected empty string for %s", result, tt.description)
 				}
 				return
 			}
 
 			if result == "" {
-				t.Errorf("FormatOpenHoursFromCombined() returned empty string, expected JSON for %s", tt.description)
-				return
+				t.Fatalf("FormatOpenHoursFromCombined() returned empty string, expected JSON for %s", tt.description)
 			}
 
-			// Parse the JSON to verify structure
 			var parsed struct {
 				OpenHours []string `json:"openhours"`
 				Note      string   `json:"note"`
 			}
-
 			if err := json.Unmarshal([]byte(result), &parsed); err != nil {
-				t.Errorf("FormatOpenHoursFromCombined() returned invalid JSON: %v\nJSON: %s", err, result)
-				return
+				t.Fatalf("FormatOpenHoursFromCombined() returned invalid JSON: %v\nJSON: %s", err, result)
 			}
 
 			if len(parsed.OpenHours) != tt.expectedHours {
-				t.Errorf("FormatOpenHoursFromCombined() parsed %d hours, expected %d\nJSON: %s\nInput: %v",
+				t.Fatalf("FormatOpenHoursFromCombined() parsed %d hours, expected %d\nJSON: %s\nInput: %v",
 					len(parsed.OpenHours), tt.expectedHours, result, tt.input)
 			}
 
-			// Verify format of each hour entry (should be "Day-HH:MM-HH:MM")
 			for i, hour := range parsed.OpenHours {
 				if !isValidHourFormat(hour) {
-					t.Errorf("FormatOpenHoursFromCombined() hour[%d] = %q has invalid format (expected Day-HH:MM-HH:MM)",
+					t.Fatalf("FormatOpenHoursFromCombined() hour[%d] = %q has invalid format (expected Day-HH:MM-HH:MM)",
 						i, hour)
 				}
 			}
 
-			// Verify note is empty
 			if parsed.Note != "" {
-				t.Errorf("FormatOpenHoursFromCombined() note = %q, expected empty string", parsed.Note)
+				t.Fatalf("FormatOpenHoursFromCombined() note = %q, expected empty string", parsed.Note)
 			}
 		})
 	}
 }
 
-// TestFormatOpenHours12To24HourConversion specifically tests time conversion
 func TestFormatOpenHours12To24HourConversion(t *testing.T) {
 	tests := []struct {
 		input    string
@@ -174,33 +164,28 @@ func TestFormatOpenHours12To24HourConversion(t *testing.T) {
 		t.Run(tt.input, func(t *testing.T) {
 			result, err := FormatOpenHoursFromCombined([]string{tt.input})
 			if err != nil {
-				t.Errorf("FormatOpenHoursFromCombined() error = %v", err)
-				return
+				t.Fatalf("FormatOpenHoursFromCombined() error = %v", err)
 			}
 
 			var parsed struct {
 				OpenHours []string `json:"openhours"`
 			}
-
 			if err := json.Unmarshal([]byte(result), &parsed); err != nil {
-				t.Errorf("Failed to parse JSON: %v", err)
-				return
+				t.Fatalf("Failed to parse JSON: %v", err)
 			}
 
 			if len(parsed.OpenHours) != 1 {
-				t.Errorf("Expected 1 hour entry, got %d", len(parsed.OpenHours))
-				return
+				t.Fatalf("Expected 1 hour entry, got %d", len(parsed.OpenHours))
 			}
 
 			if parsed.OpenHours[0] != tt.expected {
-				t.Errorf("FormatOpenHoursFromCombined() = %q, expected %q",
+				t.Fatalf("FormatOpenHoursFromCombined() = %q, expected %q",
 					parsed.OpenHours[0], tt.expected)
 			}
 		})
 	}
 }
 
-// TestFormatOpenHours24HourVenues tests 24-hour venue formatting
 func TestFormatOpenHours24HourVenues(t *testing.T) {
 	input := []string{
 		"Monday: Open 24 hours",
@@ -209,115 +194,33 @@ func TestFormatOpenHours24HourVenues(t *testing.T) {
 
 	result, err := FormatOpenHoursFromCombined(input)
 	if err != nil {
-		t.Errorf("FormatOpenHoursFromCombined() error = %v", err)
-		return
+		t.Fatalf("FormatOpenHoursFromCombined() error = %v", err)
 	}
 
 	var parsed struct {
 		OpenHours []string `json:"openhours"`
 	}
-
 	if err := json.Unmarshal([]byte(result), &parsed); err != nil {
-		t.Errorf("Failed to parse JSON: %v", err)
-		return
+		t.Fatalf("Failed to parse JSON: %v", err)
 	}
 
 	if len(parsed.OpenHours) != 2 {
-		t.Errorf("Expected 2 hour entries, got %d", len(parsed.OpenHours))
-		return
+		t.Fatalf("Expected 2 hour entries, got %d", len(parsed.OpenHours))
 	}
 
+	expected := []string{"Mon-00:00-24:00", "Tue-00:00-24:00"}
 	for i, hour := range parsed.OpenHours {
-		expected := []string{"Mon-00:00-24:00", "Tue-00:00-24:00"}[i]
-		if hour != expected {
-			t.Errorf("Hour[%d] = %q, expected %q", i, hour, expected)
+		if hour != expected[i] {
+			t.Fatalf("Hour[%d] = %q, expected %q", i, hour, expected[i])
 		}
 	}
 }
 
-// isValidHourFormat checks if a hour string matches the expected format
-// Expected formats: "Day-HH:MM-HH:MM" or "Day-00:00-24:00"
-func isValidHourFormat(hour string) bool {
-	// Simple validation: should have format like "Mon-11:00-21:00"
-	if len(hour) < 11 {
-		return false
-	}
-
-	// Should contain exactly 2 dashes after the day abbreviation
-	parts := splitAfterDayName(hour)
-	if len(parts) != 3 {
-		return false
-	}
-
-	// Day should be 3 letters
-	day := parts[0]
-	validDays := map[string]bool{
-		"Mon": true, "Tue": true, "Wed": true, "Thu": true,
-		"Fri": true, "Sat": true, "Sun": true,
-	}
-
-	if !validDays[day] {
-		return false
-	}
-
-	// Times should be in HH:MM format
-	for _, timePart := range parts[1:] {
-		if len(timePart) != 5 { // HH:MM
-			return false
-		}
-		if timePart[2] != ':' {
-			return false
-		}
-	}
-
-	return true
-}
-
-// splitAfterDayName splits "Mon-11:00-21:00" into ["Mon", "11:00", "21:00"]
-func splitAfterDayName(hour string) []string {
-	if len(hour) < 4 {
-		return nil
-	}
-	day := hour[:3]
-	rest := hour[4:] // skip the dash after day
-	parts := []string{day}
-
-	// Split remaining by dash
-	timeParts := splitTimes(rest)
-	parts = append(parts, timeParts...)
-
-	return parts
-}
-
-// splitTimes splits "11:00-21:00" into ["11:00", "21:00"]
-func splitTimes(s string) []string {
-	var result []string
-	var current string
-
-	for i, ch := range s {
-		if ch == '-' && len(current) == 5 { // HH:MM is 5 chars
-			result = append(result, current)
-			current = ""
-		} else {
-			current += string(ch)
-		}
-
-		// Add the last time part
-		if i == len(s)-1 && current != "" {
-			result = append(result, current)
-		}
-	}
-
-	return result
-}
-
-// TestFormatOpenHoursWithUnicodeWhitespace tests handling of Unicode whitespace characters
-// Google Places API returns narrow no-break spaces (\u202f) and thin spaces (\u2009)
 func TestFormatOpenHoursWithUnicodeWhitespace(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    []string
-		expected int // number of expected hour entries
+		expected int
 	}{
 		{
 			name: "Real Google Places format with Unicode whitespace",
@@ -331,13 +234,13 @@ func TestFormatOpenHoursWithUnicodeWhitespace(t *testing.T) {
 		{
 			name: "Mixed Unicode and regular spaces",
 			input: []string{
-				"Monday: 11:00 AM – 9:00 PM",                      // regular spaces
-				"Tuesday: 11:00\u202fAM\u2009–\u20099:00\u202fPM", // unicode spaces
+				"Monday: 11:00 AM – 9:00 PM",
+				"Tuesday: 11:00\u202fAM\u2009–\u20099:00\u202fPM",
 			},
 			expected: 2,
 		},
 		{
-			name: "Non-breaking space (\\u00A0)",
+			name: "Non-breaking space",
 			input: []string{
 				"Monday: 11:00\u00A0AM\u00A0–\u00A09:00\u00A0PM",
 			},
@@ -349,40 +252,33 @@ func TestFormatOpenHoursWithUnicodeWhitespace(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			result, err := FormatOpenHoursFromCombined(tt.input)
 			if err != nil {
-				t.Errorf("FormatOpenHoursFromCombined() error = %v", err)
-				return
+				t.Fatalf("FormatOpenHoursFromCombined() error = %v", err)
 			}
-
 			if result == "" {
-				t.Errorf("FormatOpenHoursFromCombined() returned empty string, expected JSON")
-				return
+				t.Fatalf("FormatOpenHoursFromCombined() returned empty string, expected JSON")
 			}
 
 			var parsed struct {
 				OpenHours []string `json:"openhours"`
 			}
-
 			if err := json.Unmarshal([]byte(result), &parsed); err != nil {
-				t.Errorf("Failed to parse JSON: %v\nResult: %s", err, result)
-				return
+				t.Fatalf("Failed to parse JSON: %v\nResult: %s", err, result)
 			}
 
 			if len(parsed.OpenHours) != tt.expected {
-				t.Errorf("Expected %d hour entries, got %d\nInput: %q\nParsed: %v",
+				t.Fatalf("Expected %d hour entries, got %d\nInput: %q\nParsed: %v",
 					tt.expected, len(parsed.OpenHours), tt.input, parsed.OpenHours)
 			}
 
-			// Verify the format is correct
 			for i, hour := range parsed.OpenHours {
 				if !isValidHourFormat(hour) {
-					t.Errorf("Hour[%d] = %q has invalid format", i, hour)
+					t.Fatalf("Hour[%d] = %q has invalid format", i, hour)
 				}
 			}
 		})
 	}
 }
 
-// TestConvertTo24Hour tests the time conversion helper function
 func TestConvertTo24Hour(t *testing.T) {
 	tests := []struct {
 		hour     string
@@ -402,11 +298,65 @@ func TestConvertTo24Hour(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.hour+":"+tt.minute+" "+tt.period, func(t *testing.T) {
-			result := convertTo24Hour(tt.hour, tt.minute, tt.period)
-			if result != tt.expected {
-				t.Errorf("convertTo24Hour(%s, %s, %s) = %q, expected %q",
-					tt.hour, tt.minute, tt.period, result, tt.expected)
+			if got := convertTo24Hour(tt.hour, tt.minute, tt.period); got != tt.expected {
+				t.Fatalf("convertTo24Hour(%s, %s, %s) = %q, expected %q",
+					tt.hour, tt.minute, tt.period, got, tt.expected)
 			}
 		})
 	}
+}
+
+func isValidHourFormat(hour string) bool {
+	if len(hour) < 11 {
+		return false
+	}
+
+	parts := splitAfterDayName(hour)
+	if len(parts) != 3 {
+		return false
+	}
+
+	validDays := map[string]bool{
+		"Mon": true, "Tue": true, "Wed": true, "Thu": true,
+		"Fri": true, "Sat": true, "Sun": true,
+	}
+	if !validDays[parts[0]] {
+		return false
+	}
+
+	for _, timePart := range parts[1:] {
+		if len(timePart) != 5 || timePart[2] != ':' {
+			return false
+		}
+	}
+	return true
+}
+
+func splitAfterDayName(hour string) []string {
+	if len(hour) < 4 {
+		return nil
+	}
+	day := hour[:3]
+	rest := hour[4:]
+	return append([]string{day}, splitTimes(rest)...)
+}
+
+func splitTimes(s string) []string {
+	var (
+		result  []string
+		current string
+	)
+
+	for i, ch := range s {
+		if ch == '-' && len(current) == 5 {
+			result = append(result, current)
+			current = ""
+			continue
+		}
+		current += string(ch)
+		if i == len(s)-1 && current != "" {
+			result = append(result, current)
+		}
+	}
+	return result
 }

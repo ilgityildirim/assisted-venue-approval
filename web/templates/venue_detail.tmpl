@@ -224,59 +224,203 @@
 
             <main class="main-column">
                 {{if .GoogleData}}
-                <details class="details-card" open>
-                    <summary>Combined Information</summary>
+                <details class="details-card" open id="combined-info-card">
+                    <summary>
+                        Combined Information
+                        {{if .HasDraft}}
+                        <span class="badge" style="background:#ff9800;color:white;margin-left:8px;">Draft Pending</span>
+                        {{end}}
+                    </summary>
                     <div class="details-body">
+                        {{if .HasDraft}}
+                        {{if ne .DraftEditorID .CurrentAdminID}}
+                        <div class="callout warning" style="margin-bottom:16px;">
+                            <strong>⚠️ Draft exists!</strong>
+                            {{.DraftEditorName}} has pending edits from {{.DraftUpdatedAt}}.
+                            These edits will be shown below. Saving will overwrite their draft.
+                        </div>
+                        {{end}}
+                        {{end}}
+
+                        {{if eq $state 0}}
+                        <!-- Edit Controls -->
+                        <div id="edit-controls-container" style="margin-bottom:16px;">
+                            <!-- Edit Button (shown by default) -->
+                            <div id="edit-mode-off" style="display:block;">
+                                <button type="button" id="edit-toggle-btn" class="btn btn-secondary" onclick="toggleEditMode()">Edit</button>
+                            </div>
+                            <!-- Save/Cancel Buttons (shown in edit mode) -->
+                            <div id="edit-mode-on" style="display:none;">
+                                <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
+                                    <button type="button" id="cancel-edit-btn" class="btn btn-secondary" onclick="cancelEdit()">Cancel</button>
+                                    <div style="display:flex;align-items:center;gap:12px;">
+                                        <span id="draft-status" style="color:#28a745;white-space:nowrap;"></span>
+                                        <button type="button" id="save-draft-btn" class="btn btn-primary" onclick="saveDraft()">Save Draft</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        {{end}}
+
                         {{if .NameSuggestion}}
                         <div class="callout info" style="margin-bottom:16px;">
                             <strong>Suggested Name Format:</strong>
                             <div style="margin-top:6px;"><code>{{.NameSuggestion}}</code></div>
                         </div>
                         {{end}}
-                        <div class="field-grid">
-                            <div class="field">
-                                <div class="field-label">Name{{with index .Combined.Sources "name"}}<span class="field-source">source: {{.}}</span>{{end}}</div>
-                                <div class="field-value"><strong>{{.Combined.Name}}</strong></div>
+                        <div class="field-grid" id="editable-fields">
+                            <!-- Name Field -->
+                            <div class="field" data-field="name">
+                                <div class="field-label">
+                                    Name
+                                    <span class="field-source" id="name-source">source: {{index .Combined.Sources "name"}}</span>
+                                    <button type="button" class="reset-field-btn" data-field="name" style="display:none;" title="Reset to original" onclick="resetField('name')">↺</button>
+                                </div>
+                                <div class="field-value-display" id="name-display"><strong>{{.Combined.Name}}</strong></div>
+                                <div class="field-value-edit" id="name-edit" style="display:none;">
+                                    <input type="text" id="name-input" value="{{.Combined.Name}}" data-original="{{.Combined.Name}}" data-original-source="{{index .Combined.Sources "name"}}" maxlength="200" required style="width:100%;">
+                                    <span class="field-error" id="name-error" style="color:#dc3545;display:none;font-size:0.875em;"></span>
+                                </div>
                             </div>
-                            <div class="field">
-                                <div class="field-label">Address{{with index .Combined.Sources "address"}}<span class="field-source">source: {{.}}</span>{{end}}</div>
-                                <div class="field-value">{{if .Combined.Address}}{{.Combined.Address}}{{else}}N/A{{end}}</div>
+
+                            <!-- Address Field -->
+                            <div class="field" data-field="address">
+                                <div class="field-label">
+                                    Address
+                                    <span class="field-source" id="address-source">source: {{index .Combined.Sources "address"}}</span>
+                                    <button type="button" class="reset-field-btn" data-field="address" style="display:none;" title="Reset to original" onclick="resetField('address')">↺</button>
+                                </div>
+                                <div class="field-value-display" id="address-display">{{if .Combined.Address}}{{.Combined.Address}}{{else}}N/A{{end}}</div>
+                                <div class="field-value-edit" id="address-edit" style="display:none;">
+                                    <textarea id="address-input" data-original="{{.Combined.Address}}" data-original-source="{{index .Combined.Sources "address"}}" maxlength="500" rows="2" style="width:100%;">{{.Combined.Address}}</textarea>
+                                    <span class="field-error" id="address-error" style="color:#dc3545;display:none;font-size:0.875em;"></span>
+                                </div>
                             </div>
-                            <div class="field">
-                                <div class="field-label">Phone{{with index .Combined.Sources "phone"}}<span class="field-source">source: {{.}}</span>{{end}}</div>
-                                <div class="field-value">{{if .Combined.Phone}}{{.Combined.Phone}}{{else}}N/A{{end}}</div>
+
+                            <!-- Phone Field -->
+                            <div class="field" data-field="phone">
+                                <div class="field-label">
+                                    Phone
+                                    <span class="field-source" id="phone-source">source: {{index .Combined.Sources "phone"}}</span>
+                                    <button type="button" class="reset-field-btn" data-field="phone" style="display:none;" title="Reset to original" onclick="resetField('phone')">↺</button>
+                                </div>
+                                <div class="field-value-display" id="phone-display">{{if .Combined.Phone}}{{.Combined.Phone}}{{else}}N/A{{end}}</div>
+                                <div class="field-value-edit" id="phone-edit" style="display:none;">
+                                    <input type="tel" id="phone-input" value="{{.Combined.Phone}}" data-original="{{.Combined.Phone}}" data-original-source="{{index .Combined.Sources "phone"}}" maxlength="50" style="width:100%;">
+                                    <span class="field-error" id="phone-error" style="color:#dc3545;display:none;font-size:0.875em;"></span>
+                                </div>
                             </div>
-                            <div class="field">
-                                <div class="field-label">Website{{with index .Combined.Sources "website"}}<span class="field-source">source: {{.}}</span>{{end}}</div>
-                                <div class="field-value">{{if .Combined.Website}}<a href="{{.Combined.Website}}" target="_blank">{{.Combined.Website}}</a>{{else}}N/A{{end}}</div>
-                            </div>
-                            <div class="field">
-                                <div class="field-label">Opening Hours{{with index .Combined.Sources "hours"}}<span class="field-source">source: {{.}}</span>{{end}}</div>
-                                <div class="field-value">
+                            <!-- Opening Hours Field -->
+                            <div class="field" data-field="open_hours" style="grid-column: 1 / -1;">
+                                <div class="field-label">
+                                    Opening Hours
+                                    <span class="field-source" id="open_hours-source">source: {{index .Combined.Sources "hours"}}</span>
+                                    <button type="button" class="reset-field-btn" data-field="open_hours" style="display:none;" title="Reset to original" onclick="resetField('open_hours')">↺</button>
+                                </div>
+                                <div class="field-value-display" id="open_hours-display">
                                     {{if .Combined.Hours}}
                                         {{range .Combined.Hours}}<div>{{.}}</div>{{end}}
                                     {{else}}N/A{{end}}
                                 </div>
+                                <div class="field-value-edit" id="open_hours-edit" style="display:none;">
+                                    <textarea id="open_hours-input" data-original="{{range .Combined.Hours}}{{.}}{{"\n"}}{{end}}" data-original-source="{{index .Combined.Sources "hours"}}" rows="5" style="width:100%;" placeholder="One entry per line, e.g., Mon-Fri: 9am-5pm">{{range .Combined.Hours}}{{.}}{{"\n"}}{{end}}</textarea>
+                                    <span class="field-error" id="open_hours-error" style="color:#dc3545;display:none;font-size:0.875em;"></span>
+                                    <small style="color:#666;">One entry per line</small>
+                                </div>
                             </div>
-                            <div class="field">
-                                <div class="field-label">Type</div>
-                                <div class="field-value">{{.VenueTypeLabel}}</div>
+
+                            <!-- Type Field -->
+                            <div class="field" data-field="type">
+                                <div class="field-label">
+                                    Type
+                                    <span class="field-source" id="type-source">source: user</span>
+                                    <button type="button" class="reset-field-btn" data-field="type" style="display:none;" title="Reset to original" onclick="resetField('type')">↺</button>
+                                </div>
+                                <div class="field-value-display" id="type-display">{{.VenueTypeLabel}}</div>
+                                <div class="field-value-edit" id="type-edit" style="display:none;">
+                                    <select id="type-input" data-original="{{.Venue.Venue.EntryType}}" data-original-source="user" style="width:100%;">
+                                        <option value="1" {{if eq .Venue.Venue.EntryType 1}}selected{{end}}>Restaurant</option>
+                                        <option value="2" {{if eq .Venue.Venue.EntryType 2}}selected{{end}}>Store</option>
+                                    </select>
+                                    <span class="field-error" id="type-error" style="color:#dc3545;display:none;font-size:0.875em;"></span>
+                                </div>
                             </div>
-                            <div class="field">
-                                <div class="field-label">Vegan</div>
-                                <div class="field-value">{{.VeganStatusLabel}}</div>
+
+                            <!-- Vegan Field -->
+                            <div class="field" data-field="vegan">
+                                <div class="field-label">
+                                    Vegan
+                                    <span class="field-source" id="vegan-source">source: user</span>
+                                    <button type="button" class="reset-field-btn" data-field="vegan" style="display:none;" title="Reset to original" onclick="resetField('vegan')">↺</button>
+                                </div>
+                                <div class="field-value-display" id="vegan-display">{{.VeganStatusLabel}}</div>
+                                <div class="field-value-edit" id="vegan-edit" style="display:none;">
+                                    <select id="vegan-input" data-original="{{.Venue.Venue.Vegan}}" data-original-source="user" style="width:100%;">
+                                        <option value="1" {{if eq .Venue.Venue.Vegan 1}}selected{{end}}>Vegan</option>
+                                        <option value="2" {{if eq .Venue.Venue.Vegan 2}}selected{{end}}>Veg Options</option>
+                                        <option value="0" {{if eq .Venue.Venue.Vegan 0}}selected{{end}}>Vegan Friendly</option>
+                                    </select>
+                                    <span class="field-error" id="vegan-error" style="color:#dc3545;display:none;font-size:0.875em;"></span>
+                                </div>
                             </div>
-                            <div class="field">
-                                <div class="field-label">Category</div>
-                                <div class="field-value">{{if .CategoryLabel}}{{.CategoryLabel}}{{else}}N/A{{end}}</div>
+
+                            <!-- Category Field -->
+                            <div class="field" data-field="category">
+                                <div class="field-label">
+                                    Category
+                                    <span class="field-source" id="category-source">source: user</span>
+                                    <button type="button" class="reset-field-btn" data-field="category" style="display:none;" title="Reset to original" onclick="resetField('category')">↺</button>
+                                </div>
+                                <div class="field-value-display" id="category-display">{{if .CategoryLabel}}{{.CategoryLabel}}{{else}}N/A{{end}}</div>
+                                <div class="field-value-edit" id="category-edit" style="display:none;">
+                                    <select id="category-input" data-original="{{.Venue.Venue.Category}}" data-original-source="user" style="width:100%;">
+                                        <option value="0" {{if eq .Venue.Venue.Category 0}}selected{{end}}>Restaurant (Generic)</option>
+                                        <option value="3" {{if eq .Venue.Venue.Category 3}}selected{{end}}>Bakery</option>
+                                        <option value="12" {{if eq .Venue.Venue.Category 12}}selected{{end}}>Ice Cream</option>
+                                        <option value="13" {{if eq .Venue.Venue.Category 13}}selected{{end}}>Juice Bar</option>
+                                        <option value="15" {{if eq .Venue.Venue.Category 15}}selected{{end}}>Coffee & Tea</option>
+                                        <option value="10" {{if eq .Venue.Venue.Category 10}}selected{{end}}>Food Truck</option>
+                                    </select>
+                                    <span class="field-error" id="category-error" style="color:#dc3545;display:none;font-size:0.875em;"></span>
+                                </div>
                             </div>
-                            <div class="field">
-                                <div class="field-label">Location{{with index .Combined.Sources "latlng"}}<span class="field-source">source: {{.}}</span>{{end}}</div>
-                                <div class="field-value">{{if and .Combined.Lat .Combined.Lng}}{{fmtFloat .Combined.Lat}}, {{fmtFloat .Combined.Lng}}{{else}}N/A{{end}}</div>
+
+                            <!-- Location (Lat/Lng) Field -->
+                            <div class="field" data-field="latlng">
+                                <div class="field-label">
+                                    Location
+                                    <span class="field-source" id="latlng-source">source: {{index .Combined.Sources "latlng"}}</span>
+                                    <button type="button" class="reset-field-btn" data-field="latlng" style="display:none;" title="Reset to original" onclick="resetField('latlng')">↺</button>
+                                </div>
+                                <div class="field-value-display" id="latlng-display">{{if and .Combined.Lat .Combined.Lng}}{{fmtFloat .Combined.Lat}}, {{fmtFloat .Combined.Lng}}{{else}}N/A{{end}}</div>
+                                <div class="field-value-edit" id="latlng-edit" style="display:none;">
+                                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+                                        <div>
+                                            <label for="lat-input" style="font-size:0.875em;color:#666;">Latitude</label>
+                                            <input type="number" id="lat-input" value="{{if .Combined.Lat}}{{fmtFloat .Combined.Lat}}{{end}}" data-original="{{if .Combined.Lat}}{{fmtFloat .Combined.Lat}}{{end}}" data-original-source="{{index .Combined.Sources "latlng"}}" step="0.000001" min="-90" max="90" style="width:100%;">
+                                        </div>
+                                        <div>
+                                            <label for="lng-input" style="font-size:0.875em;color:#666;">Longitude</label>
+                                            <input type="number" id="lng-input" value="{{if .Combined.Lng}}{{fmtFloat .Combined.Lng}}{{end}}" data-original="{{if .Combined.Lng}}{{fmtFloat .Combined.Lng}}{{end}}" data-original-source="{{index .Combined.Sources "latlng"}}" step="0.000001" min="-180" max="180" style="width:100%;">
+                                        </div>
+                                    </div>
+                                    <span class="field-error" id="latlng-error" style="color:#dc3545;display:none;font-size:0.875em;"></span>
+                                </div>
                             </div>
-                            <div class="field">
-                                <div class="field-label">Path{{with index .Combined.Sources "path"}}<span class="field-source">source: {{.}}</span>{{end}}</div>
-                                <div class="field-value">{{if .Combined.Path}}{{.Combined.Path}}{{else}}N/A{{end}}</div>
+
+                            <!-- Path Field -->
+                            <div class="field" data-field="path">
+                                <div class="field-label">
+                                    Path
+                                    <span class="field-source" id="path-source">source: {{index .Combined.Sources "path"}}</span>
+                                    <button type="button" class="reset-field-btn" data-field="path" style="display:none;" title="Reset to original" onclick="resetField('path')">↺</button>
+                                </div>
+                                <div class="field-value-display" id="path-display">{{if .Combined.Path}}{{.Combined.Path}}{{else}}N/A{{end}}</div>
+                                <div class="field-value-edit" id="path-edit" style="display:none;">
+                                    <input type="text" id="path-input" value="{{.Combined.Path}}" data-original="{{.Combined.Path}}" data-original-source="{{index .Combined.Sources "path"}}" maxlength="255" pattern="[a-zA-Z0-9_|\-]+" style="width:100%;">
+                                    <span class="field-error" id="path-error" style="color:#dc3545;display:none;font-size:0.875em;"></span>
+                                    <small style="color:#666;">Letters, numbers, hyphens, underscores, pipes</small>
+                                </div>
                             </div>
                             {{if .Combined.Types}}
                             <div class="field" style="grid-column: 1 / -1;">
@@ -291,24 +435,42 @@
                                 </div>
                             </div>
                             {{end}}
-                            {{if .Combined.Description}}
-                            <div class="field" style="grid-column: 1 / -1;">
-                                <div class="field-label">Description{{with index .Combined.Sources "description"}}<span class="field-source">source: {{.}}</span>{{end}}</div>
-                                <div class="field-value"><div class="callout">{{.Combined.Description}}</div></div>
+                            <!-- Description Field -->
+                            <div class="field" data-field="description" style="grid-column: 1 / -1;">
+                                <div class="field-label">
+                                    Description
+                                    <span class="field-source" id="description-source">source: {{index .Combined.Sources "description"}}</span>
+                                    <button type="button" class="reset-field-btn" data-field="description" style="display:none;" title="Reset to original" onclick="resetField('description')">↺</button>
+                                </div>
+                                <div class="field-value-display" id="description-display">
+                                    {{if .Combined.Description}}<div class="callout">{{.Combined.Description}}</div>{{else}}N/A{{end}}
+                                </div>
+                                <div class="field-value-edit" id="description-edit" style="display:none;">
+                                    <textarea id="description-input" data-original="{{.Combined.Description}}" data-original-source="{{index .Combined.Sources "description"}}" maxlength="5000" rows="4" style="width:100%;">{{.Combined.Description}}</textarea>
+                                    <span class="field-error" id="description-error" style="color:#dc3545;display:none;font-size:0.875em;"></span>
+                                </div>
                             </div>
-                            {{end}}
                             {{if .DescriptionSuggestion}}
                             <div class="field" style="grid-column: 1 / -1;">
                                 <div class="field-label">Suggested Description</div>
                                 <div class="field-value"><div class="callout success">{{.DescriptionSuggestion}}</div></div>
                             </div>
                             {{end}}
-                            {{if .ClosedDaysSuggestion}}
-                            <div class="field" style="grid-column: 1 / -1;">
-                                <div class="field-label">Hours Note (Closed Days)</div>
-                                <div class="field-value"><div class="callout info"><code>{{.ClosedDaysSuggestion}}</code></div></div>
+
+                            <!-- Hours Note Field -->
+                            <div class="field" data-field="hours_note" style="grid-column: 1 / -1;">
+                                <div class="field-label">
+                                    Hours Note (Closed Days)
+                                    <button type="button" class="reset-field-btn" data-field="hours_note" style="display:none;" title="Reset to original" onclick="resetField('hours_note')">↺</button>
+                                </div>
+                                <div class="field-value-display" id="hours_note-display">
+                                    {{if .ClosedDaysSuggestion}}<div class="callout info"><code>{{.ClosedDaysSuggestion}}</code></div>{{else}}N/A{{end}}
+                                </div>
+                                <div class="field-value-edit" id="hours_note-edit" style="display:none;">
+                                    <textarea id="hours_note-input" data-original="{{.ClosedDaysSuggestion}}" data-original-source="ai" maxlength="500" rows="2" style="width:100%;">{{.ClosedDaysSuggestion}}</textarea>
+                                    <span class="field-error" id="hours_note-error" style="color:#dc3545;display:none;font-size:0.875em;"></span>
+                                </div>
                             </div>
-                            {{end}}
                         </div>
                     </div>
                 </details>
@@ -876,6 +1038,491 @@
               }).catch(() => {});
         }
         document.addEventListener('DOMContentLoaded', refreshFeedback);
+
+        // ========== VENUE EDIT FUNCTIONALITY ==========
+
+        // Label mapping functions for type/vegan/category fields
+        function getTypeLabel(value) {
+            const intValue = parseInt(value);
+            if (intValue === 2) return "Store";
+            return "Restaurant";
+        }
+
+        function getVeganLabel(value) {
+            const intValue = parseInt(value);
+            if (intValue === 1) return "Vegan";
+            if (intValue === 2) return "Veg Options";
+            return "Vegan Friendly";
+        }
+
+        function getCategoryLabel(value) {
+            const intValue = parseInt(value);
+            const categories = {
+                0: "Restaurant (Generic)",
+                1: "Health Store",
+                2: "Veg Store",
+                3: "Bakery",
+                4: "B&B",
+                5: "Delivery",
+                6: "Catering",
+                7: "Organization",
+                8: "Farmer's Market",
+                10: "Food Truck",
+                11: "Market Vendor",
+                12: "Ice Cream",
+                13: "Juice Bar",
+                14: "Professional",
+                15: "Coffee & Tea",
+                16: "Spa",
+                99: "Other"
+            };
+            return categories[intValue] || "N/A";
+        }
+
+        const EditState = {
+            isEditing: false,
+            originalData: {},
+            hasUnsavedChanges: false,
+            venueID: {{.Venue.Venue.ID}},
+
+            fields: ['name', 'address', 'phone', 'open_hours', 'type', 'vegan', 'category', 'lat', 'lng', 'path', 'description', 'hours_note'],
+
+            init() {
+                // Load original data from template
+                this.fields.forEach(field => {
+                    let input;
+                    if (field === 'lat') {
+                        input = document.getElementById('lat-input');
+                    } else if (field === 'lng') {
+                        input = document.getElementById('lng-input');
+                    } else {
+                        input = document.getElementById(field + '-input');
+                    }
+
+                    if (input) {
+                        this.originalData[field] = {
+                            value: input.dataset.original || input.value,
+                            source: input.dataset.originalSource || 'user'
+                        };
+                    }
+                });
+
+                // Load draft if exists
+                this.loadDraft();
+
+                // Add input listeners for validation
+                this.fields.forEach(field => {
+                    let input;
+                    if (field === 'lat') {
+                        input = document.getElementById('lat-input');
+                    } else if (field === 'lng') {
+                        input = document.getElementById('lng-input');
+                    } else {
+                        input = document.getElementById(field + '-input');
+                    }
+
+                    if (input) {
+                        input.addEventListener('input', () => {
+                            validateField(field);
+                            this.hasUnsavedChanges = true;
+                        });
+                    }
+                });
+            },
+
+            async loadDraft() {
+                try {
+                    const response = await fetch(basePath + 'venues/' + this.venueID + '/draft');
+                    const data = await response.json();
+
+                    if (data.has_draft && data.draft_data) {
+                        this.applyDraftToInputs(data.draft_data);
+                        this.updateDisplayWithDraft(data.draft_data);
+                    }
+                } catch (err) {
+                    console.error('Error loading draft:', err);
+                }
+            },
+
+            applyDraftToInputs(draftData) {
+                Object.keys(draftData).forEach(field => {
+                    const draftField = draftData[field];
+                    let input, source;
+
+                    if (field === 'lat') {
+                        input = document.getElementById('lat-input');
+                        source = document.getElementById('latlng-source');
+                    } else if (field === 'lng') {
+                        input = document.getElementById('lng-input');
+                        source = document.getElementById('latlng-source');
+                    } else {
+                        input = document.getElementById(field + '-input');
+                        source = document.getElementById(field + '-source');
+                    }
+
+                    if (input && draftField && draftField.value !== null && draftField.value !== undefined) {
+                        if (field === 'open_hours' && Array.isArray(draftField.value)) {
+                            input.value = draftField.value.join('\n');
+                        } else {
+                            input.value = draftField.value;
+                        }
+
+                        if (source) {
+                            source.textContent = 'source: editor';
+                        }
+                    }
+                });
+            },
+
+            updateDisplayWithDraft(draftData) {
+                Object.keys(draftData).forEach(field => {
+                    const draftField = draftData[field];
+                    let display, source;
+
+                    // Get display element and source label
+                    if (field === 'lat' || field === 'lng') {
+                        display = document.getElementById('latlng-display');
+                        source = document.getElementById('latlng-source');
+                    } else {
+                        display = document.getElementById(field + '-display');
+                        source = document.getElementById(field + '-source');
+                    }
+
+                    // Update display value
+                    if (display && draftField && draftField.value !== null && draftField.value !== undefined) {
+                        if (field === 'open_hours' && Array.isArray(draftField.value)) {
+                            // Format hours as HTML list
+                            display.innerHTML = draftField.value.map(h => `<div>${h}</div>`).join('');
+                        } else if (field === 'lat') {
+                            // For lat, update the combined lat/lng display
+                            const lngDraft = draftData['lng'];
+                            if (lngDraft && lngDraft.value !== null) {
+                                display.textContent = `${draftField.value}, ${lngDraft.value}`;
+                            }
+                        } else if (field === 'lng') {
+                            // For lng, update the combined lat/lng display
+                            const latDraft = draftData['lat'];
+                            if (latDraft && latDraft.value !== null) {
+                                display.textContent = `${latDraft.value}, ${draftField.value}`;
+                            }
+                        } else if (field === 'type') {
+                            // Convert integer to label for type
+                            display.textContent = getTypeLabel(draftField.value);
+                        } else if (field === 'vegan') {
+                            // Convert integer to label for vegan
+                            display.textContent = getVeganLabel(draftField.value);
+                        } else if (field === 'category') {
+                            // Convert integer to label for category
+                            display.textContent = getCategoryLabel(draftField.value);
+                        } else {
+                            // Regular field
+                            display.textContent = draftField.value;
+                        }
+                    }
+
+                    // Update source label to "editor"
+                    if (source) {
+                        source.textContent = 'source: editor';
+                    }
+                });
+            }
+        };
+
+        function toggleEditMode() {
+            EditState.isEditing = !EditState.isEditing;
+
+            // Toggle visibility of display vs edit
+            document.querySelectorAll('.field-value-display').forEach(el => {
+                el.style.display = EditState.isEditing ? 'none' : 'block';
+            });
+            document.querySelectorAll('.field-value-edit').forEach(el => {
+                el.style.display = EditState.isEditing ? 'block' : 'none';
+            });
+            document.querySelectorAll('.reset-field-btn').forEach(el => {
+                el.style.display = EditState.isEditing ? 'inline-block' : 'none';
+            });
+
+            // Toggle button containers
+            document.getElementById('edit-mode-off').style.display = EditState.isEditing ? 'none' : 'block';
+            document.getElementById('edit-mode-on').style.display = EditState.isEditing ? 'block' : 'none';
+        }
+
+        const FieldValidators = {
+            name: (val) => {
+                if (val.length < 2) return 'Name must be at least 2 characters';
+                if (val.length > 200) return 'Name must be less than 200 characters';
+                return null;
+            },
+            address: (val) => {
+                if (val.length < 5) return 'Address must be at least 5 characters';
+                if (val.length > 500) return 'Address must be less than 500 characters';
+                return null;
+            },
+            phone: (val) => {
+                if (val && val.length > 50) return 'Phone must be less than 50 characters';
+                if (val && !/^[0-9+\-() ]+$/.test(val)) return 'Phone contains invalid characters';
+                return null;
+            },
+            lat: (val) => {
+                const num = parseFloat(val);
+                if (isNaN(num)) return 'Latitude must be a number';
+                if (num < -90 || num > 90) return 'Latitude must be between -90 and 90';
+                return null;
+            },
+            lng: (val) => {
+                const num = parseFloat(val);
+                if (isNaN(num)) return 'Longitude must be a number';
+                if (num < -180 || num > 180) return 'Longitude must be between -180 and 180';
+                return null;
+            },
+            path: (val) => {
+                if (!val || val.length < 1) return 'Path cannot be empty';
+                if (val.length > 255) return 'Path must be less than 255 characters';
+                if (!/^[a-zA-Z0-9_|\-]+$/.test(val)) return 'Path can only contain letters, numbers, hyphens, underscores, and pipes';
+                return null;
+            },
+            description: (val) => {
+                if (val && val.length > 5000) return 'Description must be less than 5000 characters';
+                return null;
+            },
+            hours_note: (val) => {
+                if (val && val.length > 500) return 'Hours note must be less than 500 characters';
+                return null;
+            },
+            open_hours: (val) => {
+                const lines = val.split('\n').filter(l => l.trim());
+                if (lines.length > 20) return 'Too many hours entries (max 20)';
+                for (let line of lines) {
+                    if (line.length > 200) return 'Individual hours entry too long (max 200 chars)';
+                }
+                return null;
+            },
+            type: () => null,
+            vegan: () => null,
+            category: () => null
+        };
+
+        function validateField(field) {
+            let input, errorSpan;
+            if (field === 'lat') {
+                input = document.getElementById('lat-input');
+                errorSpan = document.getElementById('latlng-error');
+            } else if (field === 'lng') {
+                input = document.getElementById('lng-input');
+                errorSpan = document.getElementById('latlng-error');
+            } else {
+                input = document.getElementById(field + '-input');
+                errorSpan = document.getElementById(field + '-error');
+            }
+
+            const validator = FieldValidators[field];
+
+            if (validator && input) {
+                const errorMsg = validator(input.value);
+                if (errorMsg) {
+                    if (errorSpan) {
+                        errorSpan.textContent = errorMsg;
+                        errorSpan.style.display = 'block';
+                    }
+                    input.classList.add('invalid');
+                    return false;
+                } else {
+                    if (errorSpan) {
+                        errorSpan.textContent = '';
+                        errorSpan.style.display = 'none';
+                    }
+                    input.classList.remove('invalid');
+                    return true;
+                }
+            }
+            return true;
+        }
+
+        async function saveDraft() {
+            // Validate all fields
+            let isValid = true;
+            EditState.fields.forEach(field => {
+                if (!validateField(field)) isValid = false;
+            });
+
+            if (!isValid) {
+                alert('Please fix validation errors before saving');
+                return;
+            }
+
+            // Collect modified fields
+            const draftData = {};
+            EditState.fields.forEach(field => {
+                let input;
+                if (field === 'lat') {
+                    input = document.getElementById('lat-input');
+                } else if (field === 'lng') {
+                    input = document.getElementById('lng-input');
+                } else {
+                    input = document.getElementById(field + '-input');
+                }
+
+                if (input) {
+                    const originalValue = EditState.originalData[field]?.value || '';
+                    let currentValue = input.value;
+
+                    // Special handling for open_hours (textarea with lines)
+                    if (field === 'open_hours') {
+                        const lines = currentValue.split('\n').filter(l => l.trim());
+                        const normalizedCurrent = lines.join('\n').trim();
+                        const normalizedOriginal = originalValue.trim();
+                        if (normalizedCurrent !== normalizedOriginal) {
+                            draftData[field] = {
+                                value: lines,
+                                original_source: EditState.originalData[field]?.source || 'user'
+                            };
+                        }
+                    } else if (field === 'lat' || field === 'lng') {
+                        currentValue = parseFloat(currentValue);
+                        if (currentValue !== parseFloat(originalValue)) {
+                            draftData[field] = {
+                                value: currentValue,
+                                original_source: EditState.originalData[field]?.source || 'user'
+                            };
+                        }
+                    } else if (field === 'type' || field === 'vegan' || field === 'category') {
+                        currentValue = parseInt(currentValue);
+                        if (currentValue !== parseInt(originalValue)) {
+                            draftData[field] = {
+                                value: currentValue,
+                                original_source: EditState.originalData[field]?.source || 'user'
+                            };
+                        }
+                    } else {
+                        if (currentValue !== originalValue) {
+                            draftData[field] = {
+                                value: currentValue,
+                                original_source: EditState.originalData[field]?.source || 'user'
+                            };
+                        }
+                    }
+                }
+            });
+
+            // Save to backend
+            try {
+                const response = await fetch(basePath + 'venues/' + EditState.venueID + '/draft', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify(draftData)
+                });
+
+                // Read response as text first
+                const responseText = await response.text();
+
+                // Try to parse as JSON
+                let result;
+                try {
+                    result = JSON.parse(responseText);
+                } catch (parseErr) {
+                    throw new Error('Server returned non-JSON response: ' + responseText);
+                }
+
+                if (result.success) {
+                    document.getElementById('draft-status').textContent = '✓ Draft saved at ' + new Date().toLocaleTimeString();
+                    EditState.hasUnsavedChanges = false;
+
+                    // Update display values with draft data
+                    EditState.updateDisplayWithDraft(draftData);
+
+                    // Switch back to view mode
+                    if (EditState.isEditing) {
+                        toggleEditMode();
+                    }
+                } else {
+                    // Handle validation errors
+                    if (result.errors) {
+                        let errorMsg = 'Validation errors:\n';
+                        for (let field in result.errors) {
+                            errorMsg += '- ' + field + ': ' + result.errors[field] + '\n';
+                        }
+                        alert(errorMsg);
+                    } else {
+                        alert('Failed to save draft: ' + (result.message || 'Unknown error'));
+                    }
+                }
+            } catch (err) {
+                console.error('Draft save error:', err);
+                alert('Error saving draft: ' + err.message);
+            }
+        }
+
+        function cancelEdit() {
+            if (EditState.hasUnsavedChanges) {
+                if (!confirm('You have unsaved changes. Are you sure you want to cancel?')) {
+                    return;
+                }
+            }
+
+            // Reset fields to original
+            EditState.fields.forEach(field => {
+                let input;
+                if (field === 'lat') {
+                    input = document.getElementById('lat-input');
+                } else if (field === 'lng') {
+                    input = document.getElementById('lng-input');
+                } else {
+                    input = document.getElementById(field + '-input');
+                }
+
+                if (input && EditState.originalData[field]) {
+                    input.value = EditState.originalData[field].value;
+                }
+            });
+
+            toggleEditMode();
+            EditState.hasUnsavedChanges = false;
+        }
+
+        function resetField(field) {
+            let input, source;
+            if (field === 'latlng') {
+                // Special case: reset both lat and lng
+                const latInput = document.getElementById('lat-input');
+                const lngInput = document.getElementById('lng-input');
+                if (latInput && EditState.originalData.lat) {
+                    latInput.value = EditState.originalData.lat.value;
+                }
+                if (lngInput && EditState.originalData.lng) {
+                    lngInput.value = EditState.originalData.lng.value;
+                }
+                source = document.getElementById('latlng-source');
+                if (source && EditState.originalData.lat) {
+                    source.textContent = 'source: ' + EditState.originalData.lat.source;
+                }
+            } else {
+                input = document.getElementById(field + '-input');
+                source = document.getElementById(field + '-source');
+
+                if (input && EditState.originalData[field]) {
+                    input.value = EditState.originalData[field].value;
+                    if (source) {
+                        source.textContent = 'source: ' + EditState.originalData[field].source;
+                    }
+                }
+            }
+
+            validateField(field);
+            EditState.hasUnsavedChanges = true;
+        }
+
+        // Warn on page leave with unsaved changes
+        window.addEventListener('beforeunload', (e) => {
+            if (EditState.hasUnsavedChanges && EditState.isEditing) {
+                e.preventDefault();
+                e.returnValue = '';
+            }
+        });
+
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            {{if eq $state 0}}EditState.init();{{end}}
+        });
     </script>
 </body>
 </html>

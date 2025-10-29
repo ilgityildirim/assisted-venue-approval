@@ -10,8 +10,10 @@ import (
 	"strings"
 	"time"
 
+	"assisted-venue-approval/internal/approval"
 	"assisted-venue-approval/internal/auth"
 	"assisted-venue-approval/internal/domain"
+	"assisted-venue-approval/internal/drafts"
 	"assisted-venue-approval/internal/models"
 	"assisted-venue-approval/internal/processor"
 	"assisted-venue-approval/internal/trust"
@@ -226,7 +228,7 @@ func ManualReviewHandler(db *database.DB) http.HandlerFunc {
 	}
 }
 
-func ApproveVenueHandler(repo domain.Repository, cfg *config.Config) http.HandlerFunc {
+func ApproveVenueHandler(repo domain.Repository, cfg *config.Config, draftStore *drafts.DraftStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
 		id, _ := strconv.ParseInt(vars["id"], 10, 64)
@@ -243,13 +245,21 @@ func ApproveVenueHandler(repo domain.Repository, cfg *config.Config) http.Handle
 			return
 		}
 
-		// Get reviewer info from session/auth
+		var draft *drafts.VenueDraft
+		if draftStore != nil {
+			if d, exists := draftStore.Get(id); exists {
+				draft = d
+				log.Printf("Loaded draft for venue %d with %d modified fields", id, len(draft.Fields))
+			}
+		}
+
 		reviewer := fmt.Sprintf("admin_%d", adminID)
-		notes := r.FormValue("notes")
+		rawNotes := strings.TrimSpace(r.FormValue("notes"))
+		notes := rawNotes
 		if notes == "" {
 			notes = "Manually approved by " + reviewer
 		} else {
-			notes = fmt.Sprintf("Manually approved by %s: %s", reviewer, notes)
+			notes = fmt.Sprintf("Manually approved by %s: %s", reviewer, rawNotes)
 		}
 
 		// Validate that venue has a valid validation history before approval
@@ -296,7 +306,6 @@ func ApproveVenueHandler(repo domain.Repository, cfg *config.Config) http.Handle
 			return
 		}
 
-		// Get current venue data
 		venueWithUser, err := repo.GetVenueWithUserByIDCtx(r.Context(), id)
 		if err != nil {
 			w.Header().Set("Content-Type", "application/json")
@@ -307,109 +316,29 @@ func ApproveVenueHandler(repo domain.Repository, cfg *config.Config) http.Handle
 			})
 			return
 		}
+
 		venue := venueWithUser.Venue
-
-		// Build Combined Information using trust-based merging
-		if latestHistory.GooglePlaceData != nil {
-			venue.GoogleData = latestHistory.GooglePlaceData
-		}
 		tc := trust.NewDefault()
-		assessment := tc.Assess(venueWithUser.User, *venue.Path)
-		combined, cerr := models.GetCombinedVenueInfo(venue, venueWithUser.User, assessment.Trust)
-		if cerr != nil {
-			log.Printf("Warning: failed to build combined info for venue %d: %v", id, cerr)
+		assessment := tc.Assess(venueWithUser.User, venue.Location)
+		mergeResult, err := approval.Assemble(approval.MergeInput{
+			Venue:         venue,
+			User:          venueWithUser.User,
+			TrustScore:    assessment.Trust,
+			LatestHistory: &latestHistory,
+			Draft:         draft,
+		})
+		if err != nil {
+			log.Printf("failed to assemble approval data for venue %d: %v", id, err)
+			http.Error(w, "Failed to prepare approval payload", http.StatusInternalServerError)
+			return
 		}
 
-		// Extract AI suggestions from validation history
-		var nameSuggestion, descSuggestion, closedDaysSuggestion string
-		if latestHistory.AIOutputData != nil && *latestHistory.AIOutputData != "" {
-			var raw map[string]interface{}
-			if err := json.Unmarshal([]byte(*latestHistory.AIOutputData), &raw); err == nil {
-				if qualityMap, ok := raw["quality"].(map[string]interface{}); ok {
-					if name, ok := qualityMap["name"].(string); ok {
-						nameSuggestion = strings.TrimSpace(name)
-					}
-					if desc, ok := qualityMap["description"].(string); ok {
-						descSuggestion = strings.TrimSpace(desc)
-					}
-					if closed, ok := qualityMap["closed_days"].(string); ok {
-						closedDaysSuggestion = strings.TrimSpace(closed)
-					}
-				}
-			}
+		approvalData := approval.BuildApprovalData(mergeResult, &venue, adminID, notes)
+		if approvalData == nil {
+			log.Printf("approval data assembly returned nil for venue %d", id)
+			http.Error(w, "Failed to prepare approval payload", http.StatusInternalServerError)
+			return
 		}
-
-		// Build approval data - use CombinedInfo with AI suggestion overrides
-		approvalData := domain.NewApprovalData(id, adminID, notes)
-
-		// Name: Use NameSuggestion if available, otherwise Combined.Name
-		finalName := combined.Name
-		if nameSuggestion != "" {
-			finalName = nameSuggestion
-		}
-		if finalName != "" && finalName != venue.Name {
-			approvalData.Name = &finalName
-		}
-
-		// Address: Use Combined.Address
-		if combined.Address != "" && combined.Address != venue.Location {
-			approvalData.Address = &combined.Address
-		}
-
-		// Description: Use DescriptionSuggestion if available, otherwise Combined.Description
-		finalDesc := combined.Description
-		if descSuggestion != "" {
-			finalDesc = descSuggestion
-		}
-		if finalDesc != "" {
-			approvalData.Description = &finalDesc
-		}
-
-		// Lat/Lng: Use Combined coordinates
-		if combined.Lat != nil && combined.Lng != nil {
-			approvalData.Lat = combined.Lat
-			approvalData.Lng = combined.Lng
-		}
-
-		// Phone: Use Combined.Phone
-		if combined.Phone != "" {
-			approvalData.Phone = &combined.Phone
-		}
-
-		// Website: Use Combined.Website
-		if combined.Website != "" {
-			approvalData.Website = &combined.Website
-		}
-
-		// OpenHours: Format from Combined.Hours
-		log.Printf("[approval] Venue %d: Processing opening hours (combined.Hours has %d lines, source=%s)",
-			id, len(combined.Hours), combined.Sources["hours"])
-
-		if len(combined.Hours) > 0 {
-			log.Printf("[approval] Venue %d: Formatting hours from Combined.Hours: %v", id, combined.Hours)
-			formattedHours, err := FormatOpenHoursFromCombined(combined.Hours)
-			if err != nil {
-				log.Printf("[approval] ❌ Venue %d: Failed to format open hours: %v", id, err)
-			} else if formattedHours != "" {
-				approvalData.OpenHours = &formattedHours
-				log.Printf("[approval] ✓ Venue %d: Formatted hours set: %s", id, formattedHours)
-			} else {
-				log.Printf("[approval] ⚠️  Venue %d: Hours formatting returned empty string (no valid hours parsed)", id)
-			}
-		} else {
-			log.Printf("[approval] ⚠️  Venue %d: No hours data available in Combined.Hours (Google data may be missing)", id)
-		}
-
-		// OpenHoursNote: Use ClosedDaysSuggestion if available
-		if closedDaysSuggestion != "" {
-			approvalData.OpenHoursNote = &closedDaysSuggestion
-			log.Printf("[approval] ✓ Venue %d: Closed days note set: %s", id, closedDaysSuggestion)
-		} else {
-			log.Printf("[approval] Venue %d: No closed days suggestion from AI", id)
-		}
-
-		// Build data replacements for audit trail
-		approvalData.Replacements = domain.BuildVenueDataReplacements(&venue, approvalData)
 
 		// Approve venue
 		if err := repo.ApproveVenueWithDataReplacement(r.Context(), approvalData); err != nil {
@@ -420,6 +349,11 @@ func ApproveVenueHandler(repo domain.Repository, cfg *config.Config) http.Handle
 				"message": fmt.Sprintf("Error approving venue: %v", err),
 			})
 			return
+		}
+
+		if draftStore != nil && draft != nil {
+			draftStore.Delete(id)
+			log.Printf("[approval] ✓ Deleted draft for venue %d after approval", id)
 		}
 
 		// metrics
@@ -458,7 +392,7 @@ func ApproveVenueHandler(repo domain.Repository, cfg *config.Config) http.Handle
 	}
 }
 
-func RejectVenueHandler(repo domain.Repository) http.HandlerFunc {
+func RejectVenueHandler(repo domain.Repository, draftStore *drafts.DraftStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
 		id, _ := strconv.ParseInt(vars["id"], 10, 64)
@@ -506,6 +440,12 @@ func RejectVenueHandler(repo domain.Repository) http.HandlerFunc {
 			return
 		}
 
+		// Delete draft after successful rejection
+		if draftStore != nil {
+			draftStore.Delete(id)
+			log.Printf("[rejection] ✓ Deleted draft for venue %d after rejection", id)
+		}
+
 		// Get the validation history ID to create audit log
 		history, err := repo.GetVenueValidationHistoryCtx(r.Context(), id)
 		if err == nil && len(history) > 0 {
@@ -545,7 +485,7 @@ func RejectVenueHandler(repo domain.Repository) http.HandlerFunc {
 }
 
 // VenueDetailHandler shows detailed venue information with validation data
-func VenueDetailHandler(db *database.DB) http.HandlerFunc {
+func VenueDetailHandler(db *database.DB, draftStore *drafts.DraftStore) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
 		id, err := strconv.ParseInt(vars["id"], 10, 64)
@@ -553,6 +493,9 @@ func VenueDetailHandler(db *database.DB) http.HandlerFunc {
 			http.Error(w, "Invalid venue ID", http.StatusBadRequest)
 			return
 		}
+
+		// Get admin ID from context
+		adminID, _ := auth.GetAdminIDFromContext(r.Context())
 
 		// Get venue with user data
 		venue, err := db.GetVenueWithUserByIDCtx(r.Context(), id)
@@ -589,20 +532,52 @@ func VenueDetailHandler(db *database.DB) http.HandlerFunc {
 		}
 
 		// Build Combined Information centrally
-		// Use centralized trust calculator
 		tc := trust.NewDefault()
-		// Get venue location for ambassador region matching (use venue's location field)
-		venueLocation := venue.Venue.Location
-		assessment := tc.Assess(venue.User, venueLocation)
+		assessment := tc.Assess(venue.User, venue.Venue.Location)
 
-		// Ensure Google data is attached for merger
-		if googleData != nil {
-			venue.Venue.GoogleData = googleData
+		var latestHistory *models.ValidationHistory
+		if len(history) > 0 {
+			idx := 0
+			for i := range history {
+				if history[i].ProcessedAt.After(history[idx].ProcessedAt) {
+					idx = i
+				}
+			}
+			latestHistory = &history[idx]
 		}
-		combined, cerr := models.GetCombinedVenueInfo(venue.Venue, venue.User, assessment.Trust)
-		if cerr != nil {
-			log.Printf("combined info warning: %v", cerr)
+
+		var draft *drafts.VenueDraft
+		if draftStore != nil {
+			if d, exists := draftStore.Get(id); exists {
+				draft = d
+			}
 		}
+
+		mergeResult, err := approval.Assemble(approval.MergeInput{
+			Venue:         venue.Venue,
+			User:          venue.User,
+			TrustScore:    assessment.Trust,
+			GoogleData:    googleData,
+			LatestHistory: latestHistory,
+			Draft:         draft,
+		})
+
+		var combined models.CombinedInfo
+		var suggestions *models.AISuggestions
+		if err != nil {
+			log.Printf("combined info warning: failed to assemble venue detail for %d: %v", id, err)
+			combined, _ = models.GetCombinedVenueInfo(venue.Venue, venue.User, assessment.Trust)
+			suggestions = &models.AISuggestions{}
+		} else {
+			combined = mergeResult.Combined
+			if mergeResult.AISuggestions != nil {
+				suggestions = mergeResult.AISuggestions
+			} else {
+				suggestions = &models.AISuggestions{}
+			}
+		}
+
+		draftData, hasDraft, draftEditorID, draftEditorName, draftUpdatedAt := extractDraftMeta(draft)
 
 		// Get venue path with count of venues using that path
 		var venuePath, venuePathRaw string
@@ -651,6 +626,13 @@ func VenueDetailHandler(db *database.DB) http.HandlerFunc {
 			PathValidationValid      bool
 			PathValidationIssue      string
 			PathValidationConfidence string
+			// Draft fields
+			HasDraft        bool
+			DraftData       map[string]interface{}
+			DraftEditorID   int
+			DraftEditorName string
+			DraftUpdatedAt  string
+			CurrentAdminID  int
 		}{
 			Venue:          *venue,
 			History:        history,
@@ -662,59 +644,54 @@ func VenueDetailHandler(db *database.DB) http.HandlerFunc {
 			TrustAuthority: assessment.Authority,
 			TrustReason:    assessment.Reason,
 			// NEW: Add classification data from combined info
-			VenueTypeLabel:    combined.VenueType,
-			VeganStatusLabel:  combined.VeganStatus,
-			CategoryLabel:     combined.Category,
-			TypeMismatchAlert: combined.TypeMismatch,
+			VenueTypeLabel:        combined.VenueType,
+			VeganStatusLabel:      combined.VeganStatus,
+			CategoryLabel:         combined.Category,
+			TypeMismatchAlert:     combined.TypeMismatch,
+			DescriptionSuggestion: suggestions.DescriptionSuggestion,
+			NameSuggestion:        suggestions.NameSuggestion,
+			ClosedDaysSuggestion:  suggestions.ClosedDays,
 			// Add venue path data
 			VenuePath:    venuePath,
 			VenuePathRaw: venuePathRaw,
+			// Draft data
+			HasDraft:        hasDraft,
+			DraftData:       draftData,
+			DraftEditorID:   draftEditorID,
+			DraftEditorName: draftEditorName,
+			DraftUpdatedAt:  draftUpdatedAt,
+			CurrentAdminID:  adminID,
 		}
 
 		// Prepare latest history and AI review fields
-		if len(history) > 0 {
-			latest := history[0]
-			// find most recent by ProcessedAt
-			for _, h := range history {
-				if h.ProcessedAt.After(latest.ProcessedAt) {
-					latest = h
-				}
-			}
-			data.LatestHist = &latest
-			data.AIReviewNote = latest.ValidationNotes
-			data.AIScore = latest.ValidationScore
-			// Display the latest AI score in Combined Information area, formatted with two decimals
-			data.AIScoreFormatted = fmt.Sprintf("%.2f", float64(latest.ValidationScore))
-			// Pretty print breakdown JSON
-			if latest.ScoreBreakdown != nil {
-				if b, err := json.MarshalIndent(latest.ScoreBreakdown, "", "  "); err == nil {
+		if latestHistory != nil {
+			data.LatestHist = latestHistory
+			data.AIReviewNote = latestHistory.ValidationNotes
+			data.AIScore = latestHistory.ValidationScore
+			data.AIScoreFormatted = fmt.Sprintf("%.2f", float64(latestHistory.ValidationScore))
+			if latestHistory.ScoreBreakdown != nil {
+				if b, err := json.MarshalIndent(latestHistory.ScoreBreakdown, "", "  "); err == nil {
 					data.PrettyBreakdown = string(b)
 				}
 			}
-			// Parse AI Output Data JSON if present
-			if latest.AIOutputData != nil && *latest.AIOutputData != "" {
+			if latestHistory.AIOutputData != nil && *latestHistory.AIOutputData != "" {
 				var raw map[string]interface{}
-				if err := json.Unmarshal([]byte(*latest.AIOutputData), &raw); err == nil {
-					// Extract scoring notes if available
+				if err := json.Unmarshal([]byte(*latestHistory.AIOutputData), &raw); err == nil {
 					if scoringMap, ok := raw["scoring"].(map[string]interface{}); ok {
 						if n, ok := scoringMap["notes"].(string); ok {
 							data.AIOutputNotes = n
 						}
 					}
-
-					// Extract quality suggestions
 					if qualityMap, ok := raw["quality"].(map[string]interface{}); ok {
-						if desc, ok := qualityMap["description"].(string); ok {
+						if desc, ok := qualityMap["description"].(string); ok && data.DescriptionSuggestion == "" {
 							data.DescriptionSuggestion = desc
 						}
-						if name, ok := qualityMap["name"].(string); ok {
+						if name, ok := qualityMap["name"].(string); ok && data.NameSuggestion == "" {
 							data.NameSuggestion = name
 						}
-						if closedDays, ok := qualityMap["closed_days"].(string); ok {
+						if closedDays, ok := qualityMap["closed_days"].(string); ok && data.ClosedDaysSuggestion == "" {
 							data.ClosedDaysSuggestion = closedDays
 						}
-
-						// Extract path validation from quality field
 						if pathValidation, ok := qualityMap["pathValidation"].(map[string]interface{}); ok {
 							if isValid, ok := pathValidation["isValid"].(bool); ok {
 								data.PathValidationValid = isValid
@@ -727,8 +704,6 @@ func VenueDetailHandler(db *database.DB) http.HandlerFunc {
 							}
 						}
 					}
-
-					// Pretty print for display
 					if rb, err := json.MarshalIndent(raw, "", "  "); err == nil {
 						data.AIOutputFullPretty = string(rb)
 					}
@@ -741,6 +716,24 @@ func VenueDetailHandler(db *database.DB) http.HandlerFunc {
 			return
 		}
 	}
+}
+
+func extractDraftMeta(draft *drafts.VenueDraft) (map[string]interface{}, bool, int, string, string) {
+	if draft == nil {
+		return nil, false, 0, "", ""
+	}
+
+	fields := make(map[string]interface{}, len(draft.Fields))
+	for key, value := range draft.Fields {
+		fields[key] = map[string]interface{}{
+			"value":           value.Value,
+			"original_source": value.OriginalSource,
+		}
+	}
+
+	editorName := fmt.Sprintf("Admin #%d", draft.EditorID)
+	updatedAt := draft.UpdatedAt.Format(time.RFC3339)
+	return fields, true, draft.EditorID, editorName, updatedAt
 }
 
 // BatchResult represents the result of a single venue operation in a batch
@@ -991,7 +984,7 @@ func processBatchApproval(ctx context.Context, repo domain.Repository, cfg *conf
 
 	if len(combined.Hours) > 0 {
 		log.Printf("[batch-approval] Venue %d: Formatting hours from Combined.Hours: %v", venueID, combined.Hours)
-		formattedHours, err := FormatOpenHoursFromCombined(combined.Hours)
+		formattedHours, err := approval.FormatOpenHoursFromCombined(combined.Hours)
 		if err != nil {
 			log.Printf("[batch-approval] ❌ Venue %d: Failed to format open hours: %v", venueID, err)
 		} else if formattedHours != "" {

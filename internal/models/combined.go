@@ -380,3 +380,189 @@ func pickCoordsPrefer(preferUser bool, uLat, uLng, gLat, gLng *float64) (lat *fl
 	}
 	return nil, nil, ""
 }
+
+// ApprovalFieldData represents the final data to be used for venue approval
+// This is the single source of truth for what gets written to the database
+type ApprovalFieldData struct {
+	Name        string
+	Address     string
+	Phone       string
+	Type        int
+	Vegan       int
+	Category    int
+	Lat         *float64
+	Lng         *float64
+	Path        string
+	Description string
+	OpenHours   []string
+	HoursNote   string
+	Sources     map[string]string // Track where each field came from
+}
+
+// GetApprovalFieldData combines venue data from user, Google, AI, and editor drafts
+// This is the central DRY function for getting approval data
+// Priority: Editor > AI > Combined (User + Google)
+func GetApprovalFieldData(
+	venue Venue,
+	user User,
+	trustScore float64,
+	aiSuggestions *AISuggestions,
+	editorDraft interface{}, // interface{} to avoid circular import, pass nil if no draft
+) (*ApprovalFieldData, error) {
+	// 1. Get base combined info (user + Google)
+	combined, err := GetCombinedVenueInfo(venue, user, trustScore)
+	if err != nil {
+		return nil, err
+	}
+
+	var draftMap map[string]interface{}
+	if editorDraft != nil {
+		if m, ok := editorDraft.(map[string]interface{}); ok {
+			draftMap = m
+		}
+	}
+
+	// 2. Apply editor drafts if they exist (highest priority)
+	if editorDraft != nil {
+		ApplyEditorDrafts(&combined, editorDraft)
+	}
+
+	// 3. Build approval data
+	data := &ApprovalFieldData{
+		Name:        combined.Name,
+		Address:     combined.Address,
+		Phone:       combined.Phone,
+		Type:        venue.EntryType,
+		Vegan:       venue.Vegan,
+		Category:    venue.Category,
+		Lat:         combined.Lat,
+		Lng:         combined.Lng,
+		Path:        combined.Path,
+		Description: combined.Description,
+		OpenHours:   combined.Hours,
+		HoursNote:   "",
+		Sources:     combined.Sources,
+	}
+
+	if data.Sources == nil {
+		data.Sources = make(map[string]string)
+	}
+
+	if draftMap != nil {
+		if fieldData, ok := draftMap["hours_note"].(map[string]interface{}); ok {
+			if noteVal, ok := fieldData["value"].(string); ok && strings.TrimSpace(noteVal) != "" {
+				data.HoursNote = strings.TrimSpace(noteVal)
+				data.Sources["hours_note"] = "editor"
+			}
+		}
+	}
+
+	// 4. Apply AI suggestions if available (only if editor hasn't overridden)
+	if aiSuggestions != nil {
+		// Use AI name suggestion if editor hasn't changed it
+		if aiSuggestions.NameSuggestion != "" && data.Sources["name"] != "editor" {
+			data.Name = aiSuggestions.NameSuggestion
+			data.Sources["name"] = "ai"
+		}
+		// Use AI description suggestion if editor hasn't changed it
+		if aiSuggestions.DescriptionSuggestion != "" && data.Sources["description"] != "editor" {
+			data.Description = aiSuggestions.DescriptionSuggestion
+			data.Sources["description"] = "ai"
+		}
+		// Use AI closed days as hours note if editor hasn't changed it
+		if aiSuggestions.ClosedDays != "" && data.Sources["hours_note"] != "editor" {
+			data.HoursNote = aiSuggestions.ClosedDays
+			data.Sources["hours_note"] = "ai"
+		}
+	}
+
+	return data, nil
+}
+
+// AISuggestions represents AI-generated suggestions for venue data
+type AISuggestions struct {
+	NameSuggestion        string
+	DescriptionSuggestion string
+	ClosedDays            string
+}
+
+// ApplyEditorDrafts overlays editor modifications onto combined info
+// Uses type assertion to handle the draft interface
+func ApplyEditorDrafts(combined *CombinedInfo, draft interface{}) {
+	// Type assert to map[string]interface{} which is what we'll get from the draft store
+	draftMap, ok := draft.(map[string]interface{})
+	if !ok {
+		return
+	}
+
+	// Helper to get field from draft
+	getField := func(fieldName string) (interface{}, string, bool) {
+		fieldData, exists := draftMap[fieldName]
+		if !exists {
+			return nil, "", false
+		}
+		fieldMap, ok := fieldData.(map[string]interface{})
+		if !ok {
+			return nil, "", false
+		}
+		value := fieldMap["value"]
+		origSource, _ := fieldMap["original_source"].(string)
+		return value, origSource, true
+	}
+
+	// Apply each field if it exists in the draft
+	if val, _, ok := getField("name"); ok {
+		if strVal, ok := val.(string); ok {
+			combined.Name = strVal
+			combined.Sources["name"] = "editor"
+		}
+	}
+	if val, _, ok := getField("address"); ok {
+		if strVal, ok := val.(string); ok {
+			combined.Address = strVal
+			combined.Sources["address"] = "editor"
+		}
+	}
+	if val, _, ok := getField("phone"); ok {
+		if strVal, ok := val.(string); ok {
+			combined.Phone = strVal
+			combined.Sources["phone"] = "editor"
+		}
+	}
+	if val, _, ok := getField("lat"); ok {
+		if floatVal, ok := val.(float64); ok {
+			combined.Lat = &floatVal
+			combined.Sources["latlng"] = "editor"
+		}
+	}
+	if val, _, ok := getField("lng"); ok {
+		if floatVal, ok := val.(float64); ok {
+			combined.Lng = &floatVal
+			// Note: latlng source already set by lat
+		}
+	}
+	if val, _, ok := getField("path"); ok {
+		if strVal, ok := val.(string); ok {
+			combined.Path = strVal
+			combined.Sources["path"] = "editor"
+		}
+	}
+	if val, _, ok := getField("description"); ok {
+		if strVal, ok := val.(string); ok {
+			combined.Description = strVal
+			combined.Sources["description"] = "editor"
+		}
+	}
+	if val, _, ok := getField("open_hours"); ok {
+		if arrVal, ok := val.([]interface{}); ok {
+			hours := make([]string, len(arrVal))
+			for i, h := range arrVal {
+				if strVal, ok := h.(string); ok {
+					hours[i] = strVal
+				}
+			}
+			combined.Hours = hours
+			combined.Sources["hours"] = "editor"
+		}
+	}
+}
