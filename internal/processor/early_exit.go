@@ -32,17 +32,10 @@ func (r EarlyExitReason) String() string {
 
 // Predefined early exit reasons for type safety
 var (
-	InsufficientPoints = func(required, actual int) EarlyExitReason {
+	InsufficientContributions = func(required, actual int) EarlyExitReason {
 		return EarlyExitReason{
-			Code:        "insufficient_points",
-			Description: fmt.Sprintf("User has insufficient ambassador points (required: %d, has: %d)", required, actual),
-		}
-	}
-
-	NoAmbassadorPoints = func(required int) EarlyExitReason {
-		return EarlyExitReason{
-			Code:        "no_ambassador_points",
-			Description: fmt.Sprintf("User is not an ambassador (required: %d points minimum)", required),
+			Code:        "insufficient_contributions",
+			Description: fmt.Sprintf("User has insufficient contributions (required: %d, has: %d)", required, actual),
 		}
 	}
 
@@ -100,20 +93,17 @@ var (
 	}
 )
 
-// checkMinimumPoints verifies user meets minimum ambassador points requirement
+// checkMinimumPoints verifies user meets minimum contributions requirement
 func checkMinimumPoints(user *models.User, minUserPoints int) (skip bool, reason EarlyExitReason) {
 	// If no minimum is set, skip this check
 	if minUserPoints <= 0 {
 		return false, EarlyExitReason{}
 	}
 
-	// User must have ambassador points set and meet minimum threshold
-	if user.AmbassadorPoints == nil {
-		return true, NoAmbassadorPoints(minUserPoints)
-	}
-
-	if *user.AmbassadorPoints < minUserPoints {
-		return true, InsufficientPoints(minUserPoints, *user.AmbassadorPoints)
+	// Check user contributions (members.contributions column)
+	// This is safer and available for all users, not just ambassadors
+	if user.Contributions < minUserPoints {
+		return true, InsufficientContributions(minUserPoints, user.Contributions)
 	}
 
 	return false, EarlyExitReason{}
