@@ -39,8 +39,8 @@ func (r *SQLRepository) GetSimilarVenuesCtx(ctx context.Context, venue models.Ve
 	return r.db.GetSimilarVenuesCtx(ctx, venue, limit)
 }
 
-func (r *SQLRepository) GetManualReviewVenuesCtx(ctx context.Context, search string, minScore int, sort string, limit int, offset int) ([]models.VenueWithUser, []int, int, error) {
-	return r.db.GetManualReviewVenuesCtx(ctx, search, minScore, sort, limit, offset)
+func (r *SQLRepository) GetManualReviewVenuesCtx(ctx context.Context, search string, minScore int, trustedOnly bool, sort string, limit int, offset int) ([]models.VenueWithUser, []int, int, error) {
+	return r.db.GetManualReviewVenuesCtx(ctx, search, minScore, trustedOnly, sort, limit, offset)
 }
 
 func (r *SQLRepository) GetVenueStatisticsCtx(ctx context.Context) (*models.VenueStats, error) {

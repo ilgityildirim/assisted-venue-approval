@@ -101,8 +101,8 @@ func (u *SQLUnitOfWork) GetVenueWithUserByIDCtx(ctx context.Context, venueID int
 func (u *SQLUnitOfWork) GetSimilarVenuesCtx(ctx context.Context, venue models.Venue, limit int) ([]models.Venue, error) {
 	return u.db.GetSimilarVenuesCtx(ctx, venue, limit)
 }
-func (u *SQLUnitOfWork) GetManualReviewVenuesCtx(ctx context.Context, search string, minScore int, sort string, limit int, offset int) ([]models.VenueWithUser, []int, int, error) {
-	return u.db.GetManualReviewVenuesCtx(ctx, search, minScore, sort, limit, offset)
+func (u *SQLUnitOfWork) GetManualReviewVenuesCtx(ctx context.Context, search string, minScore int, trustedOnly bool, sort string, limit int, offset int) ([]models.VenueWithUser, []int, int, error) {
+	return u.db.GetManualReviewVenuesCtx(ctx, search, minScore, trustedOnly, sort, limit, offset)
 }
 func (u *SQLUnitOfWork) GetVenueStatisticsCtx(ctx context.Context) (*models.VenueStats, error) {
 	return u.db.GetVenueStatisticsCtx(ctx)
