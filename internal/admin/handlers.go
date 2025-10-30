@@ -21,9 +21,11 @@ import (
 	"assisted-venue-approval/pkg/config"
 	"assisted-venue-approval/pkg/database"
 	"assisted-venue-approval/pkg/events"
+	"assisted-venue-approval/pkg/geography"
 	"assisted-venue-approval/pkg/metrics"
 
 	"github.com/gorilla/mux"
+	"googlemaps.github.io/maps"
 )
 
 // DashboardData represents data for the validation dashboard
@@ -610,6 +612,34 @@ func VenueDetailHandler(db *database.DB, draftStore *drafts.DraftStore) http.Han
 			}
 		}
 
+		// Generate suggested path from Google Places data if available
+		var suggestedPath string
+		var suggestedPathWithCount string
+		if googleData != nil && len(googleData.AddressComponents) > 0 {
+			// Convert to maps.AddressComponent format for geography package
+			mapsComponents := make([]maps.AddressComponent, 0, len(googleData.AddressComponents))
+			for _, comp := range googleData.AddressComponents {
+				mapsComponents = append(mapsComponents, maps.AddressComponent{
+					LongName:  comp.LongName,
+					ShortName: comp.ShortName,
+					Types:     comp.Types,
+				})
+			}
+			suggestedPath = geography.GenerateVenuePath(mapsComponents)
+
+			// Only show if different from current path and not empty
+			if suggestedPath != "" && suggestedPath != venuePathRaw {
+				// Query count of active venues in suggested path
+				count, err := db.CountVenuesByPathCtx(r.Context(), suggestedPath, id)
+				if err != nil {
+					log.Printf("Error counting venues for suggested path: %v", err)
+					suggestedPathWithCount = fmt.Sprintf("%s(?)", suggestedPath)
+				} else {
+					suggestedPathWithCount = fmt.Sprintf("%s(%d)", suggestedPath, count)
+				}
+			}
+		}
+
 		data := struct {
 			Venue              models.VenueWithUser
 			History            []models.ValidationHistory
@@ -641,8 +671,9 @@ func VenueDetailHandler(db *database.DB, draftStore *drafts.DraftStore) http.Han
 			ClosedDaysSuggestion  string
 			ApprovalHoursNote     string
 			// Venue path fields
-			VenuePath    string
-			VenuePathRaw string
+			VenuePath              string
+			VenuePathRaw           string
+			SuggestedPathWithCount string
 			// Path validation fields
 			PathValidationValid      bool
 			PathValidationIssue      string
@@ -676,8 +707,9 @@ func VenueDetailHandler(db *database.DB, draftStore *drafts.DraftStore) http.Han
 			ClosedDaysSuggestion:  suggestions.ClosedDays,
 			ApprovalHoursNote:     approvalHoursNote,
 			// Add venue path data
-			VenuePath:    venuePath,
-			VenuePathRaw: venuePathRaw,
+			VenuePath:              venuePath,
+			VenuePathRaw:           venuePathRaw,
+			SuggestedPathWithCount: suggestedPathWithCount,
 			// Draft data
 			HasDraft:        hasDraft,
 			DraftData:       draftData,

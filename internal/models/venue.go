@@ -118,6 +118,7 @@ type ValidationDetails struct {
 	Conflicts          []DataConflict `json:"conflicts,omitempty"`
 	AutoDecisionReason string         `json:"auto_decision_reason"`
 	ProcessingTimeMs   int64          `json:"processing_time_ms"`
+	SuggestedPath      *string        `json:"suggested_path,omitempty"` // Generated path from Google Places address
 }
 
 type ScoreBreakdown struct {

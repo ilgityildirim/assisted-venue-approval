@@ -175,3 +175,84 @@ func TestFillMissingVenueData_PreservesOtherFields(t *testing.T) {
 		t.Errorf("expected Lat=35.0, got %v", venue.Lat)
 	}
 }
+
+func TestSuggestVenuePath(t *testing.T) {
+	tests := []struct {
+		name          string
+		venuePath     *string
+		googleData    models.GooglePlaceData
+		wantSuggested *string
+	}{
+		{
+			name:      "US address with full components",
+			venuePath: nil,
+			googleData: models.GooglePlaceData{
+				AddressComponents: []models.AddressComponent{
+					{LongName: "Chicago", ShortName: "Chicago", Types: []string{"locality"}},
+					{LongName: "Cook County", ShortName: "Cook County", Types: []string{"administrative_area_level_2"}},
+					{LongName: "Illinois", ShortName: "IL", Types: []string{"administrative_area_level_1"}},
+					{LongName: "United States", ShortName: "US", Types: []string{"country"}},
+				},
+			},
+			wantSuggested: stringPtr("north_america|united_states|illinois|cook_county|chicago"),
+		},
+		{
+			name:      "Different path provided - should suggest",
+			venuePath: stringPtr("asia|china|beijing"),
+			googleData: models.GooglePlaceData{
+				AddressComponents: []models.AddressComponent{
+					{LongName: "Seoul", ShortName: "Seoul", Types: []string{"locality"}},
+					{LongName: "South Korea", ShortName: "KR", Types: []string{"country"}},
+				},
+			},
+			wantSuggested: stringPtr("asia|south_korea|seoul"),
+		},
+		{
+			name:      "Same path - should not suggest",
+			venuePath: stringPtr("europe|germany|berlin|berlin"),
+			googleData: models.GooglePlaceData{
+				AddressComponents: []models.AddressComponent{
+					{LongName: "Berlin", ShortName: "Berlin", Types: []string{"locality"}},
+					{LongName: "Berlin", ShortName: "Berlin", Types: []string{"administrative_area_level_1"}},
+					{LongName: "Germany", ShortName: "DE", Types: []string{"country"}},
+				},
+			},
+			wantSuggested: nil,
+		},
+		{
+			name:      "Empty address components",
+			venuePath: stringPtr("some|path"),
+			googleData: models.GooglePlaceData{
+				AddressComponents: []models.AddressComponent{},
+			},
+			wantSuggested: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			venue := models.Venue{
+				Path:              tt.venuePath,
+				ValidationDetails: &models.ValidationDetails{},
+			}
+
+			suggestVenuePath(&venue, tt.googleData)
+
+			if tt.wantSuggested == nil {
+				if venue.ValidationDetails.SuggestedPath != nil {
+					t.Errorf("expected no suggestion, got %q", *venue.ValidationDetails.SuggestedPath)
+				}
+			} else {
+				if venue.ValidationDetails.SuggestedPath == nil {
+					t.Errorf("expected suggestion %q, got nil", *tt.wantSuggested)
+				} else if *venue.ValidationDetails.SuggestedPath != *tt.wantSuggested {
+					t.Errorf("expected suggestion %q, got %q", *tt.wantSuggested, *venue.ValidationDetails.SuggestedPath)
+				}
+			}
+		})
+	}
+}
+
+func stringPtr(s string) *string {
+	return &s
+}

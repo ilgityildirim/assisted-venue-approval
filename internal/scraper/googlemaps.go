@@ -13,6 +13,7 @@ import (
 	"assisted-venue-approval/internal/constants"
 	"assisted-venue-approval/internal/models"
 	"assisted-venue-approval/pkg/circuit"
+	"assisted-venue-approval/pkg/geography"
 	"assisted-venue-approval/pkg/utils"
 
 	"googlemaps.github.io/maps"
@@ -827,6 +828,45 @@ func fillMissingVenueData(venue *models.Venue, googleData models.GooglePlaceData
 	if venue.Zipcode == nil {
 		if zipcode := extractPostalCodeFromComponents(googleData.AddressComponents); zipcode != "" {
 			venue.Zipcode = &zipcode
+		}
+	}
+
+	// Suggest path if venue path is empty or might be incorrect
+	suggestVenuePath(venue, googleData)
+}
+
+// suggestVenuePath generates a path suggestion from Google address components
+// and stores it in the venue if the current path is empty or different.
+// The suggestion will only be used if there are no existing venues with the current path.
+func suggestVenuePath(venue *models.Venue, googleData models.GooglePlaceData) {
+	// Convert our model's AddressComponents to maps.AddressComponent format
+	var mapsComponents []maps.AddressComponent
+	for _, comp := range googleData.AddressComponents {
+		mapsComponents = append(mapsComponents, maps.AddressComponent{
+			LongName:  comp.LongName,
+			ShortName: comp.ShortName,
+			Types:     comp.Types,
+		})
+	}
+
+	// Generate suggested path from Google data
+	suggestedPath := geography.GenerateVenuePath(mapsComponents)
+
+	// Only suggest if we generated something and it's different from current path
+	if suggestedPath != "" {
+		currentPath := ""
+		if venue.Path != nil {
+			currentPath = *venue.Path
+		}
+
+		// Store suggestion only if it differs from current path
+		// The actual decision to use it will be made elsewhere based on
+		// whether venues exist with the current path
+		if suggestedPath != currentPath {
+			// Store in validation details for visibility in admin UI
+			if venue.ValidationDetails != nil {
+				venue.ValidationDetails.SuggestedPath = &suggestedPath
+			}
 		}
 	}
 }
