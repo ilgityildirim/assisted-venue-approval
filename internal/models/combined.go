@@ -454,8 +454,9 @@ func GetApprovalFieldData(
 
 	if draftMap != nil {
 		if fieldData, ok := draftMap["hours_note"].(map[string]interface{}); ok {
-			if noteVal, ok := fieldData["value"].(string); ok && strings.TrimSpace(noteVal) != "" {
-				data.HoursNote = strings.TrimSpace(noteVal)
+			if noteVal, ok := fieldData["value"].(string); ok {
+				trimmed := strings.TrimSpace(noteVal)
+				data.HoursNote = trimmed
 				data.Sources["hours_note"] = "editor"
 			}
 		}
