@@ -228,6 +228,380 @@
             </aside>
 
             <main class="main-column">
+                {{if eq $state 1}}
+                <!-- APPROVED VENUE LAYOUT -->
+                <details class="details-card" open id="venue-data-card">
+                    <summary>
+                        Venue Data
+                    </summary>
+                    <div class="details-body">
+                        <div class="field-grid">
+                            <!-- Name -->
+                            <div class="field" style="grid-column: 1 / -1;">
+                                <div class="field-label">Name</div>
+                                <div class="field-value"><strong>{{.Venue.Venue.Name}}</strong></div>
+                            </div>
+
+                            <!-- Address -->
+                            <div class="field" style="grid-column: 1 / -1;">
+                                <div class="field-label">Address</div>
+                                <div class="field-value">{{if .Venue.Venue.Location}}{{.Venue.Venue.Location}}{{else}}N/A{{end}}</div>
+                            </div>
+
+                            <!-- Phone -->
+                            <div class="field">
+                                <div class="field-label">Phone</div>
+                                <div class="field-value">{{if .Venue.Venue.Phone}}{{.Venue.Venue.Phone}}{{else}}N/A{{end}}</div>
+                            </div>
+
+                            <!-- Website -->
+                            <div class="field">
+                                <div class="field-label">Website</div>
+                                <div class="field-value">{{if .Venue.Venue.URL}}<a href="{{.Venue.Venue.URL}}" target="_blank">{{.Venue.Venue.URL}}</a>{{else}}N/A{{end}}</div>
+                            </div>
+
+                            <!-- Type -->
+                            <div class="field">
+                                <div class="field-label">Type</div>
+                                <div class="field-value">{{.VenueTypeLabel}}</div>
+                            </div>
+
+                            <!-- Vegan Status -->
+                            <div class="field">
+                                <div class="field-label">Vegan Status</div>
+                                <div class="field-value">{{.VeganStatusLabel}}</div>
+                            </div>
+
+                            <!-- Category -->
+                            <div class="field">
+                                <div class="field-label">Category</div>
+                                <div class="field-value">{{if .CategoryLabel}}{{.CategoryLabel}}{{else}}N/A{{end}}</div>
+                            </div>
+
+                            <!-- Location Path -->
+                            <div class="field">
+                                <div class="field-label">Location Path</div>
+                                <div class="field-value">{{if .VenuePath}}{{.VenuePath}}{{else}}N/A{{end}}</div>
+                            </div>
+
+                            <!-- Coordinates -->
+                            <div class="field" style="grid-column: 1 / -1;">
+                                <div class="field-label">Coordinates</div>
+                                <div class="field-value">{{if and .Venue.Venue.Lat .Venue.Venue.Lng}}{{fmtFloat .Venue.Venue.Lat}}, {{fmtFloat .Venue.Venue.Lng}}{{else}}N/A{{end}}</div>
+                            </div>
+
+                            <!-- Operating Hours -->
+                            {{if .Combined.Hours}}
+                            <div class="field" style="grid-column: 1 / -1;">
+                                <div class="field-label">Operating Hours</div>
+                                <div class="field-value">
+                                    {{range .Combined.Hours}}<div>{{.}}</div>{{end}}
+                                </div>
+                            </div>
+                            {{end}}
+
+                            <!-- Hours Note -->
+                            {{if .Venue.Venue.OpenHoursNote}}
+                            <div class="field" style="grid-column: 1 / -1;">
+                                <div class="field-label">Hours Note (Closed Days)</div>
+                                <div class="field-value">{{.Venue.Venue.OpenHoursNote}}</div>
+                            </div>
+                            {{end}}
+
+                            <!-- Description -->
+                            {{if .Venue.Venue.AdditionalInfo}}
+                            <div class="field" style="grid-column: 1 / -1;">
+                                <div class="field-label">Description</div>
+                                <div class="field-value">
+                                    <div class="callout" style="white-space: pre-wrap; max-height: 300px; overflow-y: auto;">{{.Venue.Venue.AdditionalInfo}}</div>
+                                </div>
+                            </div>
+                            {{end}}
+                        </div>
+                    </div>
+                </details>
+
+                <!-- Google Places Data Section -->
+                <details class="details-card" id="google-places-card">
+                    <summary>
+                        Google Places Data
+                    </summary>
+                    <div class="details-body">
+                        {{if .GoogleData}}
+                        <div class="field-grid">
+                            <!-- Place ID -->
+                            <div class="field">
+                                <div class="field-label">Place ID</div>
+                                <div class="field-value">{{.GoogleData.PlaceID}}</div>
+                            </div>
+
+                            <!-- Name -->
+                            <div class="field">
+                                <div class="field-label">Name</div>
+                                <div class="field-value"><strong>{{.GoogleData.Name}}</strong></div>
+                            </div>
+
+                            <!-- Formatted Address -->
+                            <div class="field" style="grid-column: 1 / -1;">
+                                <div class="field-label">Formatted Address</div>
+                                <div class="field-value">{{.GoogleData.FormattedAddress}}</div>
+                            </div>
+
+                            <!-- Phone -->
+                            <div class="field">
+                                <div class="field-label">Phone</div>
+                                <div class="field-value">{{if .GoogleData.FormattedPhone}}{{.GoogleData.FormattedPhone}}{{else}}N/A{{end}}</div>
+                            </div>
+
+                            <!-- Website -->
+                            <div class="field">
+                                <div class="field-label">Website</div>
+                                <div class="field-value">{{if .GoogleData.Website}}<a href="{{.GoogleData.Website}}" target="_blank" rel="noopener">{{.GoogleData.Website}}</a>{{else}}N/A{{end}}</div>
+                            </div>
+
+                            <!-- Business Status -->
+                            <div class="field">
+                                <div class="field-label">Business Status</div>
+                                <div class="field-value">{{if .GoogleData.BusinessStatus}}{{.GoogleData.BusinessStatus}}{{else}}N/A{{end}}</div>
+                            </div>
+
+                            <!-- Rating -->
+                            <div class="field">
+                                <div class="field-label">Rating</div>
+                                <div class="field-value">{{if .GoogleData.Rating}}{{printf "%.1f" .GoogleData.Rating}}{{else}}N/A{{end}}</div>
+                            </div>
+
+                            <!-- User Ratings Total -->
+                            <div class="field">
+                                <div class="field-label">User Ratings Total</div>
+                                <div class="field-value">{{if .GoogleData.UserRatingsTotal}}{{.GoogleData.UserRatingsTotal}}{{else}}0{{end}}</div>
+                            </div>
+
+                            <!-- Opening Hours -->
+                            {{if .GoogleData.OpeningHours}}
+                            <div class="field" style="grid-column: 1 / -1;">
+                                <div class="field-label">Opening Hours</div>
+                                <div class="field-value">
+                                    {{if .GoogleData.OpeningHours.WeekdayText}}
+                                        {{range .GoogleData.OpeningHours.WeekdayText}}
+                                        <div>{{.}}</div>
+                                        {{end}}
+                                    {{else if .GoogleData.OpeningHours.Periods}}
+                                        <div>Structured hours available ({{len .GoogleData.OpeningHours.Periods}} periods)</div>
+                                    {{else}}
+                                        N/A
+                                    {{end}}
+                                </div>
+                            </div>
+                            {{end}}
+
+                            <!-- Geometry/Location -->
+                            <div class="field" style="grid-column: 1 / -1;">
+                                <div class="field-label">Location (Lat, Lng)</div>
+                                <div class="field-value">{{if .GoogleData.Geometry.Location}}{{.GoogleData.Geometry.Location.Lat}}, {{.GoogleData.Geometry.Location.Lng}}{{else}}N/A{{end}}</div>
+                            </div>
+
+                            <!-- Types -->
+                            {{if .GoogleData.Types}}
+                            <div class="field" style="grid-column: 1 / -1;">
+                                <div class="field-label">Types</div>
+                                <div class="field-value">
+                                    {{range .GoogleData.Types}}<code style="margin-right: 6px;">{{.}}</code>{{end}}
+                                </div>
+                            </div>
+                            {{end}}
+
+                            <!-- Address Components -->
+                            {{if .GoogleData.AddressComponents}}
+                            <div class="field" style="grid-column: 1 / -1;">
+                                <div class="field-label">Address Components</div>
+                                <div class="field-value">
+                                    <details style="margin-top: 8px;">
+                                        <summary style="cursor: pointer; color: var(--accent);">View Details</summary>
+                                        <div style="margin-top: 8px;">
+                                            {{range .GoogleData.AddressComponents}}
+                                            <div style="margin-bottom: 8px; padding: 6px; background: var(--bg); border-radius: 6px;">
+                                                <strong>{{.LongName}}</strong> ({{.ShortName}})
+                                                <div style="margin-top: 4px;">
+                                                    {{if .Types}}
+                                                        {{range .Types}}<code style="font-size: 11px; margin-right: 4px;">{{.}}</code>{{end}}
+                                                    {{else}}
+                                                        <span style="color: var(--muted);">no types</span>
+                                                    {{end}}
+                                                </div>
+                                            </div>
+                                            {{end}}
+                                        </div>
+                                    </details>
+                                </div>
+                            </div>
+                            {{end}}
+
+                            <!-- Fetched At -->
+                            <div class="field" style="grid-column: 1 / -1;">
+                                <div class="field-label">Fetched At</div>
+                                <div class="field-value">{{.GoogleData.FetchedAt.Format "2006-01-02 15:04"}}</div>
+                            </div>
+                        </div>
+                        {{else}}
+                        <p style="color: var(--muted);">No Google Places data available</p>
+                        {{end}}
+                    </div>
+                </details>
+
+                <!-- AI Review Section -->
+                {{if $hasAIReview}}
+                <details class="details-card">
+                    <summary>
+                        AI Review
+                    </summary>
+                    <div class="details-body">
+                        <div class="field-grid">
+                            <div class="field" style="grid-column: 1 / -1;">
+                                <div class="field-label">Decision Engine</div>
+                                <div class="field-value"><div class="callout info" style="white-space: pre-wrap;">{{if .LatestHist}}{{.AIReviewNote}}{{else}}No AI review available yet.{{end}}</div></div>
+                            </div>
+                            <div class="field">
+                                <div class="field-label">AI Score</div>
+                                <div class="field-value"><strong>{{if .LatestHist}}{{.AIScoreFormatted}}{{else}}—{{end}}</strong></div>
+                            </div>
+                            <div class="field" style="grid-column: 1 / -1;">
+                                <div class="field-label">AI Review Note</div>
+                                <div class="field-value"><div class="callout" style="white-space: pre-wrap;">{{if .LatestHist}}{{if .AIOutputNotes}}{{.AIOutputNotes}}{{else}}—{{end}}{{else}}—{{end}}</div></div>
+                            </div>
+                            {{if .PathValidationIssue}}
+                            <div class="field" style="grid-column: 1 / -1;">
+                                <div class="callout warning">
+                                    <strong>{{.PathValidationConfidence}} confidence:</strong> {{.PathValidationIssue}}
+                                </div>
+                            </div>
+                            {{end}}
+                            <div class="field" style="grid-column: 1 / -1;">
+                                <div class="field-label">AI Output (JSON)</div>
+                                <div class="field-value"><pre>{{if .LatestHist}}{{if .AIOutputRestPretty}}{{.AIOutputRestPretty}}{{else if .AIOutputFullPretty}}{{.AIOutputFullPretty}}{{else}}{}{{end}}{{else}}{}{{end}}</pre></div>
+                            </div>
+                            <div class="field" style="grid-column: 1 / -1;">
+                                <div class="field-label">AI Score Breakdown (JSON)</div>
+                                <div class="field-value"><pre>{{if .LatestHist}}{{if .PrettyBreakdown}}{{.PrettyBreakdown}}{{else}}{}{{end}}{{else}}{}{{end}}</pre></div>
+                            </div>
+                        </div>
+                    </div>
+                </details>
+                {{end}}
+
+                <!-- Editor Feedback Section -->
+                <details class="details-card" id="feedback-section">
+                    <summary>
+                        Editor Feedback
+                    </summary>
+                    <div class="details-body">
+                        <div class="feedback-summary">
+                            <span id="fb-up-count">0</span> 👍 · <span id="fb-down-count">0</span> 👎
+                        </div>
+                        <div class="feedback-actions">
+                            <button class="btn btn-subtle" id="btn-thumbs-up" onclick="submitFeedback('thumbs_up')">👍 Thumbs Up</button>
+                            <button class="btn btn-danger" id="btn-thumbs-down" onclick="submitFeedback('thumbs_down')">👎 Thumbs Down</button>
+                            <input type="hidden" id="prompt_version" value="{{if .LatestHist}}{{if .LatestHist.PromptVersion}}{{.LatestHist.PromptVersion}}{{end}}{{end}}" />
+                        </div>
+                        <label for="fb-comment" style="display:block; font-size:13px; font-weight:600; color: var(--muted); margin-bottom:6px;">Optional comment</label>
+                        <textarea id="fb-comment" rows="4" placeholder="Share what worked well or what needs attention"></textarea>
+                        <div id="fb-status" style="margin-top:10px; display:none;"></div>
+                        <ul id="fb-list" class="feedback-list"></ul>
+                    </div>
+                </details>
+
+                <!-- Validation History Section -->
+                {{if .History}}
+                <details class="details-card">
+                    <summary>
+                        Validation History
+                    </summary>
+                    <div class="details-body">
+                        <table class="history-table">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Action</th>
+                                    <th>Score</th>
+                                    <th>Notes</th>
+                                    <th>Reviewer</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {{range .History}}
+                                <tr>
+                                    <td>{{.ProcessedAt.Format "2006-01-02 15:04"}}</td>
+                                    <td>
+                                        {{if eq .ValidationStatus "approved"}}
+                                            <span class="status-pill approved">Approved</span>
+                                        {{else if eq .ValidationStatus "rejected"}}
+                                            <span class="status-pill rejected">Rejected</span>
+                                        {{else}}
+                                            <span class="status-pill pending">Review</span>
+                                        {{end}}
+                                    </td>
+                                    <td>{{.ValidationScore}}</td>
+                                    <td>{{.ValidationNotes}}</td>
+                                    <td>System</td>
+                                </tr>
+                                {{end}}
+                            </tbody>
+                        </table>
+                    </div>
+                </details>
+                {{end}}
+
+                <!-- Audit Logs Section -->
+                {{if .AuditLogs}}
+                <details class="details-card">
+                    <summary>
+                        Audit Logs
+                    </summary>
+                    <div class="details-body">
+                        <table class="history-table">
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Action</th>
+                                    <th>Reason</th>
+                                    <th>Admin ID</th>
+                                    <th>Data Replacements</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {{range .AuditLogs}}
+                                <tr>
+                                    <td>{{.CreatedAt.Format "2006-01-02 15:04"}}</td>
+                                    <td>
+                                        {{if eq .Status "approved"}}
+                                            <span class="status-pill approved">Approved</span>
+                                        {{else if eq .Status "rejected"}}
+                                            <span class="status-pill rejected">Rejected</span>
+                                        {{else}}
+                                            <span class="status-pill pending">{{.Status}}</span>
+                                        {{end}}
+                                    </td>
+                                    <td>{{if .Reason}}{{.Reason}}{{else}}—{{end}}</td>
+                                    <td>{{if .AdminID}}{{.AdminID}}{{else}}System{{end}}</td>
+                                    <td>
+                                        {{if .DataReplacements}}
+                                            <details>
+                                                <summary style="cursor: pointer; color: var(--accent);">View Changes</summary>
+                                                <pre>{{.DataReplacements}}</pre>
+                                            </details>
+                                        {{else}}
+                                            —
+                                        {{end}}
+                                    </td>
+                                </tr>
+                                {{end}}
+                            </tbody>
+                        </table>
+                    </div>
+                </details>
+                {{end}}
+                {{else}}
+                <!-- PENDING/REJECTED VENUE LAYOUT -->
                 {{if .GoogleData}}
                 <details class="details-card" open id="combined-info-card">
                     <summary>
@@ -837,6 +1211,7 @@
                         </table>
                     </div>
                 </details>
+                {{end}}
                 {{end}}
             </main>
         </div>
