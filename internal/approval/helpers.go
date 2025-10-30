@@ -24,53 +24,40 @@ func FormatOpenHoursFromCombined(hours []string) (string, error) {
 		Note:      "",
 	}
 
-	dayMap := map[string]string{
-		"Monday":    "Mon",
-		"Tuesday":   "Tue",
-		"Wednesday": "Wed",
-		"Thursday":  "Thu",
-		"Friday":    "Fri",
-		"Saturday":  "Sat",
-		"Sunday":    "Sun",
+	dayAliases := map[string]string{
+		"mon":       "Mon",
+		"monday":    "Mon",
+		"tue":       "Tue",
+		"tues":      "Tue",
+		"tuesday":   "Tue",
+		"wed":       "Wed",
+		"weds":      "Wed",
+		"wednesday": "Wed",
+		"thu":       "Thu",
+		"thur":      "Thu",
+		"thurs":     "Thu",
+		"thursday":  "Thu",
+		"fri":       "Fri",
+		"friday":    "Fri",
+		"sat":       "Sat",
+		"saturday":  "Sat",
+		"sun":       "Sun",
+		"sunday":    "Sun",
 	}
-
-	hoursRegex := regexp.MustCompile(`^(\w+):\s*(.+)$`)
-	timeRegex := regexp.MustCompile(`(\d{1,2}):(\d{2})[\s\x{00A0}\x{202F}\x{2009}]*(AM|PM|am|pm)`)
 
 	for _, line := range hours {
 		line = strings.TrimSpace(line)
-		matches := hoursRegex.FindStringSubmatch(line)
-		if len(matches) != 3 {
+		if line == "" {
 			continue
 		}
 
-		dayName := matches[1]
-		hoursText := matches[2]
-
-		shortDay, ok := dayMap[dayName]
-		if !ok {
+		if normalized := parseNormalizedHourLine(line, dayAliases); normalized != "" {
+			result.OpenHours = append(result.OpenHours, normalized)
 			continue
 		}
 
-		lowerHours := strings.ToLower(hoursText)
-		// ok to keep as is.
-		if strings.Contains(lowerHours, "closed") {
-			continue
-		}
-
-		if strings.Contains(lowerHours, "24 hours") || strings.Contains(lowerHours, "open 24") {
-			result.OpenHours = append(result.OpenHours, fmt.Sprintf("%s-00:00-24:00", shortDay))
-			continue
-		}
-
-		times := timeRegex.FindAllStringSubmatch(hoursText, -1)
-		if len(times) == 2 {
-			openTime := convertTo24Hour(times[0][1], times[0][2], times[0][3])
-			closeTime := convertTo24Hour(times[1][1], times[1][2], times[1][3])
-
-			if openTime != "" && closeTime != "" {
-				result.OpenHours = append(result.OpenHours, fmt.Sprintf("%s-%s-%s", shortDay, openTime, closeTime))
-			}
+		if normalized := parseLegacyHourLine(line, dayAliases); normalized != "" {
+			result.OpenHours = append(result.OpenHours, normalized)
 		}
 	}
 
@@ -101,4 +88,103 @@ func convertTo24Hour(hourStr, minuteStr, period string) string {
 	}
 
 	return fmt.Sprintf("%02d:%02d", hour, minute)
+}
+
+func parseNormalizedHourLine(line string, dayAliases map[string]string) string {
+	normalizedPattern := regexp.MustCompile(`(?i)^([A-Za-z]{3})\s*-\s*(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})$`)
+	matches := normalizedPattern.FindStringSubmatch(line)
+	if len(matches) != 6 {
+		return ""
+	}
+
+	shortDay := normalizeDay(matches[1], dayAliases)
+	if shortDay == "" {
+		return ""
+	}
+
+	openTime := normalize24Hour(matches[2], matches[3])
+	closeTime := normalize24Hour(matches[4], matches[5])
+	if openTime == "" || closeTime == "" {
+		return ""
+	}
+
+	return fmt.Sprintf("%s-%s-%s", shortDay, openTime, closeTime)
+}
+
+func parseLegacyHourLine(line string, dayAliases map[string]string) string {
+	hoursRegex := regexp.MustCompile(`^([\p{L}]+):\s*(.+)$`)
+	matches := hoursRegex.FindStringSubmatch(line)
+	if len(matches) != 3 {
+		return ""
+	}
+
+	shortDay := normalizeDay(matches[1], dayAliases)
+	if shortDay == "" {
+		return ""
+	}
+
+	hoursText := strings.TrimSpace(matches[2])
+	lowered := strings.ToLower(hoursText)
+	if strings.Contains(lowered, "closed") {
+		return ""
+	}
+	if strings.Contains(lowered, "24 hours") || strings.Contains(lowered, "open 24") {
+		return fmt.Sprintf("%s-00:00-24:00", shortDay)
+	}
+
+	openTime, closeTime := parseTimeRange(hoursText)
+	if openTime == "" || closeTime == "" {
+		return ""
+	}
+
+	return fmt.Sprintf("%s-%s-%s", shortDay, openTime, closeTime)
+}
+
+func normalizeDay(day string, dayAliases map[string]string) string {
+	if day == "" {
+		return ""
+	}
+	key := strings.ToLower(strings.TrimSpace(day))
+	if short, ok := dayAliases[key]; ok {
+		return short
+	}
+	if len(day) >= 3 {
+		if short, ok := dayAliases[key[:3]]; ok {
+			return short
+		}
+	}
+	return ""
+}
+
+func normalize24Hour(hourStr, minuteStr string) string {
+	hour := 0
+	minute := 0
+	if _, err := fmt.Sscanf(hourStr, "%d", &hour); err != nil {
+		return ""
+	}
+	if _, err := fmt.Sscanf(minuteStr, "%d", &minute); err != nil {
+		return ""
+	}
+	if hour < 0 || hour > 23 || minute < 0 || minute > 59 {
+		return ""
+	}
+	return fmt.Sprintf("%02d:%02d", hour, minute)
+}
+
+func parseTimeRange(text string) (string, string) {
+	ampmRegex := regexp.MustCompile(`(?i)(\d{1,2}):(\d{2})\s*(am|pm)`)
+	if matches := ampmRegex.FindAllStringSubmatch(text, -1); len(matches) >= 2 {
+		open := convertTo24Hour(matches[0][1], matches[0][2], matches[0][3])
+		close := convertTo24Hour(matches[1][1], matches[1][2], matches[1][3])
+		return open, close
+	}
+
+	twentyFourRegex := regexp.MustCompile(`(\d{1,2}):(\d{2})`)
+	if matches := twentyFourRegex.FindAllStringSubmatch(text, -1); len(matches) >= 2 {
+		open := normalize24Hour(matches[0][1], matches[0][2])
+		close := normalize24Hour(matches[1][1], matches[1][2])
+		return open, close
+	}
+
+	return "", ""
 }

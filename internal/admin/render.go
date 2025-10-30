@@ -123,6 +123,7 @@ var funcMap = template.FuncMap{
 	"basePath": func() string {
 		return basePath
 	},
+	"formatHourEntry": formatHourEntry,
 	"parseOpenHoursJSON": func(input *string) map[string]interface{} {
 		if input == nil || *input == "" {
 			return nil

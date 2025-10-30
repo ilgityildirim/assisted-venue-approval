@@ -398,8 +398,12 @@ func (db *DB) ApproveVenueWithDataReplacementCtx(ctx context.Context, approvalDa
 	}
 
 	if approvalData.OpenHoursNote != nil {
-		setClauses = append(setClauses, "openhours_note = ?")
-		args = append(args, *approvalData.OpenHoursNote)
+		if strings.TrimSpace(*approvalData.OpenHoursNote) == "" {
+			setClauses = append(setClauses, "openhours_note = NULL")
+		} else {
+			setClauses = append(setClauses, "openhours_note = ?")
+			args = append(args, *approvalData.OpenHoursNote)
+		}
 	}
 
 	if approvalData.EntryType != nil {

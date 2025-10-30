@@ -148,6 +148,19 @@ func GetCombinedVenueInfo(v Venue, u User, trust float64) (CombinedInfo, error) 
 			// Legacy format or plain text - treat as single entry
 			userHours = []string{hoursStr}
 		}
+
+		// Handle cases where JSON failed to parse initially but the stored value is JSON
+		if len(userHours) == 1 {
+			if trimmed := strings.TrimSpace(userHours[0]); strings.HasPrefix(trimmed, "{") {
+				var retry struct {
+					OpenHours []string `json:"openhours"`
+					Note      string   `json:"note"`
+				}
+				if err := json.Unmarshal([]byte(trimmed), &retry); err == nil && len(retry.OpenHours) > 0 {
+					userHours = retry.OpenHours
+				}
+			}
+		}
 	}
 	var googleHours []string
 	if gd != nil && gd.OpeningHours != nil && len(gd.OpeningHours.WeekdayText) > 0 {
@@ -202,9 +215,9 @@ func GetCombinedVenueInfo(v Venue, u User, trust float64) (CombinedInfo, error) 
 	}
 
 	// New venue classification fields
-	ci.VenueType = getVenueType(v.EntryType)
-	ci.VeganStatus = getVeganStatus(v.EntryType, v.VegOnly, v.Vegan)
-	ci.Category = getCategory(v.EntryType, v.Category)
+	ci.VenueType = VenueTypeLabel(v.EntryType)
+	ci.VeganStatus = VeganStatusLabel(v.EntryType, v.VegOnly, v.Vegan)
+	ci.Category = CategoryLabel(v.EntryType, v.Category)
 
 	// Check for type mismatch between user classification and Google types
 	ci.TypeMismatch = checkTypeMismatch(ci.VenueType, ci.Category, ci.GoogleTypes)
@@ -218,42 +231,6 @@ func GetCombinedVenueInfo(v Venue, u User, trust float64) (CombinedInfo, error) 
 }
 
 // Helper functions for venue classification
-func getVenueType(entrytype int) string {
-	if entrytype == 2 {
-		return "Store"
-	}
-	return "Restaurant"
-}
-
-func getVeganStatus(entrytype, vegonly, vegan int) string {
-	if entrytype == 2 {
-		return "Store" // stores don't use vegan/non-veg labels
-	}
-	if vegonly == 1 && vegan == 1 {
-		return "Vegan"
-	}
-	if vegonly == 1 && vegan == 0 {
-		return "Vegetarian"
-	}
-	return "Vegan Options"
-}
-
-func getCategory(entrytype, category int) string {
-	if category == 0 || entrytype == 1 {
-		return ""
-	}
-	categories := map[int]string{
-		1: "Health Store", 2: "Veg Store", 3: "Bakery", 4: "B&B",
-		5: "Delivery", 6: "Catering", 7: "Organization", 8: "Farmer's Market",
-		10: "Food Truck", 11: "Market Vendor", 12: "Ice Cream", 13: "Juice Bar",
-		14: "Professional", 15: "Coffee & Tea", 16: "Spa", 99: "Other",
-	}
-	if name, ok := categories[category]; ok {
-		return name
-	}
-	return ""
-}
-
 func checkTypeMismatch(venueType, category string, googleTypes []string) bool {
 	// Simple heuristic - can be enhanced
 	if len(googleTypes) == 0 {
@@ -404,6 +381,7 @@ type ApprovalFieldData struct {
 	Phone       string
 	Type        int
 	Vegan       int
+	VegOnly     int
 	Category    int
 	Lat         *float64
 	Lng         *float64
@@ -442,6 +420,10 @@ func GetApprovalFieldData(
 		ApplyEditorDrafts(&combined, editorDraft)
 	}
 
+	entryType := VenueTypeFromLabel(combined.VenueType)
+	veganFlag, vegOnlyFlag := VeganFlagsFromStatus(entryType, combined.VeganStatus)
+	categoryID := CategoryIDFromLabel(combined.Category)
+
 	// 3. Build approval data
 	// Initialize HoursNote from database if available
 	hoursNote := ""
@@ -453,9 +435,10 @@ func GetApprovalFieldData(
 		Name:        combined.Name,
 		Address:     combined.Address,
 		Phone:       combined.Phone,
-		Type:        venue.EntryType,
-		Vegan:       venue.Vegan,
-		Category:    venue.Category,
+		Type:        entryType,
+		Vegan:       veganFlag,
+		VegOnly:     vegOnlyFlag,
+		Category:    categoryID,
 		Lat:         combined.Lat,
 		Lng:         combined.Lng,
 		Path:        combined.Path,
@@ -510,13 +493,46 @@ type AISuggestions struct {
 // ApplyEditorDrafts overlays editor modifications onto combined info
 // Uses type assertion to handle the draft interface
 func ApplyEditorDrafts(combined *CombinedInfo, draft interface{}) {
-	// Type assert to map[string]interface{} which is what we'll get from the draft store
 	draftMap, ok := draft.(map[string]interface{})
 	if !ok {
 		return
 	}
 
-	// Helper to get field from draft
+	toInt := func(value interface{}) (int, bool) {
+		switch v := value.(type) {
+		case float64:
+			return int(v), true
+		case float32:
+			return int(v), true
+		case int:
+			return v, true
+		case int32:
+			return int(v), true
+		case int64:
+			return int(v), true
+		case json.Number:
+			i, err := v.Int64()
+			if err != nil {
+				return 0, false
+			}
+			return int(i), true
+		default:
+			return 0, false
+		}
+	}
+
+	if combined.Sources == nil {
+		combined.Sources = make(map[string]string)
+	}
+
+	entryType := VenueTypeFromLabel(combined.VenueType)
+	veganFlag, vegOnlyFlag := VeganFlagsFromStatus(entryType, combined.VeganStatus)
+	categoryID := CategoryIDFromLabel(combined.Category)
+
+	typeUpdated := false
+	veganUpdated := false
+	categoryUpdated := false
+
 	getField := func(fieldName string) (interface{}, string, bool) {
 		fieldData, exists := draftMap[fieldName]
 		if !exists {
@@ -531,7 +547,6 @@ func ApplyEditorDrafts(combined *CombinedInfo, draft interface{}) {
 		return value, origSource, true
 	}
 
-	// Apply each field if it exists in the draft
 	if val, _, ok := getField("name"); ok {
 		if strVal, ok := val.(string); ok {
 			combined.Name = strVal
@@ -550,6 +565,12 @@ func ApplyEditorDrafts(combined *CombinedInfo, draft interface{}) {
 			combined.Sources["phone"] = "editor"
 		}
 	}
+	if val, _, ok := getField("website"); ok {
+		if strVal, ok := val.(string); ok {
+			combined.Website = strVal
+			combined.Sources["website"] = "editor"
+		}
+	}
 	if val, _, ok := getField("lat"); ok {
 		if floatVal, ok := val.(float64); ok {
 			combined.Lat = &floatVal
@@ -559,7 +580,6 @@ func ApplyEditorDrafts(combined *CombinedInfo, draft interface{}) {
 	if val, _, ok := getField("lng"); ok {
 		if floatVal, ok := val.(float64); ok {
 			combined.Lng = &floatVal
-			// Note: latlng source already set by lat
 		}
 	}
 	if val, _, ok := getField("path"); ok {
@@ -574,6 +594,44 @@ func ApplyEditorDrafts(combined *CombinedInfo, draft interface{}) {
 			combined.Sources["description"] = "editor"
 		}
 	}
+	if val, _, ok := getField("type"); ok {
+		if intVal, ok := toInt(val); ok {
+			entryType = intVal
+			combined.VenueType = VenueTypeLabel(entryType)
+			combined.Sources["type"] = "editor"
+			typeUpdated = true
+		}
+	}
+	if val, _, ok := getField("vegan"); ok {
+		if intVal, ok := toInt(val); ok {
+			if intVal < 0 {
+				intVal = 0
+			}
+			if intVal > 1 {
+				intVal = 1
+			}
+			veganFlag = intVal
+			veganUpdated = true
+		}
+	}
+	if val, _, ok := getField("vegonly"); ok {
+		if intVal, ok := toInt(val); ok {
+			if intVal < 0 {
+				intVal = 0
+			}
+			if intVal > 1 {
+				intVal = 1
+			}
+			vegOnlyFlag = intVal
+			veganUpdated = true
+		}
+	}
+	if val, _, ok := getField("category"); ok {
+		if intVal, ok := toInt(val); ok {
+			categoryID = intVal
+			categoryUpdated = true
+		}
+	}
 	if val, _, ok := getField("open_hours"); ok {
 		if arrVal, ok := val.([]interface{}); ok {
 			hours := make([]string, len(arrVal))
@@ -584,6 +642,17 @@ func ApplyEditorDrafts(combined *CombinedInfo, draft interface{}) {
 			}
 			combined.Hours = hours
 			combined.Sources["hours"] = "editor"
+		}
+	}
+
+	if veganUpdated || typeUpdated {
+		combined.VeganStatus = VeganStatusLabel(entryType, vegOnlyFlag, veganFlag)
+		combined.Sources["vegan_status"] = "editor"
+	}
+	if categoryUpdated || typeUpdated {
+		combined.Category = CategoryLabel(entryType, categoryID)
+		if categoryUpdated {
+			combined.Sources["category"] = "editor"
 		}
 	}
 }

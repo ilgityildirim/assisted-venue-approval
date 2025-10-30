@@ -9,8 +9,8 @@ import (
 )
 
 var (
-	// pathRegex allows alphanumeric, hyphens, underscores, pipes for URL slugs
-	pathRegex = regexp.MustCompile(`^[a-zA-Z0-9_|\-]+$`)
+	// pathRegex enforces pipe-delimited segments comprised of alphanumeric, hyphen, or underscore characters.
+	pathRegex = regexp.MustCompile(`^[a-zA-Z0-9_-]+(?:\|[a-zA-Z0-9_-]+)*$`)
 )
 
 // ValidateName validates venue name
@@ -137,10 +137,27 @@ func ValidateVegan(v int) error {
 
 // ValidateCategory validates venue category
 func ValidateCategory(c int) error {
-	// 0=Restaurant (generic), 1=Bakery, 2=Ice Cream, 3=Juice Bar, 4=Coffee/Tea
-	// Allow 0-10 for future categories
-	if c < 0 || c > 10 {
-		return fmt.Errorf("invalid category (must be 0-10)")
+	validCategories := map[int]struct{}{
+		0:  {},
+		1:  {},
+		2:  {},
+		3:  {},
+		4:  {},
+		5:  {},
+		6:  {},
+		7:  {},
+		8:  {},
+		10: {},
+		11: {},
+		12: {},
+		13: {},
+		14: {},
+		15: {},
+		16: {},
+		99: {},
+	}
+	if _, ok := validCategories[c]; !ok {
+		return fmt.Errorf("invalid category id %d", c)
 	}
 	return nil
 }

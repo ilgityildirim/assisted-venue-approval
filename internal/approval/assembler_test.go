@@ -115,6 +115,7 @@ func TestBuildApprovalDataSkipsUnchangedFields(t *testing.T) {
 			Address:     "123 Road",
 			Description: "Desc",
 			Phone:       "123",
+			VegOnly:     0,
 			OpenHours:   []string{"Monday: 24 hours"},
 		},
 	}

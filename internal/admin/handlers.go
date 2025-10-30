@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"html/template"
 	"log"
 	"net/http"
 	"strconv"
@@ -577,6 +578,23 @@ func VenueDetailHandler(db *database.DB, draftStore *drafts.DraftStore) http.Han
 			}
 		}
 
+		categoryOptions := models.StoreCategoryOptions()
+		categoryMap := make(map[int]string, len(categoryOptions))
+		for _, opt := range categoryOptions {
+			categoryMap[opt.ID] = opt.Label
+		}
+		categoryJSONBytes, err := json.Marshal(categoryMap)
+		if err != nil {
+			log.Printf("failed to marshal category options: %v", err)
+			categoryJSONBytes = []byte("{}")
+		}
+		categoryOptionsJSON := template.JS(string(categoryJSONBytes))
+
+		approvalHoursNote := ""
+		if mergeResult != nil && mergeResult.ApprovalFields != nil {
+			approvalHoursNote = strings.TrimSpace(mergeResult.ApprovalFields.HoursNote)
+		}
+
 		draftData, hasDraft, draftEditorID, draftEditorName, draftUpdatedAt := extractDraftMeta(draft)
 
 		// Get venue path with count of venues using that path
@@ -611,14 +629,17 @@ func VenueDetailHandler(db *database.DB, draftStore *drafts.DraftStore) http.Han
 			AIOutputRestPretty string
 			AIOutputFullPretty string
 			// NEW: Classification data for templates
-			VenueTypeLabel    string
-			VeganStatusLabel  string
-			CategoryLabel     string
-			TypeMismatchAlert bool
+			VenueTypeLabel      string
+			VeganStatusLabel    string
+			CategoryLabel       string
+			CategoryOptions     []models.CategoryOption
+			CategoryOptionsJSON template.JS
+			TypeMismatchAlert   bool
 			// Quality suggestions fields
 			DescriptionSuggestion string
 			NameSuggestion        string
 			ClosedDaysSuggestion  string
+			ApprovalHoursNote     string
 			// Venue path fields
 			VenuePath    string
 			VenuePathRaw string
@@ -647,10 +668,13 @@ func VenueDetailHandler(db *database.DB, draftStore *drafts.DraftStore) http.Han
 			VenueTypeLabel:        combined.VenueType,
 			VeganStatusLabel:      combined.VeganStatus,
 			CategoryLabel:         combined.Category,
+			CategoryOptions:       categoryOptions,
+			CategoryOptionsJSON:   categoryOptionsJSON,
 			TypeMismatchAlert:     combined.TypeMismatch,
 			DescriptionSuggestion: suggestions.DescriptionSuggestion,
 			NameSuggestion:        suggestions.NameSuggestion,
 			ClosedDaysSuggestion:  suggestions.ClosedDays,
+			ApprovalHoursNote:     approvalHoursNote,
 			// Add venue path data
 			VenuePath:    venuePath,
 			VenuePathRaw: venuePathRaw,

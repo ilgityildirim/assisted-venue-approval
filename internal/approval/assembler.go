@@ -103,14 +103,25 @@ func BuildApprovalData(result *MergeResult, venue *models.Venue, adminID int, no
 		if formattedHours, err := FormatOpenHoursFromCombined(fields.OpenHours); err == nil && formattedHours != "" {
 			data.OpenHours = &formattedHours
 		}
-		if note := strings.TrimSpace(fields.HoursNote); note != "" && differsPtr(venue.OpenHoursNote, note) {
-			data.OpenHoursNote = strPtr(note)
+		existingNote := ""
+		if venue.OpenHoursNote != nil {
+			existingNote = strings.TrimSpace(*venue.OpenHoursNote)
+		}
+		candidateNote := strings.TrimSpace(fields.HoursNote)
+		if candidateNote != "" {
+			if differsPtr(venue.OpenHoursNote, candidateNote) {
+				data.OpenHoursNote = strPtr(candidateNote)
+			}
+		} else if existingNote != "" {
+			empty := ""
+			data.OpenHoursNote = &empty
 		}
 	}
 
 	// Extract classification fields from Combined Info
+	entryType := venue.EntryType
 	if venueType := strings.TrimSpace(result.Combined.VenueType); venueType != "" {
-		entryType := venueTypeToInt(venueType)
+		entryType = models.VenueTypeFromLabel(venueType)
 		if entryType != venue.EntryType {
 			data.EntryType = &entryType
 		}
@@ -121,7 +132,7 @@ func BuildApprovalData(result *MergeResult, venue *models.Venue, adminID int, no
 	}
 
 	if veganStatus := strings.TrimSpace(result.Combined.VeganStatus); veganStatus != "" {
-		vegan, vegonly := veganStatusToFlags(veganStatus)
+		vegan, vegonly := models.VeganFlagsFromStatus(entryType, veganStatus)
 		if vegan != venue.Vegan {
 			data.Vegan = &vegan
 		}
@@ -131,7 +142,7 @@ func BuildApprovalData(result *MergeResult, venue *models.Venue, adminID int, no
 	}
 
 	if category := strings.TrimSpace(result.Combined.Category); category != "" {
-		categoryID := categoryToInt(category)
+		categoryID := models.CategoryIDFromLabel(category)
 		if categoryID != venue.Category {
 			data.Category = &categoryID
 		}
@@ -211,59 +222,4 @@ func differsFloat64(original *float64, candidate float64) bool {
 		return true
 	}
 	return *original != candidate
-}
-
-// venueTypeToInt converts venue type string to database integer
-func venueTypeToInt(venueType string) int {
-	switch strings.ToLower(strings.TrimSpace(venueType)) {
-	case "restaurant":
-		return 1
-	case "store":
-		return 2
-	default:
-		return 1 // default to restaurant
-	}
-}
-
-// veganStatusToFlags converts vegan status string to vegan and vegonly flags
-// Returns (vegan, vegonly) as two separate integers
-func veganStatusToFlags(status string) (int, int) {
-	switch strings.ToLower(strings.TrimSpace(status)) {
-	case "vegan":
-		return 1, 1 // vegan=1, vegonly=1
-	case "vegetarian":
-		return 0, 1 // vegan=0, vegonly=1
-	case "veg-options":
-		return 0, 0 // vegan=0, vegonly=0
-	default:
-		return 0, 0 // default to veg-options
-	}
-}
-
-// categoryToInt converts category label to database ID
-func categoryToInt(categoryLabel string) int {
-	// Category mapping from combined.go
-	categories := map[string]int{
-		"Health Store":    1,
-		"Veg Store":       2,
-		"Bakery":          3,
-		"B&B":             4,
-		"Delivery":        5,
-		"Catering":        6,
-		"Organization":    7,
-		"Farmer's Market": 8,
-		"Food Truck":      10,
-		"Market Vendor":   11,
-		"Ice Cream":       12,
-		"Juice Bar":       13,
-		"Professional":    14,
-		"Coffee & Tea":    15,
-		"Spa":             16,
-		"Other":           99,
-	}
-
-	if id, ok := categories[categoryLabel]; ok {
-		return id
-	}
-	return 0 // default to 0 (Generic Restaurant)
 }

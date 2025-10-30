@@ -52,6 +52,10 @@
         .btn-success { background: #34a853; color: #fff; }
         .btn-danger { background: #ea4335; color: #fff; }
         .btn-subtle { background: var(--card-bg); color: var(--accent); border: 1px solid var(--accent); }
+        .btn.is-loading { cursor: progress; opacity: 0.85; }
+        .btn .spinner { display: none; width: 16px; height: 16px; border-radius: 50%; border: 2px solid rgba(255,255,255,0.6); border-top-color: rgba(255,255,255,1); animation: spin 0.8s linear infinite; }
+        .btn.is-loading .spinner { display: inline-block; }
+        @keyframes spin { to { transform: rotate(360deg); } }
         .action-form textarea { width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 8px; resize: vertical; font-family: inherit; font-size: 14px; }
         .action-form label { color: var(--muted); font-size: 13px; font-weight: 600; display: block; margin-bottom: 6px; }
         .status-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 16px; }
@@ -112,6 +116,7 @@
         }
     </style>
 </head>
+{{$pathPattern := "(?:[0-9]|[A-Za-z]|_|-)+(?:\\|(?:[0-9]|[A-Za-z]|_|-)+)*"}}
 <body class="layout-shell">
     {{template "global_header" .}}
     <div class="page-shell layout-content">
@@ -131,7 +136,7 @@
         {{if and (eq $state 0) $hasAIReview}}
         <div class="action-form review-action">
             <div class="review-action-bar">
-                <button type="button" class="btn btn-success" onclick="approveVenue()">✅ Approve</button>
+                <button type="button" class="btn btn-success" id="approve-btn" onclick="approveVenue()">✅ Approve</button>
                 <button type="button" class="btn btn-danger" onclick="openApprovalRejectForm()">❌ Reject</button>
             </div>
             <div id="approval-status-alt" style="display:none; margin-top:12px; padding:10px 12px; border-radius:8px;"></div>
@@ -319,7 +324,7 @@
                                 </div>
                                 <div class="field-value-display" id="open_hours-display">
                                     {{if .Combined.Hours}}
-                                        {{range .Combined.Hours}}<div>{{.}}</div>{{end}}
+                                        {{range .Combined.Hours}}<div>{{formatHourEntry .}}</div>{{end}}
                                     {{else}}N/A{{end}}
                                 </div>
                                 <div class="field-value-edit" id="open_hours-edit" style="display:none;">
@@ -374,23 +379,9 @@
                                 <div class="field-value-display" id="category-display">{{if .CategoryLabel}}{{.CategoryLabel}}{{else}}N/A{{end}}</div>
                                 <div class="field-value-edit" id="category-edit" style="display:none;">
                                     <select id="category-input" data-original="{{.Venue.Venue.Category}}" data-original-source="user" style="width:100%;">
-                                        <option value="0" {{if eq .Venue.Venue.Category 0}}selected{{end}}>Restaurant (Generic)</option>
-                                        <option value="1" {{if eq .Venue.Venue.Category 1}}selected{{end}}>Health Store</option>
-                                        <option value="2" {{if eq .Venue.Venue.Category 2}}selected{{end}}>Veg Store</option>
-                                        <option value="3" {{if eq .Venue.Venue.Category 3}}selected{{end}}>Bakery</option>
-                                        <option value="4" {{if eq .Venue.Venue.Category 4}}selected{{end}}>B&B</option>
-                                        <option value="5" {{if eq .Venue.Venue.Category 5}}selected{{end}}>Delivery</option>
-                                        <option value="6" {{if eq .Venue.Venue.Category 6}}selected{{end}}>Catering</option>
-                                        <option value="7" {{if eq .Venue.Venue.Category 7}}selected{{end}}>Organization</option>
-                                        <option value="8" {{if eq .Venue.Venue.Category 8}}selected{{end}}>Farmer's Market</option>
-                                        <option value="10" {{if eq .Venue.Venue.Category 10}}selected{{end}}>Food Truck</option>
-                                        <option value="11" {{if eq .Venue.Venue.Category 11}}selected{{end}}>Market Vendor</option>
-                                        <option value="12" {{if eq .Venue.Venue.Category 12}}selected{{end}}>Ice Cream</option>
-                                        <option value="13" {{if eq .Venue.Venue.Category 13}}selected{{end}}>Juice Bar</option>
-                                        <option value="14" {{if eq .Venue.Venue.Category 14}}selected{{end}}>Professional</option>
-                                        <option value="15" {{if eq .Venue.Venue.Category 15}}selected{{end}}>Coffee & Tea</option>
-                                        <option value="16" {{if eq .Venue.Venue.Category 16}}selected{{end}}>Spa</option>
-                                        <option value="99" {{if eq .Venue.Venue.Category 99}}selected{{end}}>Other</option>
+                                        {{range .CategoryOptions}}
+                                            <option value="{{.ID}}" {{if eq $.Venue.Venue.Category .ID}}selected{{end}}>{{.Label}}</option>
+                                        {{end}}
                                     </select>
                                     <span class="field-error" id="category-error" style="color:#dc3545;display:none;font-size:0.875em;"></span>
                                 </div>
@@ -428,7 +419,7 @@
                                 </div>
                                 <div class="field-value-display" id="path-display">{{if .Combined.Path}}{{.Combined.Path}}{{else}}N/A{{end}}</div>
                                 <div class="field-value-edit" id="path-edit" style="display:none;">
-                                    <input type="text" id="path-input" value="{{.Combined.Path}}" data-original="{{.Combined.Path}}" data-original-source="{{index .Combined.Sources "path"}}" maxlength="255" pattern="[a-zA-Z0-9_|\-]+" style="width:100%;" placeholder="north_america|usa|chicago">
+                                    <input type="text" id="path-input" value="{{.Combined.Path}}" data-original="{{.Combined.Path}}" data-original-source="{{index .Combined.Sources "path"}}" maxlength="255" pattern="{{$pathPattern}}" style="width:100%;" placeholder="north_america|usa|chicago">
                                     <span class="field-error" id="path-error" style="color:#dc3545;display:none;font-size:0.875em;"></span>
                                     <small style="color:#666;">Geographic hierarchy separated by pipes (e.g., north_america|usa|chicago)</small>
                                 </div>
@@ -489,10 +480,18 @@
                                     <button type="button" class="reset-field-btn" data-field="hours_note" style="display:none;" title="Reset to original" onclick="resetField('hours_note')">↺</button>
                                 </div>
                                 <div class="field-value-display" id="hours_note-display">
-                                    {{if .Venue.Venue.OpenHoursNote}}{{.Venue.Venue.OpenHoursNote}}{{else if .ClosedDaysSuggestion}}<div class="callout info"><code>{{.ClosedDaysSuggestion}}</code></div>{{else}}N/A{{end}}
+                                    {{if .Venue.Venue.OpenHoursNote}}
+                                        {{.Venue.Venue.OpenHoursNote}}
+                                    {{else if .ApprovalHoursNote}}
+                                        {{.ApprovalHoursNote}}
+                                    {{else if .ClosedDaysSuggestion}}
+                                        <div class="callout info"><code>{{.ClosedDaysSuggestion}}</code></div>
+                                    {{else}}
+                                        N/A
+                                    {{end}}
                                 </div>
                                 <div class="field-value-edit" id="hours_note-edit" style="display:none;">
-                                    <textarea id="hours_note-input" data-original="{{if .Venue.Venue.OpenHoursNote}}{{.Venue.Venue.OpenHoursNote}}{{else}}{{.ClosedDaysSuggestion}}{{end}}" data-original-source="{{if .Venue.Venue.OpenHoursNote}}user{{else}}ai{{end}}" maxlength="500" rows="2" style="width:100%;">{{if .Venue.Venue.OpenHoursNote}}{{.Venue.Venue.OpenHoursNote}}{{else}}{{.ClosedDaysSuggestion}}{{end}}</textarea>
+                                    <textarea id="hours_note-input" data-original="{{if .Venue.Venue.OpenHoursNote}}{{.Venue.Venue.OpenHoursNote}}{{else if .ApprovalHoursNote}}{{.ApprovalHoursNote}}{{else}}{{.ClosedDaysSuggestion}}{{end}}" data-original-source="{{if .Venue.Venue.OpenHoursNote}}user{{else if .ApprovalHoursNote}}editor{{else}}ai{{end}}" maxlength="500" rows="2" style="width:100%;">{{if .Venue.Venue.OpenHoursNote}}{{.Venue.Venue.OpenHoursNote}}{{else if .ApprovalHoursNote}}{{.ApprovalHoursNote}}{{else}}{{.ClosedDaysSuggestion}}{{end}}</textarea>
                                     <span class="field-error" id="hours_note-error" style="color:#dc3545;display:none;font-size:0.875em;"></span>
                                 </div>
                             </div>
@@ -936,6 +935,7 @@
         function approveVenue() {
             const notesField = document.getElementById('notes');
             const notes = notesField ? notesField.value : '';
+            setApprovalLoading(true);
             updateVenueStatus('approve', notes || 'Manual approval');
         }
 
@@ -953,6 +953,8 @@
             hideApprovalStatus();
             const formData = new FormData();
             formData.append(action === 'approve' ? 'notes' : 'reason', notes);
+
+            const isApprove = action === 'approve';
 
             fetch(basePath + 'venues/{{.Venue.Venue.ID}}/' + action, {
                 method: 'POST',
@@ -976,6 +978,9 @@
                 location.reload();
             })
             .catch(error => {
+                if (isApprove) {
+                    setApprovalLoading(false);
+                }
                 console.error('Error:', error);
                 showApprovalStatus(error.message || 'Error updating venue status', true);
             });
@@ -1080,28 +1085,52 @@
             return "Vegan Friendly";
         }
 
+        const CATEGORY_LABELS = {{.CategoryOptionsJSON}};
+
         function getCategoryLabel(value) {
-            const intValue = parseInt(value);
-            const categories = {
-                0: "Restaurant (Generic)",
-                1: "Health Store",
-                2: "Veg Store",
-                3: "Bakery",
-                4: "B&B",
-                5: "Delivery",
-                6: "Catering",
-                7: "Organization",
-                8: "Farmer's Market",
-                10: "Food Truck",
-                11: "Market Vendor",
-                12: "Ice Cream",
-                13: "Juice Bar",
-                14: "Professional",
-                15: "Coffee & Tea",
-                16: "Spa",
-                99: "Other"
-            };
-            return categories[intValue] || "N/A";
+            if (value === undefined || value === null) {
+                return "N/A";
+            }
+            const key = String(parseInt(value, 10));
+            if (CATEGORY_LABELS[key]) {
+                return CATEGORY_LABELS[key];
+            }
+            if (CATEGORY_LABELS[value]) {
+                return CATEGORY_LABELS[value];
+            }
+            return "N/A";
+        }
+
+        // Keep this in sync with the path input's pattern; browsers validate via /.../v so '-' must live outside [] ranges.
+        const PATH_VALUE_PATTERN = {{printf "%q" $pathPattern}};
+        const PATH_SEGMENT_REGEX = /^[0-9A-Za-z_-]+$/;
+        const isValidPathValue = (value) => {
+            if (!value) return false;
+            const segments = value.split('|');
+            if (segments.length === 0) return false;
+            return segments.every(segment => PATH_SEGMENT_REGEX.test(segment));
+        };
+
+        let approvalLoading = false;
+        function setApprovalLoading(isLoading) {
+            const btn = document.getElementById('approve-btn');
+            if (!btn) return;
+            if (isLoading) {
+                if (!btn.dataset.originalContent) {
+                    btn.dataset.originalContent = btn.innerHTML;
+                }
+                btn.disabled = true;
+                btn.classList.add('is-loading');
+                btn.innerHTML = '<span class="spinner" aria-hidden="true"></span><span> Approving...</span>';
+                approvalLoading = true;
+            } else if (approvalLoading) {
+                if (btn.dataset.originalContent) {
+                    btn.innerHTML = btn.dataset.originalContent;
+                }
+                btn.disabled = false;
+                btn.classList.remove('is-loading');
+                approvalLoading = false;
+            }
         }
 
         const EditState = {
@@ -1110,7 +1139,7 @@
             hasUnsavedChanges: false,
             venueID: {{.Venue.Venue.ID}},
 
-            fields: ['name', 'address', 'phone', 'open_hours', 'type', 'vegan', 'category', 'lat', 'lng', 'path', 'description', 'hours_note'],
+            fields: ['name', 'address', 'phone', 'website', 'open_hours', 'type', 'vegan-status', 'category', 'lat', 'lng', 'path', 'description', 'hours_note'],
 
             init() {
                 // Load original data from template
@@ -1346,6 +1375,20 @@
                 if (val && !/^[0-9+\-() ]+$/.test(val)) return 'Phone contains invalid characters';
                 return null;
             },
+            website: (val) => {
+                if (!val) return null;
+                const trimmed = val.trim();
+                if (trimmed.length > 500) return 'Website must be less than 500 characters';
+                try {
+                    const parsed = new URL(trimmed);
+                    if (!/^https?:$/.test(parsed.protocol)) {
+                        return 'Website must start with http:// or https://';
+                    }
+                } catch (err) {
+                    return 'Website must be a valid URL (include http:// or https://)';
+                }
+                return null;
+            },
             lat: (val) => {
                 const num = parseFloat(val);
                 if (isNaN(num)) return 'Latitude must be a number';
@@ -1361,7 +1404,7 @@
             path: (val) => {
                 if (!val || val.length < 1) return 'Path cannot be empty';
                 if (val.length > 255) return 'Path must be less than 255 characters';
-                if (!/^[a-zA-Z0-9_|\-]+$/.test(val)) return 'Path can only contain letters, numbers, hyphens, underscores, and pipes';
+                if (!isValidPathValue(val)) return 'Path can only contain letters, numbers, hyphens, underscores, and pipes';
                 return null;
             },
             description: (val) => {
@@ -1381,7 +1424,14 @@
                 return null;
             },
             type: () => null,
-            vegan: () => null,
+            'vegan-status': (val) => {
+                if (!val) return 'Vegan status is required';
+                const normalized = val.toLowerCase();
+                if (!['veg-options', 'vegan', 'vegetarian'].includes(normalized)) {
+                    return 'Invalid vegan status selection';
+                }
+                return null;
+            },
             category: () => null
         };
 
@@ -1448,6 +1498,12 @@
                 if (input) {
                     const originalValue = EditState.originalData[field]?.value || '';
                     let currentValue = input.value;
+                    let originalComparable = originalValue;
+
+                    if (field === 'website' || field === 'path' || field === 'name' || field === 'address' || field === 'phone' || field === 'description') {
+                        currentValue = currentValue.trim();
+                        originalComparable = originalComparable.trim();
+                    }
 
                     // Special handling for open_hours (textarea with lines)
                     if (field === 'open_hours') {
@@ -1469,6 +1525,9 @@
                             };
                         }
                     } else if (field === 'vegan-status') {
+                        if (currentValue === originalComparable) {
+                            return;
+                        }
                         // Convert vegan status to vegan + vegonly fields
                         const veganStatusValue = currentValue;
                         let vegan, vegonly;
@@ -1492,14 +1551,14 @@
                         };
                     } else if (field === 'type' || field === 'category') {
                         currentValue = parseInt(currentValue);
-                        if (currentValue !== parseInt(originalValue)) {
+                        if (currentValue !== parseInt(originalComparable)) {
                             draftData[field] = {
                                 value: currentValue,
                                 original_source: EditState.originalData[field]?.source || 'user'
                             };
                         }
                     } else {
-                        if (currentValue !== originalValue) {
+                        if (currentValue !== originalComparable) {
                             draftData[field] = {
                                 value: currentValue,
                                 original_source: EditState.originalData[field]?.source || 'user'
@@ -1626,6 +1685,10 @@
 
         // Initialize on page load
         document.addEventListener('DOMContentLoaded', () => {
+            const pathInput = document.getElementById('path-input');
+            if (pathInput) {
+                pathInput.setAttribute('pattern', PATH_VALUE_PATTERN);
+            }
             {{if eq $state 0}}EditState.init();{{end}}
         });
     </script>
