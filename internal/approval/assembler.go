@@ -1,13 +1,19 @@
 package approval
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
+	"time"
 
 	"assisted-venue-approval/internal/domain"
 	"assisted-venue-approval/internal/drafts"
 	"assisted-venue-approval/internal/models"
+	"assisted-venue-approval/pkg/geography"
+
+	"googlemaps.github.io/maps"
 )
 
 // MergeInput captures the data sources that contribute to a venue's final state.
@@ -18,6 +24,7 @@ type MergeInput struct {
 	GoogleData    *models.GooglePlaceData
 	LatestHistory *models.ValidationHistory
 	Draft         *drafts.VenueDraft
+	Repo          domain.Repository // For venue count check in path replacement logic
 }
 
 // MergeResult returns the merged view used by both the UI and persistence layers.
@@ -42,12 +49,53 @@ func Assemble(input MergeInput) (*MergeResult, error) {
 		venue.GoogleData = googleData
 	}
 
+	// Generate suggested path from Google Places address components
+	suggestedPath := ""
+	if googleData != nil && len(googleData.AddressComponents) > 0 {
+		// Convert to maps.AddressComponent format for geography package
+		mapsComponents := make([]maps.AddressComponent, len(googleData.AddressComponents))
+		for i, comp := range googleData.AddressComponents {
+			mapsComponents[i] = maps.AddressComponent{
+				LongName:  comp.LongName,
+				ShortName: comp.ShortName,
+				Types:     comp.Types,
+			}
+		}
+		suggestedPath = geography.GenerateVenuePath(mapsComponents)
+	}
+
 	draftMap := convertDraftForMerge(input.Draft)
 
-	combined, err := models.GetCombinedVenueInfo(venue, input.User, input.TrustScore)
+	combined, err := models.GetCombinedVenueInfo(venue, input.User, input.TrustScore, suggestedPath)
 	if err != nil {
 		return nil, fmt.Errorf("build combined venue info: %w", err)
 	}
+
+	// Check if user's path has 0 other venues - if so, replace with suggested path
+	// This handles the case where user provides a path but no other venues use it
+	if input.Repo != nil && combined.Path != "" && suggestedPath != "" && combined.Path != suggestedPath {
+		if combined.Sources["path"] == "user" {
+			// Use a background context with timeout for the count query
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+
+			count, err := input.Repo.CountVenuesByPathCtx(ctx, combined.Path, venue.ID)
+			if err != nil {
+				log.Printf("[assembler] Warning: Failed to count venues for path '%s' (venue %d): %v",
+					combined.Path, venue.ID, err)
+				// On error, keep user path (conservative approach)
+			} else if count == 0 {
+				log.Printf("[assembler] Venue %d: User path '%s' has 0 other venues, replacing with suggested path '%s'",
+					venue.ID, combined.Path, suggestedPath)
+				combined.Path = suggestedPath
+				combined.Sources["path"] = "google_zero_venue_replacement"
+			} else {
+				log.Printf("[assembler] Venue %d: User path '%s' has %d other venue(s), keeping user path",
+					venue.ID, combined.Path, count)
+			}
+		}
+	}
+
 	if draftMap != nil {
 		models.ApplyEditorDrafts(&combined, draftMap)
 	}

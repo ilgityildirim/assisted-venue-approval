@@ -283,7 +283,7 @@
                                 <div class="field-label">Location Path</div>
                                 <div class="field-value">
                                     {{if .VenuePath}}{{.VenuePath}}{{else}}N/A{{end}}
-                                    {{if .SuggestedPathWithCount}}
+                                    {{if and .SuggestedPathWithCount (eq $state 0) (eq .UserPathCount 0)}}
                                     <div style="margin-top:8px; padding:8px; background-color:#e8f4f8; border-radius:4px; border-left:3px solid #17a2b8;">
                                         <strong style="color:#17a2b8; font-size:0.875rem;">Suggested:</strong>
                                         <code style="background:#fff; padding:3px 8px; border-radius:3px; font-size:0.875rem; color:#333;">{{.SuggestedPathWithCount}}</code>
@@ -805,7 +805,7 @@
                                     <span class="field-error" id="path-error" style="color:#dc3545;display:none;font-size:0.875em;"></span>
                                     <small style="color:#666;">Geographic hierarchy separated by pipes (e.g., north_america|usa|chicago)</small>
                                 </div>
-                                {{if .SuggestedPathWithCount}}
+                                {{if and .SuggestedPathWithCount (eq $state 0) (eq .UserPathCount 0)}}
                                 <div style="margin-top:8px; padding:8px; background-color:#e8f4f8; border-radius:4px; border-left:3px solid #17a2b8;">
                                     <strong style="color:#17a2b8; font-size:0.875rem;">Suggested from Google:</strong>
                                     <code style="background:#fff; padding:3px 8px; border-radius:3px; font-size:0.875rem; color:#333;">{{.SuggestedPathWithCount}}</code>

@@ -481,7 +481,8 @@ func (s *AIScorer) buildUnifiedPrompt(venue models.Venue, user models.User, trus
 	}
 
 	// Centralized combination
-	ci, cerr := models.GetCombinedVenueInfo(venue, user, trustLevel)
+	// No suggested path available in AI scorer context
+	ci, cerr := models.GetCombinedVenueInfo(venue, user, trustLevel, "")
 
 	// Types from combined info
 	googleTypes := ci.Types

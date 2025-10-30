@@ -329,6 +329,7 @@ func ApproveVenueHandler(repo domain.Repository, cfg *config.Config, draftStore 
 			TrustScore:    assessment.Trust,
 			LatestHistory: &latestHistory,
 			Draft:         draft,
+			Repo:          repo,
 		})
 		if err != nil {
 			log.Printf("failed to assemble approval data for venue %d: %v", id, err)
@@ -563,13 +564,15 @@ func VenueDetailHandler(db *database.DB, draftStore *drafts.DraftStore) http.Han
 			GoogleData:    googleData,
 			LatestHistory: latestHistory,
 			Draft:         draft,
+			Repo:          nil, // View-only context, no venue count check needed
 		})
 
 		var combined models.CombinedInfo
 		var suggestions *models.AISuggestions
 		if err != nil {
 			log.Printf("combined info warning: failed to assemble venue detail for %d: %v", id, err)
-			combined, _ = models.GetCombinedVenueInfo(venue.Venue, venue.User, assessment.Trust)
+			// Fallback: no suggested path available when assembler fails
+			combined, _ = models.GetCombinedVenueInfo(venue.Venue, venue.User, assessment.Trust, "")
 			suggestions = &models.AISuggestions{}
 		} else {
 			combined = mergeResult.Combined
@@ -601,6 +604,7 @@ func VenueDetailHandler(db *database.DB, draftStore *drafts.DraftStore) http.Han
 
 		// Get venue path with count of venues using that path
 		var venuePath, venuePathRaw string
+		var userPathCount int
 		if venue.Venue.Path != nil && *venue.Venue.Path != "" {
 			venuePathRaw = *venue.Venue.Path
 			count, err := db.CountVenuesByPathCtx(r.Context(), venuePathRaw, id)
@@ -608,6 +612,7 @@ func VenueDetailHandler(db *database.DB, draftStore *drafts.DraftStore) http.Han
 				log.Printf("Error counting venues by path: %v", err)
 				venuePath = venuePathRaw // fallback to raw path
 			} else {
+				userPathCount = count                                    // Store count for template conditional logic
 				venuePath = fmt.Sprintf("%s(%d)", venuePathRaw, count+1) // +1 to include current venue
 			}
 		}
@@ -674,6 +679,7 @@ func VenueDetailHandler(db *database.DB, draftStore *drafts.DraftStore) http.Han
 			VenuePath              string
 			VenuePathRaw           string
 			SuggestedPathWithCount string
+			UserPathCount          int
 			// Path validation fields
 			PathValidationValid      bool
 			PathValidationIssue      string
@@ -710,6 +716,7 @@ func VenueDetailHandler(db *database.DB, draftStore *drafts.DraftStore) http.Han
 			VenuePath:              venuePath,
 			VenuePathRaw:           venuePathRaw,
 			SuggestedPathWithCount: suggestedPathWithCount,
+			UserPathCount:          userPathCount,
 			// Draft data
 			HasDraft:        hasDraft,
 			DraftData:       draftData,
@@ -961,104 +968,27 @@ func processBatchApproval(ctx context.Context, repo domain.Repository, cfg *conf
 
 	venue := venueWithUser.Venue
 
-	// Build Combined Information using trust-based merging
-	if latestHistory.GooglePlaceData != nil {
-		venue.GoogleData = latestHistory.GooglePlaceData
-	}
+	// Use centralized assembler (same as manual approval) - DRY principle
 	tc := trust.NewDefault()
-	assessment := tc.Assess(venueWithUser.User, *venue.Path)
-	combined, cerr := models.GetCombinedVenueInfo(venue, venueWithUser.User, assessment.Trust)
-	if cerr != nil {
-		log.Printf("Warning: failed to build combined info for venue %d: %v", venueID, cerr)
+	assessment := tc.Assess(venueWithUser.User, venue.Location)
+
+	mergeResult, err := approval.Assemble(approval.MergeInput{
+		Venue:         venue,
+		User:          venueWithUser.User,
+		TrustScore:    assessment.Trust,
+		LatestHistory: &latestHistory,
+		Draft:         nil, // Batch operations don't use drafts
+		Repo:          repo,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to assemble approval data: %w", err)
 	}
 
-	// Extract AI suggestions from validation history
-	var nameSuggestion, descSuggestion, closedDaysSuggestion string
-	if latestHistory.AIOutputData != nil && *latestHistory.AIOutputData != "" {
-		var raw map[string]interface{}
-		if err := json.Unmarshal([]byte(*latestHistory.AIOutputData), &raw); err == nil {
-			if qualityMap, ok := raw["quality"].(map[string]interface{}); ok {
-				if name, ok := qualityMap["name"].(string); ok {
-					nameSuggestion = strings.TrimSpace(name)
-				}
-				if desc, ok := qualityMap["description"].(string); ok {
-					descSuggestion = strings.TrimSpace(desc)
-				}
-				if closed, ok := qualityMap["closed_days"].(string); ok {
-					closedDaysSuggestion = strings.TrimSpace(closed)
-				}
-			}
-		}
-	}
-
-	// Build approval data with notes
+	// Build approval data with batch notes
 	notes := fmt.Sprintf("Batch approval by %s", reviewer)
-	approvalData := domain.NewApprovalData(venueID, adminID, notes)
-
-	// Name: Use NameSuggestion if available, otherwise Combined.Name
-	finalName := combined.Name
-	if nameSuggestion != "" {
-		finalName = nameSuggestion
-	}
-	if finalName != "" && finalName != venue.Name {
-		approvalData.Name = &finalName
-	}
-
-	// Address: Use Combined.Address
-	if combined.Address != "" && combined.Address != venue.Location {
-		approvalData.Address = &combined.Address
-	}
-
-	// Description: Use DescriptionSuggestion if available, otherwise Combined.Description
-	finalDesc := combined.Description
-	if descSuggestion != "" {
-		finalDesc = descSuggestion
-	}
-	if finalDesc != "" {
-		approvalData.Description = &finalDesc
-	}
-
-	// Lat/Lng: Use Combined coordinates
-	if combined.Lat != nil && combined.Lng != nil {
-		approvalData.Lat = combined.Lat
-		approvalData.Lng = combined.Lng
-	}
-
-	// Phone: Use Combined.Phone
-	if combined.Phone != "" {
-		approvalData.Phone = &combined.Phone
-	}
-
-	// Website: Use Combined.Website
-	if combined.Website != "" {
-		approvalData.Website = &combined.Website
-	}
-
-	// OpenHours: Format from Combined.Hours
-	log.Printf("[batch-approval] Venue %d: Processing opening hours (combined.Hours has %d lines, source=%s)",
-		venueID, len(combined.Hours), combined.Sources["hours"])
-
-	if len(combined.Hours) > 0 {
-		log.Printf("[batch-approval] Venue %d: Formatting hours from Combined.Hours: %v", venueID, combined.Hours)
-		formattedHours, err := approval.FormatOpenHoursFromCombined(combined.Hours)
-		if err != nil {
-			log.Printf("[batch-approval] ❌ Venue %d: Failed to format open hours: %v", venueID, err)
-		} else if formattedHours != "" {
-			approvalData.OpenHours = &formattedHours
-			log.Printf("[batch-approval] ✓ Venue %d: Formatted hours set: %s", venueID, formattedHours)
-		} else {
-			log.Printf("[batch-approval] ⚠️  Venue %d: Hours formatting returned empty string (no valid hours parsed)", venueID)
-		}
-	} else {
-		log.Printf("[batch-approval] ⚠️  Venue %d: No hours data available in Combined.Hours (Google data may be missing)", venueID)
-	}
-
-	// OpenHoursNote: Use ClosedDaysSuggestion if available
-	if closedDaysSuggestion != "" {
-		approvalData.OpenHoursNote = &closedDaysSuggestion
-		log.Printf("[batch-approval] ✓ Venue %d: Closed days note set: %s", venueID, closedDaysSuggestion)
-	} else {
-		log.Printf("[batch-approval] Venue %d: No closed days suggestion from AI", venueID)
+	approvalData := approval.BuildApprovalData(mergeResult, &venue, adminID, notes)
+	if approvalData == nil {
+		return fmt.Errorf("approval data assembly returned nil")
 	}
 
 	// Build data replacements for audit trail

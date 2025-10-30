@@ -45,7 +45,8 @@ func (qr *QualityReviewer) ReviewQuality(ctx context.Context, venue models.Venue
 	defer cancel()
 
 	// Get combined venue info for quality review
-	combinedInfo, err := models.GetCombinedVenueInfo(venue, user, trustLevel)
+	// No suggested path available in quality review context
+	combinedInfo, err := models.GetCombinedVenueInfo(venue, user, trustLevel, "")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get combined venue info: %w", err)
 	}

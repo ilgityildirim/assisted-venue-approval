@@ -78,10 +78,12 @@ func ExtractStreetAddress(gd *GooglePlaceData) string {
 // - Regular users: Google wins, user is fallback
 // Location fallback:
 // - If user coordinates are missing or zero, use Google coordinates when available
+// Path priority:
+// - User path (if not empty) > Suggested path from Google (if user path empty) > empty
 // Validation:
 //   - Returns error for invalid input (nil venue name) but generally prefers lenient merging
 //     to avoid blocking flows. Errors indicate severe issues.
-func GetCombinedVenueInfo(v Venue, u User, trust float64) (CombinedInfo, error) {
+func GetCombinedVenueInfo(v Venue, u User, trust float64, suggestedPath string) (CombinedInfo, error) {
 	ci := CombinedInfo{Sources: make(map[string]string)}
 
 	// Basic input sanity
@@ -208,10 +210,14 @@ func GetCombinedVenueInfo(v Venue, u User, trust float64) (CombinedInfo, error) 
 		ci.Sources["description"] = "user"
 	}
 
-	// Path - user-submitted URL slug (always from user)
+	// Path - Priority: 1) user path (if not empty), 2) suggested from Google, 3) empty
+	// Note: Editor drafts will override this later in ApplyEditorDrafts if present
 	if v.Path != nil && strings.TrimSpace(*v.Path) != "" {
 		ci.Path = strings.TrimSpace(*v.Path)
 		ci.Sources["path"] = "user"
+	} else if suggestedPath != "" {
+		ci.Path = suggestedPath
+		ci.Sources["path"] = "google"
 	}
 
 	// New venue classification fields
@@ -403,7 +409,8 @@ func GetApprovalFieldData(
 	editorDraft interface{}, // interface{} to avoid circular import, pass nil if no draft
 ) (*ApprovalFieldData, error) {
 	// 1. Get base combined info (user + Google)
-	combined, err := GetCombinedVenueInfo(venue, user, trustScore)
+	// No suggested path needed here - assembler handles path generation
+	combined, err := GetCombinedVenueInfo(venue, user, trustScore, "")
 	if err != nil {
 		return nil, err
 	}

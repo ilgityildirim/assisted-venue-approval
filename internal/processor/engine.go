@@ -731,13 +731,13 @@ func (e *ProcessingEngine) requiresManualReviewEarly(ctx context.Context, venue 
 		return true, reason
 	}
 
-	if skip, reason := checkRestaurantCategory(venue); skip {
-		return true, reason
-	}
+	//if skip, reason := checkRestaurantCategory(venue); skip {
+	//    return true, reason
+	//}
 
-	if skip, reason := checkVenueType(venue); skip {
-		return true, reason
-	}
+	//if skip, reason := checkVenueType(venue); skip {
+	//    return true, reason
+	//}
 
 	// Check for duplicate venues by name and location (500m radius)
 	if skip, reason := checkDuplicateVenue(ctx, e.repo, venue); skip {
@@ -838,52 +838,55 @@ func (e *ProcessingEngine) processJob(job *ProcessingJob) *ProcessingResult {
 		return result
 	}
 
+	// No need to check any longer, we overwrite the path with google suggested one if user submitted one has no
+	// active venues within it.
+	// ---
 	// Path validation check - prevent API costs for venues with incorrect/unusual paths
-	if venue.Path != nil && *venue.Path != "" {
-		path := strings.TrimSpace(*venue.Path)
-
-		// Check 1: Path must contain pipe separator for hierarchical structure (e.g., "asia|china")
-		if !strings.Contains(path, "|") {
-			result.ValidationResult = &models.ValidationResult{
-				VenueID:        venue.ID,
-				Score:          0,
-				Status:         "manual_review",
-				Notes:          "Manual Review: Venue path format is invalid (missing hierarchy separator '|')",
-				ScoreBreakdown: map[string]int{"invalid_path_format": 0},
-			}
-			result.Success = true
-			return result
-		}
-
-		// Check 2: Count other venues in this path
-		count, err := e.repo.CountVenuesByPathCtx(jobCtx, path, venue.ID)
-		if err == nil {
-			if count == 0 {
-				// No other venues use this path - likely incorrect path selection
-				result.ValidationResult = &models.ValidationResult{
-					VenueID:        venue.ID,
-					Score:          0,
-					Status:         "manual_review",
-					Notes:          "Manual Review: No other venues found in this path - likely incorrect path selection",
-					ScoreBreakdown: map[string]int{"unique_path_flag": 0},
-				}
-				result.Success = true
-				return result
-			}
-			//} else if count <= 2 {
-			//	// Very few venues in path - uncommon, flag for review
-			//	result.ValidationResult = &models.ValidationResult{
-			//		VenueID:        venue.ID,
-			//		Score:          0,
-			//		Status:         "manual_review",
-			//		Notes:          fmt.Sprintf("Manual Review: Only %d venue(s) in this path - potentially incorrect path selection", count),
-			//		ScoreBreakdown: map[string]int{"uncommon_path_flag": 0},
-			//	}
-			//	result.Success = true
-			//	return result
-			//}
-		}
-	}
+	//if venue.Path != nil && *venue.Path != "" {
+	//	path := strings.TrimSpace(*venue.Path)
+	//
+	//	// Check 1: Path must contain pipe separator for hierarchical structure (e.g., "asia|china")
+	//	if !strings.Contains(path, "|") {
+	//		result.ValidationResult = &models.ValidationResult{
+	//			VenueID:        venue.ID,
+	//			Score:          0,
+	//			Status:         "manual_review",
+	//			Notes:          "Manual Review: Venue path format is invalid (missing hierarchy separator '|')",
+	//			ScoreBreakdown: map[string]int{"invalid_path_format": 0},
+	//		}
+	//		result.Success = true
+	//		return result
+	//	}
+	//
+	//	// Check 2: Count other venues in this path
+	//	count, err := e.repo.CountVenuesByPathCtx(jobCtx, path, venue.ID)
+	//	if err == nil {
+	//		if count == 0 {
+	//			// No other venues use this path - likely incorrect path selection
+	//			result.ValidationResult = &models.ValidationResult{
+	//				VenueID:        venue.ID,
+	//				Score:          0,
+	//				Status:         "manual_review",
+	//				Notes:          "Manual Review: No other venues found in this path - likely incorrect path selection",
+	//				ScoreBreakdown: map[string]int{"unique_path_flag": 0},
+	//			}
+	//			result.Success = true
+	//			return result
+	//		}
+	//		//} else if count <= 2 {
+	//		//	// Very few venues in path - uncommon, flag for review
+	//		//	result.ValidationResult = &models.ValidationResult{
+	//		//		VenueID:        venue.ID,
+	//		//		Score:          0,
+	//		//		Status:         "manual_review",
+	//		//		Notes:          fmt.Sprintf("Manual Review: Only %d venue(s) in this path - potentially incorrect path selection", count),
+	//		//		ScoreBreakdown: map[string]int{"uncommon_path_flag": 0},
+	//		//	}
+	//		//	result.Success = true
+	//		//	return result
+	//		//}
+	//	}
+	//}
 
 	// Calculate trust assessment early (before API calls) for early exit logic
 	// User might be empty for some venues, handle gracefully
