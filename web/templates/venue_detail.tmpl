@@ -858,17 +858,21 @@
                                         {{.Venue.Venue.OpenHoursNote}}
                                     {{else if .ApprovalHoursNote}}
                                         {{.ApprovalHoursNote}}
-                                    {{else if .ClosedDaysSuggestion}}
-                                        <div class="callout info"><code>{{.ClosedDaysSuggestion}}</code></div>
                                     {{else}}
                                         N/A
                                     {{end}}
                                 </div>
                                 <div class="field-value-edit" id="hours_note-edit" style="display:none;">
-                                    <textarea id="hours_note-input" data-original="{{if .Venue.Venue.OpenHoursNote}}{{.Venue.Venue.OpenHoursNote}}{{else if .ApprovalHoursNote}}{{.ApprovalHoursNote}}{{else}}{{.ClosedDaysSuggestion}}{{end}}" data-original-source="{{if .Venue.Venue.OpenHoursNote}}user{{else if .ApprovalHoursNote}}editor{{else}}ai{{end}}" maxlength="500" rows="2" style="width:100%;">{{if .Venue.Venue.OpenHoursNote}}{{.Venue.Venue.OpenHoursNote}}{{else if .ApprovalHoursNote}}{{.ApprovalHoursNote}}{{else}}{{.ClosedDaysSuggestion}}{{end}}</textarea>
+                                    <textarea id="hours_note-input" data-original="{{if .Venue.Venue.OpenHoursNote}}{{.Venue.Venue.OpenHoursNote}}{{else if .ApprovalHoursNote}}{{.ApprovalHoursNote}}{{end}}" data-original-source="{{if .Venue.Venue.OpenHoursNote}}user{{else if .ApprovalHoursNote}}editor{{end}}" maxlength="500" rows="2" style="width:100%;">{{if .Venue.Venue.OpenHoursNote}}{{.Venue.Venue.OpenHoursNote}}{{else if .ApprovalHoursNote}}{{.ApprovalHoursNote}}{{end}}</textarea>
                                     <span class="field-error" id="hours_note-error" style="color:#dc3545;display:none;font-size:0.875em;"></span>
                                 </div>
                             </div>
+                            {{if .ClosedDaysSuggestion}}
+                            <div class="field" style="grid-column: 1 / -1;">
+                                <div class="field-label">Suggested Closed Days</div>
+                                <div class="field-value"><div class="callout success">{{.ClosedDaysSuggestion}}</div></div>
+                            </div>
+                            {{end}}
                         </div>
                     </div>
                 </details>
